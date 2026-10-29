@@ -84,6 +84,38 @@ test.describe('Administration step-up and passkeys', () => {
         await expect(verifyUserModal(page)).toHaveCount(0, { timeout: 20_000 });
     });
 
+    test('step-up with SSO is refused when the IdP sends no auth_time', async ({ page }) => {
+        test.skip(await dexSupportsAuthTime(page), 'This Dex version sends auth_time: the step-up test above covers it.');
+
+        await addVirtualAuthenticator(page);
+        await adminSsoLogin(page);
+        await openPasskeyProfileTab(page);
+
+        // Only a redeemed step-up nonce asks for a token.
+        const tokenRequests: string[] = [];
+        page.on('request', (request) => {
+            if (request.url().includes('/api/sw6oidc/admin/step-up/token')) {
+                tokenRequests.push(request.url());
+            }
+        });
+
+        await page.locator('.sw6oidc-profile-passkey__register-button').click();
+        const modal = verifyUserModal(page);
+
+        const popupPromise = page.waitForEvent('popup');
+        await modal.locator('.sw6oidc-step-up__actions button').first().click();
+        const popup = await popupPromise;
+        const popupClosed = popup.waitForEvent('close', { timeout: 20_000 });
+        await dexLogin(popup, ADMIN_EMAIL);
+        // The callback reports the refusal to the opener and closes.
+        await popupClosed;
+
+        // Not confirmed: the modal stays open, ready for another method.
+        await expect(modal).toBeVisible();
+        await expect(modal.locator('.sw6oidc-step-up__actions button').first()).toBeEnabled();
+        expect(tokenRequests).toEqual([]);
+    });
+
     test('the inactivity modal resumes only the same admin with a passkey', async ({ page }) => {
         await addVirtualAuthenticator(page);
         await adminSsoLogin(page);
