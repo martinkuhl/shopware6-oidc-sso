@@ -498,14 +498,14 @@ The `sw6oidc` channel logs at `SW6OIDC_LOG_LEVEL` (default `warning`). The **Ena
 
 - **Unit tests** (`composer test`, no kernel) cover the OIDC core, provisioning, WebAuthn ceremonies against the real 5.x validators, and every security component.
 - **Integration tests** (`SHOPWARE_PROJECT_ROOT=/path/to/shop composer test-integration`) run a real kernel and database with Dex (`tests/Integration/docker-compose.yml`). They cover Back-Channel Logout, full Storefront and Admin OIDC logins, and access rules. They must use the **shop's** PHPUnit and autoloader, because the plugin's own `vendor/` contains a second `shopware/core`. `tests/Integration/README.md` has the setup details.
-- **E2E tests** (`tests/E2E`, Playwright) run against a dockware Shopware 6.7 shop with the plugin mounted and Dex. They cover Storefront and Admin SSO login/logout, the nonce hand-off and blank-dashboard regression, SSO-only mode, customer passkey registration and login, admin step-up (password, passkey, OIDC) and inactivity re-login, with WebAuthn via Chromium's virtual authenticator. The CI `e2e` job is non-blocking for now. `tests/E2E/README.md` has the setup details.
+- **E2E tests** (`tests/E2E`, Playwright) run against a dockware Shopware 6.7 shop with the plugin mounted and Dex. They cover Storefront and Admin SSO login/logout, the nonce hand-off and blank-dashboard regression, SSO-only mode, customer passkey registration and login, admin step-up (password, passkey, OIDC) and inactivity re-login, with WebAuthn via Chromium's virtual authenticator. The CI `e2e` job is blocking and starts after the lint and unit-test jobs pass. `tests/E2E/README.md` has the setup details.
 
 None of the suites covers:
 
 - quirks of real IdPs other than Dex
 - browsers other than Chromium
 
-After you change controllers, `services.xml`, templates or Vue code, run the E2E suite or do a manual login round-trip: Storefront and Admin, OIDC and Passkey. The committed storefront `dist` bundle must be rebuilt after Storefront JS changes; the CI `assets` job fails on a stale one.
+After you change controllers, `services.xml`, templates or Vue code, run the E2E suite or do a manual login round-trip: Storefront and Admin, OIDC and Passkey. The committed storefront `dist` bundle must be rebuilt after Storefront JS changes; the CI `shopware` job fails on a stale one.
 
 `composer ci` runs the same gates as CI: PHPCS, PHPStan level 5, Psalm level 4, Rector dry-run, then unit tests.
 

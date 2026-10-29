@@ -149,11 +149,17 @@ jobs:
           path: var/coverage
           retention-days: 14
 
-  # Integration suite: a real Shopware 6.7 (fresh shopware/production project
-  # with this plugin as a path repository) + MySQL + Dex, see
-  # tests/Integration/README.md.
-  integration:
-    name: Integration tests (Shopware 6.7 + Dex)
+  # One Shopware 6.7 installation (fresh shopware/production project with this
+  # plugin as a path repository) + MySQL + Dex for everything that needs a
+  # real shop: container lint, both bundle builds (F-H1: the committed bundles
+  # must match the sources, R3-L51) and the integration suite
+  # (tests/Integration/README.md). The shop runs in prod with .env.local and
+  # the `shopware` database; the integration suite forces APP_ENV=test, reads
+  # .env.test.local and uses its own `shopware_test` database.
+  # Only after the cheap checks pass.
+  shopware:
+    name: Shopware 6.7 (container, assets, integration)
+    needs: [lint, tests]
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -183,16 +189,42 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      # Download caches only (Composer and npm); the shop itself is always
+      # installed fresh.
+      - name: Locate the Composer cache
+        id: composer-cache
+        run: echo "dir=$(composer config --global cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer and npm downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ${{ steps.composer-cache.outputs.dir }}
+            ~/.npm
+          key: shopware-downloads-${{ hashFiles('plugin/composer.json') }}
+          restore-keys: shopware-downloads-
+
       - name: Start Dex
         run: docker compose -f plugin/tests/Integration/docker-compose.yml up -d --wait
 
-      - name: Create Shopware project with the plugin
+      - name: Install Shopware with the plugin
+        id: install
         run: |
           composer create-project shopware/production:~6.7.15 shop --no-interaction --no-progress --no-scripts
           cd shop
           composer config repositories.sw6oidc '{"type": "path", "url": "../plugin", "options": {"symlink": true}}'
           composer require 'martinkuhl/shopware6-oidc-sso:*' --no-interaction --no-progress --no-scripts
           composer require --dev 'phpunit/phpunit:^11.5' symfony/browser-kit --no-interaction --no-progress --no-scripts
+          {
+            echo "APP_ENV=prod"
+            echo "APP_URL=${APP_URL}"
+            echo "DATABASE_URL=${DATABASE_URL}"
+            echo "APP_SECRET=$(openssl rand -hex 32)"
+          } > .env.local
           # .env.test.local, not .env.local: Dotenv ignores .env.local when
           # APP_ENV=test, which left the recipe's short APP_SECRET in place
           # (lcobucci/jwt rejects HMAC keys under 256 bits).
@@ -203,60 +235,6 @@ jobs:
             echo "APP_SECRET=$(openssl rand -hex 32)"
             echo "INSTANCE_ID=$(openssl rand -hex 16)"
           } > .env.test.local
-
-      - name: Integration suite
-        working-directory: plugin
-        run: composer test-integration
-
-  assets:
-    # F-H1: both built bundles are committed (storefront dist/ and
-    # public/administration), so they must match the sources. Blocking: a
-    # stale bundle ships old code (R3-L51).
-    name: Asset build (Administration + Storefront)
-    runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -proot"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=30
-    env:
-      APP_URL: http://localhost:8000
-      DATABASE_URL: mysql://root:root@127.0.0.1:3306/shopware
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          path: plugin
-
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          extensions: ${{ env.PHP_EXTENSIONS }}
-          coverage: none
-          tools: composer:v2
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22'
-
-      - name: Install Shopware with the plugin
-        run: |
-          composer create-project shopware/production:~6.7.15 shop --no-interaction --no-progress --no-scripts
-          cd shop
-          composer config repositories.sw6oidc '{"type": "path", "url": "../plugin", "options": {"symlink": true}}'
-          composer require 'martinkuhl/shopware6-oidc-sso:*' --no-interaction --no-progress --no-scripts
-          {
-            echo "APP_ENV=prod"
-            echo "APP_URL=${APP_URL}"
-            echo "DATABASE_URL=${DATABASE_URL}"
-            echo "APP_SECRET=$(openssl rand -hex 32)"
-          } > .env.local
           bin/console system:install --basic-setup --create-database --force --no-interaction
           bin/console plugin:refresh
           bin/console plugin:install --activate Sw6Oidc
@@ -285,10 +263,18 @@ jobs:
           git status --porcelain -- src/Resources/app/storefront/dist src/Resources/public/administration
           test -z "$(git status --porcelain -- src/Resources/app/storefront/dist src/Resources/public/administration)"
 
+      # Runs even when the bundle check failed, so one run reports both.
+      - name: Integration suite
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        working-directory: plugin
+        run: composer test-integration
+
   e2e:
     # Browser E2E (tests/E2E/README.md). Blocking: it is the only test that
     # runs the Administration in a browser (R3-L51, R4-L7).
     name: Browser E2E (Playwright)
+    # Only after the cheap checks pass.
+    needs: [lint, tests]
     runs-on: ubuntu-latest
     defaults:
       run:
