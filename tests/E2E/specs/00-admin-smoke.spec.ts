@@ -17,18 +17,26 @@ const PLUGIN_PAGES = [
     '#/sw/profile/index/sw6oidc-passkey',
 ];
 
+/**
+ * Failed requests core itself expects and handles: sw-admin-menu reads the
+ * shop name for every user and falls back to "Shopware" without
+ * system_config:read.
+ */
+const EXPECTED_FAILURES = [/\/api\/_action\/system-config\?domain=core\.basicInformation$/];
+
 function collectErrors(page: Page): string[] {
     const errors: string[] = [];
 
     page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
-    // The console only says "Failed to load resource"; name the request.
     page.on('response', (response) => {
-        if (response.status() >= 400) {
+        if (response.status() >= 400 && !EXPECTED_FAILURES.some((pattern) => pattern.test(response.url()))) {
             errors.push(`response: ${response.status()} ${response.request().method()} ${response.url()}`);
         }
     });
     page.on('console', (message) => {
-        if (message.type() === 'error') {
+        // "Failed to load resource" names no request: the response
+        // listener above reports those, with their URL.
+        if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) {
             errors.push(`console: ${message.text()}`);
         }
     });
