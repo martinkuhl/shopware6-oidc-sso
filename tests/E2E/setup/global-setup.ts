@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { adminApi, upsert } from '../support/admin-api';
+import { adminApi, saveUserEntity, upsert } from '../support/admin-api';
 import {
     ADMIN_EMAIL,
     ADMIN_PROVIDER_ID,
@@ -86,12 +86,12 @@ export default async function globalSetup(): Promise<void> {
 
     // A non-superadmin role and Administration user for admin@example.com:
     // the admin provider links it by verified email (superadmins never are).
-    await upsert(api, 'acl_role', [{
+    await saveUserEntity(api, 'acl-role', {
         id: E2E_ROLE_ID,
         name: 'E2E editors',
         privileges: ['user:read', 'customer:read', 'sw6oidc_provider:read', 'sw6oidc_provider.viewer'],
-    }]);
-    await upsert(api, 'user', [{
+    });
+    await saveUserEntity(api, 'user', {
         id: E2E_ADMIN_USER_ID,
         username: 'e2e-admin',
         firstName: 'E2E',
@@ -101,7 +101,7 @@ export default async function globalSetup(): Promise<void> {
         localeId: await localeId(api),
         admin: false,
         aclRoles: [{ id: E2E_ROLE_ID }],
-    }]);
+    });
 
     const common = {
         clientId: CLIENT_ID,
