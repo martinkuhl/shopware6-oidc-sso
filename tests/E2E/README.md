@@ -24,7 +24,10 @@ dependencies resolve against the shop's). The plugin needs Shopware 6.7.15,
 for which dockware has no image yet, so the same `composer require` lifts the
 shop's Shopware packages to `~6.7.15.0` (then `system:update:finish` and a
 container restart). Once a 6.7.15 image exists, switch the default image and
-this step is skipped by composer. The setup then creates a customer and an
+this step is skipped by composer. `SW6OIDC_ALLOW_INSECURE_IDP_URLS` and
+`SW6OIDC_LOG_LEVEL` are also written to the shop's `.env.local` (or
+`.env.local.php`): PHP-FPM doesn't pass the container environment to web
+requests. The setup then creates a customer and an
 admin provider, a non-superadmin `e2e-admin` with `admin@example.com`, and
 switches passkeys on. It is idempotent.
 

@@ -48,6 +48,32 @@ async function waitForShop(): Promise<void> {
 const SHOPWARE_VERSION = '~6.7.15.0';
 
 /**
+ * Settings the web requests need too. PHP-FPM doesn't pass the container's
+ * environment (docker-compose.yml) to PHP, so they go into the shop's env
+ * file: the compiled .env.local.php when the shop has one (Symfony then
+ * ignores the .env files), else .env.local.
+ */
+const SHOP_ENV: Record<string, string> = {
+    // Dex is plain HTTP on a private network address: dev-only escape hatch.
+    SW6OIDC_ALLOW_INSECURE_IDP_URLS: '1',
+    SW6OIDC_LOG_LEVEL: 'debug',
+};
+
+const WRITE_SHOP_ENV = `
+    php -r '
+        $vars = json_decode($argv[1], true);
+        if (is_file(".env.local.php")) {
+            file_put_contents(".env.local.php", "<?php return " . var_export(array_merge(require ".env.local.php", $vars), true) . ";\\n");
+        } else {
+            $lines = is_file(".env.local") ? file(".env.local", FILE_IGNORE_NEW_LINES) : [];
+            $lines = array_filter($lines, fn ($l) => !array_key_exists(explode("=", $l, 2)[0], $vars));
+            foreach ($vars as $k => $v) { $lines[] = $k . "=" . $v; }
+            file_put_contents(".env.local", implode("\\n", $lines) . "\\n");
+        }
+    ' '${JSON.stringify(SHOP_ENV)}'
+`;
+
+/**
  * Lifts the shop's Shopware packages to the plugin's minimum while
  * requiring the plugin (dockware has no image that new yet), then runs the
  * new version's migrations. Skipped once the plugin is installed.
@@ -55,6 +81,7 @@ const SHOPWARE_VERSION = '~6.7.15.0';
 const INSTALL_PLUGIN = `
     set -e
     cd /var/www/html
+    ${WRITE_SHOP_ENV}
     composer config repositories.sw6oidc '{"type": "path", "url": "custom/plugins/Sw6Oidc", "options": {"symlink": true}}'
     if ! composer show martinkuhl/shopware6-oidc-sso >/dev/null 2>&1; then
         packages=$(php -r 'foreach (array_keys(json_decode(file_get_contents("composer.json"), true)["require"]) as $p) { if (preg_match("#^shopware/(core|administration|storefront|elasticsearch)$#", $p)) { echo $p, ":${SHOPWARE_VERSION} "; } }')
