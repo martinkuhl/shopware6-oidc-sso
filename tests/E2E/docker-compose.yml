@@ -7,7 +7,7 @@
 # makes id_token issuer checks pass.
 services:
   shop:
-    image: ${SW6OIDC_E2E_SHOP_IMAGE:-dockware/shopware:6.7.4.2}
+    image: ${SW6OIDC_E2E_SHOP_IMAGE:-dockware/shopware:6.7.14.2}
     ports:
       - "80:80"
     environment:

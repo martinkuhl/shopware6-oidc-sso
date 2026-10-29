@@ -188,7 +188,7 @@ jobs:
 
       - name: Create Shopware project with the plugin
         run: |
-          composer create-project shopware/production:~6.7.0 shop --no-interaction --no-progress --no-scripts
+          composer create-project shopware/production:~6.7.15 shop --no-interaction --no-progress --no-scripts
           cd shop
           composer config repositories.sw6oidc '{"type": "path", "url": "../plugin", "options": {"symlink": true}}'
           composer require 'martinkuhl/shopware6-oidc-sso:*' --no-interaction --no-progress --no-scripts
@@ -247,7 +247,7 @@ jobs:
 
       - name: Install Shopware with the plugin
         run: |
-          composer create-project shopware/production:~6.7.0 shop --no-interaction --no-progress --no-scripts
+          composer create-project shopware/production:~6.7.15 shop --no-interaction --no-progress --no-scripts
           cd shop
           composer config repositories.sw6oidc '{"type": "path", "url": "../plugin", "options": {"symlink": true}}'
           composer require 'martinkuhl/shopware6-oidc-sso:*' --no-interaction --no-progress --no-scripts
@@ -311,7 +311,12 @@ jobs:
       - name: Start shop and Dex
         run: docker compose up -d --wait
 
+      # The shop container takes ownership of the mounted checkout, so the
+      # runner can't create directories in it any more: report and traces go
+      # to the runner's temp directory.
       - name: Run the suite
+        env:
+          SW6OIDC_E2E_OUTPUT_DIR: ${{ runner.temp }}/e2e
         run: npx playwright test
 
       - name: Upload report
@@ -319,7 +324,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report
-          path: tests/E2E/playwright-report
+          path: ${{ runner.temp }}/e2e
           retention-days: 7
 
       - name: Shop log on failure

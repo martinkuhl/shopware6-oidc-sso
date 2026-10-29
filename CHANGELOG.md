@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking changes (code review, revision 7)
 
+- **Requires Shopware 6.7.15 or newer** (`>=6.7.15.0 <6.8.0.0`): the plugin uses core APIs that older 6.7 releases lack (`ResetOnClone`, `Choice`, `PreWriteValidationEvent::getCommandsForEntity()`). The old `>=6.7.0.0` constraint was wrong; installs on older 6.7 releases failed at activation.
 - **Composer dependencies changed**: `web-token/jwt-library ^4.0` replaces `web-token/jwt-framework`; `league/oauth2-server`, `symfony/psr-http-message-bridge` and `nyholm/psr7` are no longer required directly. Run `composer update martinkuhl/shopware6-oidc-sso`.
 - **`claim_encoding` is dropped** in the destructive migration step (replaced by `base64_claims` earlier).
 - **The health endpoint returns only `status`** unless `SW6OIDC_HEALTH_TOKEN` is set and sent.

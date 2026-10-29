@@ -39,7 +39,7 @@ Shopware's built-in authentication is password-based. This plugin bridges Shopwa
 ## Requirements
 
 - **PHP**: 8.2 – 8.5
-- **Shopware**: `>=6.7.0.0 <6.8.0.0`
+- **Shopware**: `>=6.7.15.0 <6.8.0.0`
 - **Identity Provider**: any OIDC-compliant IdP (Authelia, Keycloak, Auth0, Okta, Azure AD, Google Workspace, Zitadel, etc.)
 - **HTTPS**: required in production — WebAuthn requires a secure context, and IdP redirects should always use HTTPS
 - **Reverse proxy / CDN**: `framework.trusted_proxies` **must** be configured, so Shopware sees the real client IP (rate limiting is per client IP — see [Rate limiting](#rate-limiting))
@@ -571,4 +571,4 @@ JIT-created customers also trigger Shopware's own `CustomerRegisterEvent`. Chang
 - **Plugin Version**: 0.1.0
 - **Package**: `martinkuhl/shopware6-oidc-sso`
 - **License**: MIT (see [LICENSE.txt](LICENSE.txt))
-- **Requirements**: PHP 8.2 – 8.5, Shopware `>=6.7.0.0 <6.8.0.0`
+- **Requirements**: PHP 8.2 – 8.5, Shopware `>=6.7.15.0 <6.8.0.0`

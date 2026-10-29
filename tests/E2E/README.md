@@ -17,10 +17,14 @@ npm run env:down
 ```
 
 `SW6OIDC_E2E_SHOP_IMAGE` overrides the shop image (default
-`dockware/shopware:6.7.4.2`); `SW6OIDC_E2E_SHOP_URL` the shop URL.
+`dockware/shopware:6.7.14.2`); `SW6OIDC_E2E_SHOP_URL` the shop URL.
 
 The global setup installs the mounted plugin through composer (so its
-dependencies resolve against the shop's), then creates a customer and an
+dependencies resolve against the shop's). The plugin needs Shopware 6.7.15,
+for which dockware has no image yet, so the same `composer require` lifts the
+shop's Shopware packages to `~6.7.15.0` (then `system:update:finish` and a
+container restart). Once a 6.7.15 image exists, switch the default image and
+this step is skipped by composer. The setup then creates a customer and an
 admin provider, a non-superadmin `e2e-admin` with `admin@example.com`, and
 switches passkeys on. It is idempotent.
 

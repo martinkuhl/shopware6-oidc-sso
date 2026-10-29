@@ -44,6 +44,29 @@ async function waitForShop(): Promise<void> {
     throw new Error(`Shop at ${SHOP_URL} did not come up.`);
 }
 
+/** The plugin's minimum Shopware version (composer.json). */
+const SHOPWARE_VERSION = '~6.7.15.0';
+
+/**
+ * Lifts the shop's Shopware packages to the plugin's minimum while
+ * requiring the plugin (dockware has no image that new yet), then runs the
+ * new version's migrations. Skipped once the plugin is installed.
+ */
+const INSTALL_PLUGIN = `
+    set -e
+    cd /var/www/html
+    composer config repositories.sw6oidc '{"type": "path", "url": "custom/plugins/Sw6Oidc", "options": {"symlink": true}}'
+    if ! composer show martinkuhl/shopware6-oidc-sso >/dev/null 2>&1; then
+        packages=$(php -r 'foreach (array_keys(json_decode(file_get_contents("composer.json"), true)["require"]) as $p) { if (preg_match("#^shopware/(core|administration|storefront|elasticsearch)$#", $p)) { echo $p, ":${SHOPWARE_VERSION} "; } }')
+        composer require $packages "martinkuhl/shopware6-oidc-sso:*@dev" --with-all-dependencies --no-interaction --no-scripts
+        bin/console system:update:finish --no-interaction
+        bin/console theme:compile
+    fi
+    bin/console plugin:refresh
+    bin/console plugin:install --activate Sw6Oidc
+    bin/console cache:clear
+`;
+
 /**
  * Installs the mounted plugin (through composer, so its own dependencies
  * resolve against the shop's) and configures one customer and one admin
@@ -52,14 +75,12 @@ async function waitForShop(): Promise<void> {
 export default async function globalSetup(): Promise<void> {
     await waitForShop();
 
-    shop([
-        'cd /var/www/html',
-        'composer config repositories.sw6oidc \'{"type": "path", "url": "custom/plugins/Sw6Oidc", "options": {"symlink": true}}\'',
-        'composer show martinkuhl/shopware6-oidc-sso >/dev/null 2>&1 || composer require "martinkuhl/shopware6-oidc-sso:*@dev" --no-interaction --no-scripts',
-        'bin/console plugin:refresh',
-        'bin/console plugin:install --activate Sw6Oidc',
-        'bin/console cache:clear',
-    ].join(' && '));
+    shop(INSTALL_PLUGIN);
+
+    // A fresh PHP-FPM, so no worker keeps serving the Shopware version
+    // replaced above from its opcache.
+    execFileSync('docker', ['compose', 'restart', 'shop'], { cwd: E2E_DIR, stdio: 'inherit' });
+    await waitForShop();
 
     const api = await adminApi();
 

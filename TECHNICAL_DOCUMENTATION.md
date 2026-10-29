@@ -36,7 +36,7 @@ The architecture deliberately mirrors the sibling `magento2-oidc-sso` module, so
 
 ### Project status
 
-This is early-stage software: version `0.1.0` plus a large set of unreleased changes, MIT-licensed, with support for PHP 8.2–8.5 and Shopware `>=6.7.0.0 <6.8.0.0`. Test coverage:
+This is early-stage software: version `0.1.0` plus a large set of unreleased changes, MIT-licensed, with support for PHP 8.2–8.5 and Shopware `>=6.7.15.0 <6.8.0.0`. Test coverage:
 
 - ~700 unit tests
 - an integration suite that runs a real Shopware kernel against Dex
