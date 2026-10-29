@@ -305,6 +305,19 @@ jobs:
           SW6OIDC_E2E_OUTPUT_DIR: ${{ runner.temp }}/e2e
         run: npx playwright test
 
+      # Into the report artifact: the plugin's own log says why a login was
+      # refused, which the browser only sees as a generic error.
+      - name: Collect shop logs
+        if: failure()
+        env:
+          LOG_DIR: ${{ runner.temp }}/e2e/shop-logs
+        run: |
+          mkdir -p "$LOG_DIR"
+          docker compose logs shop > "$LOG_DIR/container.log" 2>&1 || true
+          docker compose exec -T shop bash -lc 'cd /var/www/html/var/log && tail -n 2000 sw6oidc-*.log' > "$LOG_DIR/sw6oidc.log" 2>&1 || true
+          docker compose exec -T shop bash -lc 'cd /var/www/html/var/log && ls -l && tail -n 500 $(ls *.log | grep -v ^sw6oidc)' > "$LOG_DIR/shopware.log" 2>&1 || true
+          tail -n 100 "$LOG_DIR/sw6oidc.log"
+
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -312,7 +325,3 @@ jobs:
           name: playwright-report
           path: ${{ runner.temp }}/e2e
           retention-days: 7
-
-      - name: Shop log on failure
-        if: failure()
-        run: docker compose logs shop | tail -n 300

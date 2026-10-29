@@ -42,8 +42,9 @@ async function visitAll(page: Page, pages: string[]): Promise<void> {
     for (const hash of pages) {
         await page.goto(`/admin${hash}`);
         await expect(page.locator('.sw-page, .sw-profile-index').first()).toBeVisible({ timeout: 30_000 });
-        // Let lazy components and their requests settle.
-        await page.waitForLoadState('networkidle');
+        // Let lazy components and their requests settle. Not `networkidle`:
+        // the Administration polls in the background and never goes idle.
+        await expect(page.locator('.sw-loader:visible, .mt-loader:visible')).toHaveCount(0, { timeout: 30_000 });
     }
 }
 
@@ -70,7 +71,7 @@ test.describe('Administration smoke test', () => {
 
     test('the role editor offers the plugin privileges', async ({ page }) => {
         await passwordLogin(page, SHOP_ADMIN.username, SHOP_ADMIN.password);
-        await page.goto(`/admin#/sw/users/permissions/role/detail/${E2E_ROLE_ID}`);
+        await page.goto(`/admin#/sw/users/permissions/role.detail/${E2E_ROLE_ID}/general`);
 
         // Registered once the privileges service is ready (R3-F2, R6-L2).
         await expect(page.locator('[class*="entry_sw6oidc_provider"]').first()).toBeVisible({ timeout: 30_000 });

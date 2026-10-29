@@ -25,7 +25,7 @@ test.describe('Customer passkeys', () => {
 
         await page.locator('[data-sw6oidc-passkey-login]').click();
         await page.waitForURL(/\/account(\/|$|\?)/, { timeout: 20_000 });
-        await expect(page.locator('.account-welcome, .account-overview')).toBeVisible();
+        await expect(page.locator('.account-welcome, .account-overview').first()).toBeVisible();
     });
 
     test('deleting the middle of three passkeys deletes exactly that one (R3-F3)', async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe('Customer passkeys', () => {
         }
 
         const row = page.locator('.account-passkey-list tbody tr', { hasText: 'Key B' });
-        await row.locator('button[type="submit"]').click();
+        await row.locator('form[data-sw6oidc-passkey-delete-form] button[type="submit"]').click();
         await row.locator('dialog button[value="confirm"]').click();
         await page.waitForURL(/\/account\/passkey/);
 

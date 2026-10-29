@@ -1,16 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { dexLogin } from '../support/dex';
-import { ADMIN_EMAIL } from '../support/fixtures';
+import { adminSsoLogin } from '../support/admin-login';
 
 test.describe('Administration OIDC login', () => {
     test('an admin logs in with SSO and the dashboard survives a reload', async ({ page }) => {
-        await page.goto('/admin');
-
-        await page.locator('.sw6oidc-login-actions__sso-button').first().click();
-        await dexLogin(page, ADMIN_EMAIL);
-
         // Nonce hand-off back into the SPA, then the full app boot.
-        await expect(page.locator('.sw-admin-menu')).toBeVisible({ timeout: 30_000 });
+        await adminSsoLogin(page);
         expect(page.url()).not.toContain('sw6oidc_nonce');
 
         // Regression: a login that skipped core's reload left a blank dashboard.

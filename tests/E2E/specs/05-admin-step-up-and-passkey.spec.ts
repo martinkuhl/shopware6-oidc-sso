@@ -1,14 +1,8 @@
 import { expect, Page, test } from '@playwright/test';
+import { adminSsoLogin } from '../support/admin-login';
 import { dexLogin, dexSupportsAuthTime } from '../support/dex';
 import { ADMIN_EMAIL, E2E_ADMIN_PASSWORD } from '../support/fixtures';
 import { addVirtualAuthenticator, credentialCount } from '../support/webauthn';
-
-async function ssoLogin(page: Page): Promise<void> {
-    await page.goto('/admin');
-    await page.locator('.sw6oidc-login-actions__sso-button').first().click();
-    await dexLogin(page, ADMIN_EMAIL);
-    await expect(page.locator('.sw-admin-menu')).toBeVisible({ timeout: 30_000 });
-}
 
 async function openPasskeyProfileTab(page: Page): Promise<void> {
     await page.goto('/admin#/sw/profile/index/sw6oidc-passkey');
@@ -20,7 +14,7 @@ test.describe('Administration step-up and passkeys', () => {
 
     test('registering a passkey asks for re-confirmation; password confirmation works', async ({ page }) => {
         const { cdp, authenticatorId } = await addVirtualAuthenticator(page);
-        await ssoLogin(page);
+        await adminSsoLogin(page);
         await openPasskeyProfileTab(page);
 
         await page.locator('.sw6oidc-profile-passkey__nickname input').fill('E2E admin key');
@@ -40,7 +34,7 @@ test.describe('Administration step-up and passkeys', () => {
         // A fresh page has a fresh authenticator: register one first, then
         // use it for the step-up of a second registration.
         const { cdp, authenticatorId } = await addVirtualAuthenticator(page);
-        await ssoLogin(page);
+        await adminSsoLogin(page);
         await openPasskeyProfileTab(page);
 
         await page.locator('.sw6oidc-profile-passkey__register-button').click();
@@ -61,7 +55,7 @@ test.describe('Administration step-up and passkeys', () => {
         test.skip(!(await dexSupportsAuthTime(page)), 'This Dex version does not send auth_time, which OIDC step-up requires.');
 
         await addVirtualAuthenticator(page);
-        await ssoLogin(page);
+        await adminSsoLogin(page);
         await openPasskeyProfileTab(page);
 
         await page.locator('.sw6oidc-profile-passkey__register-button').click();
@@ -77,7 +71,7 @@ test.describe('Administration step-up and passkeys', () => {
 
     test('the inactivity modal resumes only the same admin with a passkey', async ({ page }) => {
         await addVirtualAuthenticator(page);
-        await ssoLogin(page);
+        await adminSsoLogin(page);
 
         // A passkey this browser does not hold can't resume the session.
         await page.evaluate(() => {

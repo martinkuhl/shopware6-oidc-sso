@@ -11,7 +11,7 @@ test.describe('Storefront OIDC login', () => {
 
         // JIT-created (or bound) and logged in: the account area.
         await page.waitForURL(/\/account(\/|$|\?)/);
-        await expect(page.locator('.account-welcome, .account-overview')).toBeVisible();
+        await expect(page.locator('.account-welcome, .account-overview').first()).toBeVisible();
 
         await page.goto('/account/logout');
         await page.waitForURL(/\/account\/login/);

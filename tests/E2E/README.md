@@ -45,5 +45,7 @@ Specs run in order with one worker; they share one shop.
 
 ## CI
 
-The `e2e` job in `.github/workflows/ci.yml` runs this suite. It is
-non-blocking until it has proven stable.
+The `e2e` job in `.github/workflows/ci.yml` runs this suite and uploads the
+report as the `playwright-report` artifact. On failure the artifact also holds
+the shop's logs (`shop-logs/`: container, Shopware, the plugin's `sw6oidc`
+log), which say why a login was refused.
