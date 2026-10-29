@@ -34,13 +34,15 @@ test.describe('Administration step-up and passkeys', () => {
         await modal.locator('input[type="password"]').fill(E2E_ADMIN_PASSWORD);
         await modal.locator('button.mt-button--primary, button.sw-button--primary').last().click();
 
-        await expect(page.locator('.sw6oidc-profile-passkey__grid')).toContainText('E2E admin key', { timeout: 20_000 });
-        expect(await credentialCount(cdp, authenticatorId)).toBe(1);
+        // The authenticator first: on a retry the grid already lists the key
+        // the failed attempt stored on the server.
+        await expect.poll(() => credentialCount(cdp, authenticatorId), { timeout: 20_000 }).toBe(1);
+        await expect(page.locator('.sw6oidc-profile-passkey__grid')).toContainText('E2E admin key');
     });
 
     test('step-up with a passkey (user verification)', async ({ page }) => {
         // A fresh page has a fresh authenticator: register one first, then
-        // use it for the step-up of a second registration.
+        // use it to confirm the next registration.
         const { cdp, authenticatorId } = await addVirtualAuthenticator(page);
         await adminSsoLogin(page);
         await openPasskeyProfileTab(page);
@@ -54,9 +56,14 @@ test.describe('Administration step-up and passkeys', () => {
         await page.locator('.sw6oidc-profile-passkey__register-button').click();
         modal = verifyUserModal(page);
         await expect(modal.locator('.sw6oidc-step-up')).toBeVisible();
+        const verifyResponse = page.waitForResponse((response) => response.url().includes('/api/sw6oidc/admin/step-up/passkey/verify'));
         await modal.locator('.sw6oidc-step-up__actions button').last().click();
 
-        await expect.poll(() => credentialCount(cdp, authenticatorId), { timeout: 20_000 }).toBe(2);
+        expect((await verifyResponse).ok()).toBe(true);
+        await expect(verifyUserModal(page)).toHaveCount(0);
+        // The registration it confirmed is refused by this authenticator:
+        // its key is in excludeCredentials, so no second key on one device.
+        expect(await credentialCount(cdp, authenticatorId)).toBe(1);
     });
 
     test('step-up with SSO (fresh IdP login)', async ({ page }) => {
