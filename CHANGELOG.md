@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (code review, revision 7)
 
+- SSO re-authentication (Administration step-up, Storefront reauth) failed against Authelia even with the correct password: the plugin sent `max_age=0`, which Authelia 4.39 always treats as "login required". Only `prompt=login` is sent now; `auth_time` is still checked.
 - The Storefront passkey page crashed (`AccountPasskeyController` needed the concrete `LogoutRoute`, which the plugin decorates).
 - ID tokens signed with PS*/ES* are accepted; `crit` headers, non-numeric `nbf`/`iat` and a missing nonce are rejected.
 - Unknown or rotated customer context tokens no longer leave a session alive on IdP logout; hashed `sid` storage; Redis values are encrypted.

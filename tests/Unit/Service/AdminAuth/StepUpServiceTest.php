@@ -74,7 +74,7 @@ final class StepUpServiceTest extends TestCase
                 'https://shop.example/cb',
                 AuthorizationFlowContext::PURPOSE_STEP_UP,
                 self::ADMIN,
-                ['prompt' => 'login', 'max_age' => '0'],
+                ['prompt' => 'login'],
             )
             ->willReturn('https://idp.example/authorize?x');
 

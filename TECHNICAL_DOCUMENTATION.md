@@ -224,7 +224,7 @@ The OIDC redirect is a full-page navigation, so the hand-back to the SPA works l
 
 Plugin-provisioned admins have a random, unknown password, so core's "confirm your password" dialog (`sw-verify-user-modal`) can't be answered with a password. The plugin extends that dialog with "confirm with SSO / passkey" buttons, backed by `StepUpService` and `/api/sw6oidc/admin/step-up/*`:
 
-- **OIDC:** a round trip to the admin's own bound provider with `prompt=login&max_age=0`, via the admin callback. The `id_token`'s `auth_time` must be after the round trip started, and `sub` must match the admin's binding. IdPs that don't send `auth_time` can't be used for OIDC step-up.
+- **OIDC:** a round trip to the admin's own bound provider with `prompt=login`, via the admin callback. The `id_token`'s `auth_time` must be after the round trip started, and `sub` must match the admin's binding. IdPs that don't send `auth_time` can't be used for OIDC step-up.
 - **Passkey:** an assertion with one of the admin's own passkeys, with user verification.
 
 Either way the result is a short-lived access token with the `user-verified` scope and no refresh token, the same shape core's password confirmation produces. The `user-verified` scope is stripped from every other token request. "Connect SSO" on the own profile and admin passkey registration require such a token.
@@ -465,7 +465,7 @@ Superadmin revocation is opt-in: `sync_admin_role_on_sso` grants superadmin on a
 
 ### OIDC step-up needs `auth_time`
 
-`StepUpService` refuses an OIDC step-up when the `id_token` has no `auth_time`, or one from before the round trip started. IdPs that ignore `prompt=login`/`max_age=0` or omit `auth_time` (Dex, for example) can only use passkey step-up. The E2E suite skips the OIDC step-up test for that reason.
+`StepUpService` refuses an OIDC step-up when the `id_token` has no `auth_time`, or one from before the round trip started. IdPs that ignore `prompt=login` or omit `auth_time` (Dex, for example) can only use passkey step-up. The E2E suite skips the OIDC step-up test for that reason.
 
 ### `OidcCustomerLoginRoute` is not a decorator, on purpose
 

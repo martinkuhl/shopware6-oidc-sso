@@ -32,7 +32,7 @@ use Webauthn\PublicKeyCredentialDescriptor;
  *
  * Two ways to prove it:
  *  - OIDC: a round trip to the admin's own bound provider with
- *    `prompt=login&max_age=0`; the id_token's `auth_time` must be after the
+ *    `prompt=login`; the id_token's `auth_time` must be after the
  *    round trip started and the subject must be the admin's binding.
  *  - Passkey: an assertion with one of the admin's own passkeys, with user
  *    verification (PIN/biometrics) required.
@@ -77,7 +77,7 @@ class StepUpService
             $redirectUri,
             AuthorizationFlowContext::PURPOSE_STEP_UP,
             $userId,
-            ['prompt' => 'login', 'max_age' => '0'],
+            ['prompt' => 'login'],
         );
     }
 

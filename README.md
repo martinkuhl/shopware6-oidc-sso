@@ -318,7 +318,7 @@ A new passkey is written to the audit log and triggers the Flow Builder event "P
 
 Shopware asks admins to confirm their password before sensitive changes (e.g. editing users or integrations). SSO-provisioned admins don't know their random password, so the plugin adds two buttons to that dialog:
 
-- **Single sign-on**: a fresh login at the admin's own connected provider in a popup (`prompt=login`, `max_age=0`). The IdP must return `auth_time` in the `id_token`; IdPs that don't (e.g. Dex) can only use the passkey option.
+- **Single sign-on**: a fresh login at the admin's own connected provider in a popup (`prompt=login`). The IdP must return `auth_time` in the `id_token`; IdPs that don't (e.g. Dex) can only use the passkey option.
 - **Passkey**: one of the admin's own passkeys, with user verification.
 
 The result is a short-lived (5 minutes) confirmation token, the same kind Shopware's password check produces. Connecting SSO on the own profile and registering an admin passkey require this confirmation.

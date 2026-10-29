@@ -22,7 +22,7 @@ class AuthorizationRequestBuilder
     }
 
     /**
-     * @param array<string, string> $extraParams additional authorize parameters (e.g. prompt/max_age for step-up)
+     * @param array<string, string> $extraParams additional authorize parameters (e.g. prompt=login for step-up)
      */
     public function build(
         Sw6OidcProviderEntity $provider,

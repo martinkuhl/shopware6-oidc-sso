@@ -139,7 +139,7 @@ class SendAuthorizationRequestController extends StorefrontController
     /**
      * Fresh login before a sensitive account change (adding a passkey,
      * connecting SSO): an SSO-connected customer goes through their provider
-     * with `prompt=login&max_age=0` (a `reauth` flow: the callback checks
+     * with `prompt=login` (a `reauth` flow: the callback checks
      * `auth_time` and the subject, then marks this session fresh, R3-M5);
      * anybody else is logged out and asked to log in again. Either way they
      * come back to the page named by `target` (passkey page by default).
@@ -169,7 +169,7 @@ class SendAuthorizationRequestController extends StorefrontController
                     $this->generateUrl('frontend.sw6oidc.callback', [], UrlGeneratorInterface::ABSOLUTE_URL),
                     AuthorizationFlowContext::PURPOSE_REAUTH,
                     $customer->getId(),
-                    ['prompt' => 'login', 'max_age' => '0'],
+                    ['prompt' => 'login'],
                 ));
             } catch (ProviderNotFoundException) {
                 // Provider gone: fall back to a normal re-login.

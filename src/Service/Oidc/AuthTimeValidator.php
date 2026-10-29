@@ -5,10 +5,11 @@ namespace MartinKuhl\Sw6Oidc\Service\Oidc;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\InvalidStateException;
 
 /**
- * A re-authentication round trip (`prompt=login&max_age=0`) only proves a
- * fresh login if the IdP says so: the id_token's `auth_time` must be after
- * the round trip started. An IdP that ignores `max_age` would otherwise
- * satisfy it silently with an old session (R3-M5). Shared by the
+ * A re-authentication round trip (`prompt=login`) only proves a fresh login
+ * if the IdP says so: the id_token's `auth_time` must be after the round
+ * trip started. An IdP that ignores `prompt=login` would otherwise satisfy
+ * it silently with an old session (R3-M5). No `max_age=0`: Authelia treats
+ * it as "login always required" and never completes the flow. Shared by the
  * Administration step-up and the Storefront re-authentication.
  */
 final class AuthTimeValidator
