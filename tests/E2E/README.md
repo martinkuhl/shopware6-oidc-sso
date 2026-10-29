@@ -28,8 +28,10 @@ this step is skipped by composer. `SW6OIDC_ALLOW_INSECURE_IDP_URLS` and
 `SW6OIDC_LOG_LEVEL` are also written to the shop's `.env.local` (or
 `.env.local.php`): PHP-FPM doesn't pass the container environment to web
 requests. The setup then creates a customer and an
-admin provider, a non-superadmin `e2e-admin` with `admin@example.com`, and
-switches passkeys on. It is idempotent.
+admin provider and a non-superadmin `e2e-admin` with `admin@example.com`,
+connects it to Dex the way an admin does ("Connect SSO": a user-verified
+token, `link/start`, Dex login; the plugin never links an existing admin by
+email), and switches passkeys on. It is idempotent.
 
 ## Specs
 

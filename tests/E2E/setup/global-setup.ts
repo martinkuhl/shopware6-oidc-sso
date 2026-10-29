@@ -1,6 +1,8 @@
+import { chromium } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { adminApi, saveUserEntity, upsert } from '../support/admin-api';
+import { dexLogin } from '../support/dex';
 import {
     ADMIN_EMAIL,
     ADMIN_PROVIDER_ID,
@@ -10,6 +12,7 @@ import {
     DEX_URL,
     E2E_ADMIN_PASSWORD,
     E2E_ADMIN_USER_ID,
+    E2E_ADMIN_USERNAME,
     E2E_ROLE_ID,
     SHOP_URL,
 } from '../support/fixtures';
@@ -111,12 +114,33 @@ export default async function globalSetup(): Promise<void> {
 
     const api = await adminApi();
 
-    // A non-superadmin role and Administration user for admin@example.com:
-    // the admin provider links it by verified email (superadmins never are).
+    // A non-superadmin role and Administration user for admin@example.com,
+    // connected to Dex below (no admin is ever linked by email alone).
     await saveUserEntity(api, 'acl-role', {
         id: E2E_ROLE_ID,
         name: 'E2E editors',
-        privileges: ['user:read', 'customer:read', 'sw6oidc_provider:read', 'sw6oidc_provider.viewer'],
+        // What the role editor saves for "SSO providers: viewer": the role
+        // key, its expanded privileges (acl/index.js) and core's defaults
+        // (privileges.service getRequiredPrivileges()), else the pages' own
+        // requests get 403s.
+        privileges: [
+            'sw6oidc_provider.viewer',
+            'sw6oidc_provider:read',
+            'sw6oidc_attribute_mapping:read',
+            'sw6oidc_role_mapping:read',
+            'sw6oidc_access_control_rule:read',
+            'acl_role:read',
+            'customer_group:read',
+            'user:read',
+            'customer:read',
+            'language:read',
+            'locale:read',
+            'message_queue_stats:read',
+            'log_entry:create',
+            'currency:read',
+            'country:read',
+            'scheduled_task:read',
+        ],
     });
     await saveUserEntity(api, 'user', {
         id: E2E_ADMIN_USER_ID,
@@ -182,6 +206,60 @@ export default async function globalSetup(): Promise<void> {
     }
 
     await api.dispose();
+
+    await connectE2eAdminToDex();
+}
+
+/**
+ * "Connect SSO" for e2e-admin, as the admin does it from the profile: a
+ * user-verified token starts a link round trip, Dex confirms the identity.
+ * The plugin never links an existing admin by email (R3-M10), and linking the
+ * same identity again is a no-op, so this runs on every setup. The browser
+ * context's request client shares its cookies with the page, so the
+ * browser-binding cookie set by link/start reaches the callback.
+ */
+async function connectE2eAdminToDex(): Promise<void> {
+    const browser = await chromium.launch();
+
+    try {
+        const context = await browser.newContext({ baseURL: SHOP_URL });
+        const tokenResponse = await context.request.post('/api/oauth/token', {
+            data: {
+                grant_type: 'password',
+                client_id: 'administration',
+                scope: 'user-verified',
+                username: E2E_ADMIN_USERNAME,
+                password: E2E_ADMIN_PASSWORD,
+            },
+        });
+
+        if (!tokenResponse.ok()) {
+            throw new Error(`e2e-admin login failed: HTTP ${tokenResponse.status()} ${await tokenResponse.text()}`);
+        }
+
+        const { access_token: token } = await tokenResponse.json();
+        const startResponse = await context.request.post('/api/sw6oidc/admin/link/start', {
+            data: { providerId: ADMIN_PROVIDER_ID },
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        });
+
+        if (!startResponse.ok()) {
+            throw new Error(`Starting the SSO link failed: HTTP ${startResponse.status()} ${await startResponse.text()}`);
+        }
+
+        const { authorizeUrl } = await startResponse.json();
+        const page = await context.newPage();
+        await page.goto(authorizeUrl);
+        await dexLogin(page, ADMIN_EMAIL);
+        // The Administration (success or error), not the callback on its way.
+        await page.waitForURL(/\/admin\/?#/, { timeout: 30_000 });
+
+        if (!page.url().includes('sw6oidc_linked=1')) {
+            throw new Error(`Connecting e2e-admin to Dex failed, landed on ${page.url()}`);
+        }
+    } finally {
+        await browser.close();
+    }
 }
 
 async function localeId(api: Awaited<ReturnType<typeof adminApi>>): Promise<string> {
