@@ -7,6 +7,7 @@ use Shopware\Core\Framework\DataAbstractionLayer\EntityDefinition;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\CreatedAtField;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\FkField;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\ApiAware;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\Choice;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\PrimaryKey;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\Required;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\IdField;
@@ -30,6 +31,11 @@ class Sw6OidcAccessControlRuleDefinition extends EntityDefinition
     public const OPERATOR_NOT_CONTAINS = 'not_contains';
     public const OPERATOR_EXISTS = 'exists';
     public const OPERATOR_NOT_EXISTS = 'not_exists';
+    public const OPERATOR_ENDS_WITH = 'ends_with';
+    public const OPERATOR_EMAIL_DOMAIN = 'email_domain';
+
+    /** Operators that deny when the claim is missing (N-M10/N-M11). */
+    public const NEGATIVE_OPERATORS = [self::OPERATOR_NEQ, self::OPERATOR_NOT_CONTAINS];
 
     public const OPERATORS = [
         self::OPERATOR_EQ,
@@ -38,6 +44,8 @@ class Sw6OidcAccessControlRuleDefinition extends EntityDefinition
         self::OPERATOR_NOT_CONTAINS,
         self::OPERATOR_EXISTS,
         self::OPERATOR_NOT_EXISTS,
+        self::OPERATOR_ENDS_WITH,
+        self::OPERATOR_EMAIL_DOMAIN,
     ];
 
     public function getEntityName(): string
@@ -61,7 +69,7 @@ class Sw6OidcAccessControlRuleDefinition extends EntityDefinition
             (new IdField('id', 'id'))->addFlags(new ApiAware(), new PrimaryKey(), new Required()),
             (new FkField('provider_id', 'providerId', Sw6OidcProviderDefinition::class))->addFlags(new ApiAware(), new Required()),
             (new StringField('claim_key', 'claimKey'))->addFlags(new ApiAware(), new Required()),
-            (new StringField('operator', 'operator', 16))->addFlags(new ApiAware(), new Required()),
+            (new StringField('operator', 'operator', 16))->addFlags(new ApiAware(), new Required(), new Choice(self::OPERATORS, true)),
             (new StringField('value', 'value', 1024))->addFlags(new ApiAware()),
             (new StringField('error_message', 'errorMessage', 1024))->addFlags(new ApiAware()),
             (new IntField('sort_order', 'sortOrder'))->addFlags(new ApiAware()),

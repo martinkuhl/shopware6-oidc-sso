@@ -1,0 +1,25 @@
+{
+  "base": "/bundles/sw6oidc/administration/",
+  "entryPoints": {
+    "sw6-oidc": {
+      "css": [
+        "/bundles/sw6oidc/administration/assets/sw6-oidc-BOCPErVo.css"
+      ],
+      "dynamic": [],
+      "js": [
+        "/bundles/sw6oidc/administration/assets/sw6-oidc-AX9RzOW-.js"
+      ],
+      "legacy": false,
+      "preload": []
+    }
+  },
+  "legacy": false,
+  "metadatas": {},
+  "version": [
+    "7.1.0",
+    7,
+    1,
+    0
+  ],
+  "viteServer": null
+}

@@ -11,7 +11,7 @@ use Shopware\Core\Framework\Context;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * OIDC Front-Channel Logout 1.0 receiver: the IdP's logout page embeds this
@@ -25,9 +25,10 @@ use Symfony\Component\Routing\Annotation\Route;
  *
  * Always answers 200 with a 1×1 transparent GIF, whatever happened — the
  * IdP page must render the same either way, and nothing about the outcome
- * leaks to the embedding page. Unknown sids and malformed requests count
- * against Sw6OidcRateLimiter (a blocked address still gets the GIF, but
- * nothing is processed), which stops sid guessing.
+ * leaks to the embedding page. Only malformed requests count against
+ * Sw6OidcRateLimiter (a blocked address still gets the GIF, but nothing is
+ * processed); a sid that ends nothing is normal (RP logout or back-channel
+ * logout got there first) and relies on sid entropy instead (N-M6).
  */
 #[Route(defaults: ['_routeScope' => ['storefront']])]
 class FrontChannelLogoutController extends AbstractController
@@ -52,19 +53,16 @@ class FrontChannelLogoutController extends AbstractController
     public function logout(Request $request): Response
     {
         $clientIp = $request->getClientIp();
-
-        if ($this->rateLimiter->isBlocked(Sw6OidcRateLimiter::SCOPE_FRONTCHANNEL_LOGOUT, $clientIp)) {
-            $this->logger->warning('sw6oidc: front-channel logout rate-limited.');
-
-            return $this->pixel();
-        }
-
         $issuer = $request->query->get('iss');
         $sid = $request->query->get('sid');
 
+        // The budget only counts and blocks malformed requests: a NAT whose
+        // clients sent junk must not lose its real logouts (R3-L9).
         if (!\is_string($issuer) || $issuer === '' || !\is_string($sid) || $sid === '') {
-            $this->rateLimiter->recordFailure(Sw6OidcRateLimiter::SCOPE_FRONTCHANNEL_LOGOUT, $clientIp);
-            $this->logger->info('sw6oidc: front-channel logout without iss/sid, nothing to do.');
+            if (!$this->rateLimiter->isBlocked(Sw6OidcRateLimiter::SCOPE_FRONTCHANNEL_LOGOUT, $clientIp)) {
+                $this->rateLimiter->recordFailure(Sw6OidcRateLimiter::SCOPE_FRONTCHANNEL_LOGOUT, $clientIp);
+                $this->logger->info('sw6oidc: front-channel logout without iss/sid, nothing to do.');
+            }
 
             return $this->pixel();
         }
@@ -72,12 +70,20 @@ class FrontChannelLogoutController extends AbstractController
         $ended = 0;
 
         foreach ($this->providerResolver->findByIssuer($issuer, Context::createDefaultContext()) as $provider) {
-            $ended += \count($this->logoutHandler->logout($provider->getId(), null, $sid, Sw6OidcSessionActivityDefinition::LOGOUT_REASON_FRONTCHANNEL));
+            $ended += \count($this->logoutHandler->logout(
+                $provider->getId(),
+                null,
+                $sid,
+                Sw6OidcSessionActivityDefinition::LOGOUT_REASON_FRONTCHANNEL,
+                $provider->isFrontchannelAdminLogout(),
+            ));
         }
 
-        if ($ended === 0) {
-            $this->rateLimiter->recordFailure(Sw6OidcRateLimiter::SCOPE_FRONTCHANNEL_LOGOUT, $clientIp);
-        }
+        // Ending nothing is the normal case (RP-initiated or back-channel
+        // logout got there first, the session expired) and is not counted
+        // as a failure — only malformed requests are (N-M6). A `sid` is a
+        // high-entropy capability; guessing it is not practical.
+        $this->logger->info('sw6oidc: front-channel logout processed.', ['sessionsEnded' => $ended]);
 
         return $this->pixel();
     }

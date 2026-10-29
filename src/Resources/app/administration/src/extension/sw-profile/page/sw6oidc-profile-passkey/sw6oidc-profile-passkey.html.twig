@@ -1,19 +1,28 @@
 {% block sw6oidc_profile_passkey %}
 <div class="sw6oidc-profile-passkey">
-    <sw-card
+    <mt-card
         :title="$t('sw6oidc.passkeySettings.profileCardTitle')"
         position-identifier="sw6oidc-profile-passkey"
     >
-        <mt-button
-            class="sw6oidc-profile-passkey__register-button"
-            variant="primary"
-            size="small"
-            :is-loading="isRegistering"
-            :disabled="isRegistering"
-            @click="registerPasskey"
-        >
-            {{ $t('sw6oidc.passkeySettings.registerButton') }}
-        </mt-button>
+        <div class="sw6oidc-profile-passkey__register">
+            <mt-text-field
+                v-model="nickname"
+                class="sw6oidc-profile-passkey__nickname"
+                :label="$t('sw6oidc.passkeySettings.registerNicknamePrompt')"
+                :maxlength="255"
+            />
+
+            <mt-button
+                class="sw6oidc-profile-passkey__register-button"
+                variant="primary"
+                size="small"
+                :is-loading="isRegistering"
+                :disabled="isRegistering"
+                @click="onClickRegister"
+            >
+                {{ $t('sw6oidc.passkeySettings.registerButton') }}
+            </mt-button>
+        </div>
 
         <sw-data-grid
             v-if="credentials.length"
@@ -24,11 +33,26 @@
             :show-actions="true"
             :is-loading="isLoading"
         >
+            <template #column-createdAt="{ item }">
+                {{ item.createdAt ? dateFilter(item.createdAt, { hour: '2-digit', minute: '2-digit' }) : '' }}
+            </template>
+
+            <template #column-nickname="{ item }">
+                {{ item.nickname }}
+                <mt-badge
+                    v-if="item.disabled"
+                    variant="critical"
+                    size="s"
+                >
+                    {{ $t('sw6oidc.passkeySettings.disabledBadge') }}
+                </mt-badge>
+            </template>
+
             <template #actions="{ item }">
                 <sw-context-menu-item
                     variant="danger"
                     :disabled="deletingId === item.id"
-                    @click="deleteCredential(item)"
+                    @click="credentialToDelete = item"
                 >
                     {{ $t('global.default.delete') }}
                 </sw-context-menu-item>
@@ -41,6 +65,40 @@
         >
             {{ $t('sw6oidc.passkeySettings.profileEmptyState') }}
         </p>
-    </sw-card>
+    </mt-card>
+
+    <sw-verify-user-modal
+        v-if="showVerifyModal"
+        @verified="onVerified"
+        @close="showVerifyModal = false"
+    />
+
+    <sw-modal
+        v-if="credentialToDelete"
+        :title="$t('global.default.delete')"
+        variant="small"
+        @modal-close="credentialToDelete = null"
+    >
+        <p>{{ $t('sw6oidc.passkeySettings.deleteConfirm') }}</p>
+        {# Admin sessions can't be ended one by one (F-6). #}
+        <p>{{ $t('sw6oidc.passkeySettings.deleteConfirmSessionsOwn') }}</p>
+
+        <template #modal-footer>
+            <mt-button
+                variant="secondary"
+                size="small"
+                @click="credentialToDelete = null"
+            >
+                {{ $t('global.default.cancel') }}
+            </mt-button>
+            <mt-button
+                variant="critical"
+                size="small"
+                @click="deleteCredential(credentialToDelete)"
+            >
+                {{ $t('global.default.delete') }}
+            </mt-button>
+        </template>
+    </sw-modal>
 </div>
 {% endblock %}

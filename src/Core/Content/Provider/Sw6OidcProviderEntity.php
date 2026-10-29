@@ -7,6 +7,7 @@ use MartinKuhl\Sw6Oidc\Core\Content\AttributeMapping\Sw6OidcAttributeMappingColl
 use MartinKuhl\Sw6Oidc\Core\Content\RoleMapping\Sw6OidcRoleMappingCollection;
 use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupEntity;
 use Shopware\Core\Framework\Api\Acl\Role\AclRoleEntity;
+use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 use Shopware\Core\Framework\DataAbstractionLayer\Entity;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityIdTrait;
 
@@ -17,7 +18,7 @@ class Sw6OidcProviderEntity extends Entity
     protected string $appName;
     protected ?string $displayName = null;
     protected string $clientId;
-    protected string $clientSecret;
+    protected ?string $clientSecret = null;
     protected ?string $authorizeEndpoint = null;
     protected ?string $accessTokenEndpoint = null;
     protected ?string $userInfoEndpoint = null;
@@ -30,7 +31,6 @@ class Sw6OidcProviderEntity extends Entity
     protected ?string $wellKnownConfigUrl = null;
     protected string $scope = 'openid profile email';
     protected string $pkceFlow = 'S256';
-    protected string $claimEncoding = 'none';
     protected bool $publicClient = false;
     protected string $groupAttribute = 'groups';
     protected bool $autoCreateCustomer = true;
@@ -43,8 +43,6 @@ class Sw6OidcProviderEntity extends Entity
     /** 'customer'|'admin'|'both' */
     protected string $loginType = 'both';
     protected int $sortOrder = 0;
-    protected ?string $buttonLabel = null;
-    protected ?string $buttonColor = null;
     protected bool $syncCustomerProfileOnSso = false;
     protected bool $syncCustomerAddressOnSso = false;
     protected bool $syncCustomerGroupOnSso = false;
@@ -57,6 +55,16 @@ class Sw6OidcProviderEntity extends Entity
      * via OIDC group membership always requires two deliberate steps.
      */
     protected bool $allowSuperadminGroupMapping = false;
+    protected bool $requireEmailVerified = true;
+    protected bool $linkExistingAccounts = false;
+    protected bool $frontchannelAdminLogout = false;
+
+    /** @var list<string>|null */
+    protected ?array $base64Claims = null;
+    protected bool $revokeSuperadminOnSso = false;
+    protected string $logoutStyle = Sw6OidcProviderDefinition::LOGOUT_STYLE_STANDARD;
+    protected string $tokenEndpointAuthMethod = Sw6OidcProviderDefinition::CLIENT_AUTH_METHOD_BASIC;
+    protected string $revocationEndpointAuthMethod = Sw6OidcProviderDefinition::CLIENT_AUTH_METHOD_BASIC;
     protected int $httpTimeout = 30;
     protected int $jwksCacheTtl = 86400;
     /** 'pass'|'fail'|'warning'|null (never tested) — set only by the live login test */
@@ -113,12 +121,12 @@ class Sw6OidcProviderEntity extends Entity
         $this->clientId = $clientId;
     }
 
-    public function getClientSecret(): string
+    public function getClientSecret(): ?string
     {
         return $this->clientSecret;
     }
 
-    public function setClientSecret(string $clientSecret): void
+    public function setClientSecret(?string $clientSecret): void
     {
         $this->clientSecret = $clientSecret;
     }
@@ -288,16 +296,6 @@ class Sw6OidcProviderEntity extends Entity
         $this->pkceFlow = $pkceFlow;
     }
 
-    public function getClaimEncoding(): string
-    {
-        return $this->claimEncoding;
-    }
-
-    public function setClaimEncoding(string $claimEncoding): void
-    {
-        $this->claimEncoding = $claimEncoding;
-    }
-
     public function isPublicClient(): bool
     {
         return $this->publicClient;
@@ -406,26 +404,6 @@ class Sw6OidcProviderEntity extends Entity
     public function setSortOrder(int $sortOrder): void
     {
         $this->sortOrder = $sortOrder;
-    }
-
-    public function getButtonLabel(): ?string
-    {
-        return $this->buttonLabel;
-    }
-
-    public function setButtonLabel(?string $buttonLabel): void
-    {
-        $this->buttonLabel = $buttonLabel;
-    }
-
-    public function getButtonColor(): ?string
-    {
-        return $this->buttonColor;
-    }
-
-    public function setButtonColor(?string $buttonColor): void
-    {
-        $this->buttonColor = $buttonColor;
     }
 
     public function isSyncCustomerProfileOnSso(): bool
@@ -612,5 +590,110 @@ class Sw6OidcProviderEntity extends Entity
     public function setDefaultAclRole(?AclRoleEntity $defaultAclRole): void
     {
         $this->defaultAclRole = $defaultAclRole;
+    }
+
+    public function isRequireEmailVerified(): bool
+    {
+        return $this->requireEmailVerified;
+    }
+
+    public function setRequireEmailVerified(bool $requireEmailVerified): void
+    {
+        $this->requireEmailVerified = $requireEmailVerified;
+    }
+
+    public function isLinkExistingAccounts(): bool
+    {
+        return $this->linkExistingAccounts;
+    }
+
+    public function setLinkExistingAccounts(bool $linkExistingAccounts): void
+    {
+        $this->linkExistingAccounts = $linkExistingAccounts;
+    }
+
+    /**
+     * Claim names whose values are base64-encoded ("*" = all). A name covers
+     * the claim and everything nested under it.
+     *
+     * @return list<string>
+     */
+    public function getBase64Claims(): array
+    {
+        return array_values(array_filter(
+            array_map(static fn (mixed $claim): string => \is_string($claim) ? trim($claim) : '', $this->base64Claims ?? []),
+            static fn (string $claim): bool => $claim !== '',
+        ));
+    }
+
+    /**
+     * @param list<string>|null $base64Claims
+     */
+    public function setBase64Claims(?array $base64Claims): void
+    {
+        $this->base64Claims = $base64Claims;
+    }
+
+    public function isFrontchannelAdminLogout(): bool
+    {
+        return $this->frontchannelAdminLogout;
+    }
+
+    public function setFrontchannelAdminLogout(bool $frontchannelAdminLogout): void
+    {
+        $this->frontchannelAdminLogout = $frontchannelAdminLogout;
+    }
+
+    public function isRevokeSuperadminOnSso(): bool
+    {
+        return $this->revokeSuperadminOnSso;
+    }
+
+    public function setRevokeSuperadminOnSso(bool $revokeSuperadminOnSso): void
+    {
+        $this->revokeSuperadminOnSso = $revokeSuperadminOnSso;
+    }
+
+    public function getLogoutStyle(): string
+    {
+        return $this->logoutStyle;
+    }
+
+    public function setLogoutStyle(string $logoutStyle): void
+    {
+        $this->logoutStyle = $logoutStyle;
+    }
+
+    public function getTokenEndpointAuthMethod(): string
+    {
+        return $this->tokenEndpointAuthMethod;
+    }
+
+    public function setTokenEndpointAuthMethod(string $tokenEndpointAuthMethod): void
+    {
+        $this->tokenEndpointAuthMethod = $tokenEndpointAuthMethod;
+    }
+
+    public function getRevocationEndpointAuthMethod(): string
+    {
+        return $this->revocationEndpointAuthMethod;
+    }
+
+    public function setRevocationEndpointAuthMethod(string $revocationEndpointAuthMethod): void
+    {
+        $this->revocationEndpointAuthMethod = $revocationEndpointAuthMethod;
+    }
+
+    /**
+     * The decrypted client secret, or null when it is empty or could not be
+     * decrypted (hydration passes an undecryptable envelope through). Use
+     * this wherever the secret is about to be sent or exported, so
+     * ciphertext is never used as if it were the secret (N-L5).
+     */
+    public function getUsableClientSecret(): ?string
+    {
+        return $this->clientSecret === null || $this->clientSecret === '' || Sw6OidcEncryptor::isEnvelope($this->clientSecret)
+            ? null
+            : $this->clientSecret;
     }
 }

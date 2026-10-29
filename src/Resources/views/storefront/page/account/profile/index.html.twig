@@ -1,0 +1,36 @@
+{% sw_extends '@Storefront/storefront/page/account/profile/index.html.twig' %}
+
+{% block page_account_profile_credentials %}
+    {{ parent() }}
+
+    {% block sw6oidc_account_profile_sso %}
+        {% set sw6oidcAccountSso = sw6oidc_storefront_account_sso(context) %}
+
+        {% if sw6oidcAccountSso.bound or sw6oidcAccountSso.providers is not empty %}
+            <div class="card account-profile-sw6oidc-sso mb-4">
+                <div class="card-body">
+                    <div class="card-title">
+                        {{ 'sw6oidc.account.ssoTitle'|trans }}
+                    </div>
+
+                    {% if sw6oidcAccountSso.bound %}
+                        <p class="mb-0">
+                            {{ 'sw6oidc.account.ssoConnected'|trans({ '%name%': sw6oidcAccountSso.boundLabel }) }}
+                        </p>
+                    {% else %}
+                        <p>{{ 'sw6oidc.account.ssoIntro'|trans }}</p>
+
+                        {% for sw6oidcProvider in sw6oidcAccountSso.providers %}
+                            <form method="post" action="{{ path('frontend.sw6oidc.link') }}" class="d-inline-block me-2 mb-2">
+                                <input type="hidden" name="providerId" value="{{ sw6oidcProvider.id }}">
+                                <button type="submit" class="btn btn-outline-primary">
+                                    {{ 'sw6oidc.account.ssoConnect'|trans({ '%name%': sw6oidcProvider.label }) }}
+                                </button>
+                            </form>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+    {% endblock %}
+{% endblock %}

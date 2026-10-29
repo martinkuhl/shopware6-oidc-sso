@@ -1,0 +1,33 @@
+# Test-only Dex configuration for the browser E2E suite. Credentials here are
+# fixtures, never real ones. Password for both users: "password".
+issuer: http://dex:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  responseTypes: ["code"]
+  skipApprovalScreen: true
+
+enablePasswordDB: true
+
+staticClients:
+  - id: shopware-e2e
+    name: Shopware E2E
+    secret: shopware-e2e-secret
+    redirectURIs:
+      - http://localhost/sw6oidc/callback
+      - http://localhost/api/sw6oidc/admin/callback
+
+staticPasswords:
+  - email: customer@example.com
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: customer
+    userID: 1b2c3d4e-0000-4000-8000-00000000c001
+  - email: admin@example.com
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: admin
+    userID: 1b2c3d4e-0000-4000-8000-00000000a001

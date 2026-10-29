@@ -2,6 +2,8 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Passkey;
 
+use Doctrine\DBAL\Connection;
+use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyCredentialRepository;
 use MartinKuhl\Sw6Oidc\Service\Passkey\WebauthnCeremonyFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -9,6 +11,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\Uuid\Uuid;
+use Webauthn\CredentialRecord;
 use Webauthn\TrustPath\EmptyTrustPath;
 
 #[CoversClass(PasskeyCredentialRepository::class)]
@@ -32,6 +35,7 @@ final class PasskeyCredentialRepositoryTest extends TestCase
             $this->store->wire($this->createMock(EntityRepository::class)),
             new WebauthnCeremonyFactory(),
             new NullLogger(),
+            $this->store->connection($this->createMock(Connection::class)),
         );
     }
 
@@ -40,7 +44,7 @@ final class PasskeyCredentialRepositoryTest extends TestCase
         $rawId = (string) base64_decode('OqgFHZhKQWaxLK8ZEvagkw==', true);
         $this->addLegacyRow($rawId);
 
-        $record = $this->repository->findOneByCredentialId($rawId);
+        $record = $this->record($rawId);
 
         self::assertNotNull($record);
         self::assertSame($rawId, $record->publicKeyCredentialId);
@@ -54,13 +58,13 @@ final class PasskeyCredentialRepositoryTest extends TestCase
     {
         $rawId = (string) base64_decode('OqgFHZhKQWaxLK8ZEvagkw==', true);
         $this->addLegacyRow($rawId);
-        $record = $this->repository->findOneByCredentialId($rawId);
+        $record = $this->record($rawId);
         self::assertNotNull($record);
 
         $record->counter = 7;
-        $this->repository->updateAfterAssertion($record);
+        $this->repository->updateAfterAssertion($this->entity($rawId), $record);
 
-        $reloaded = $this->repository->findOneByCredentialId($rawId);
+        $reloaded = $this->record($rawId);
         self::assertNotNull($reloaded);
         self::assertSame(7, $reloaded->counter);
         self::assertSame($record->credentialPublicKey, $reloaded->credentialPublicKey);
@@ -82,13 +86,47 @@ final class PasskeyCredentialRepositoryTest extends TestCase
     {
         $rawId = (string) base64_decode('OqgFHZhKQWaxLK8ZEvagkw==', true);
         $this->addLegacyRow($rawId);
-        $record = $this->repository->findOneByCredentialId($rawId);
+        $record = $this->record($rawId);
         self::assertNotNull($record);
+        $entity = $this->entity($rawId);
         $this->store->rows = [];
 
-        $this->repository->updateAfterAssertion($record);
+        // Deleted meanwhile: the update matches nothing and recreates nothing.
+        $this->repository->updateAfterAssertion($entity, $record);
 
         self::assertSame([], $this->store->rows);
+    }
+
+    public function testALowerCounterNeverOverwritesAHigherOne(): void
+    {
+        $rawId = (string) base64_decode('OqgFHZhKQWaxLK8ZEvagkw==', true);
+        $this->addLegacyRow($rawId);
+        $entity = $this->entity($rawId);
+        $record = $this->record($rawId);
+        self::assertNotNull($record);
+
+        // Two concurrent assertions: counter 9 is stored first, then 8 (R3-L15).
+        $record->counter = 9;
+        $this->repository->updateAfterAssertion($entity, $record);
+        $record->counter = 8;
+        $this->repository->updateAfterAssertion($entity, $record);
+
+        self::assertSame(9, $this->store->rows[array_key_first($this->store->rows)]['signCount']);
+    }
+
+    private function record(string $rawId): ?CredentialRecord
+    {
+        $entity = $this->repository->findEntityByCredentialId(base64_encode($rawId));
+
+        return $entity instanceof Sw6OidcPasskeyCredentialEntity ? $this->repository->toRecord($entity) : null;
+    }
+
+    private function entity(string $rawId): Sw6OidcPasskeyCredentialEntity
+    {
+        $entity = $this->repository->findEntityByCredentialId(base64_encode($rawId));
+        self::assertInstanceOf(Sw6OidcPasskeyCredentialEntity::class, $entity);
+
+        return $entity;
     }
 
     private function addLegacyRow(string $rawId): void

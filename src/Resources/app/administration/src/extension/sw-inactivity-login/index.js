@@ -4,37 +4,29 @@ import {
     preparePublicKeyRequestOptions,
     serializeAssertionCredential,
 } from '../../service/webauthn-codec';
+import Sw6oidcApiService from '../../service/sw6oidc-api.service';
 import { rememberSsoReturnRoute } from '../../service/sso-return-route';
+import { completeLogin, rememberRememberMe } from '../../service/login-completion';
 
 const { Component } = Shopware;
 
 /**
- * Adds "Login with <provider>" (OIDC) buttons and a "Login with Passkey"
- * option to Shopware's own inactivity/session-
- * timeout re-login modal (core module/sw-inactivity-login) - the SPA
- * navigates here in-place (no full page reload) whenever a background token
- * refresh fails while the admin is actively using the app, so - unlike the
- * pre-auth sw-login-login screen - this component is always reached through
- * Shopware's normal loadPlugins() mechanism after a full boot already ran.
- * No forced early script injection and no translation fallback is needed
- * here; our own snippet files are already loaded normally by this point.
+ * Adds "Login with <provider>" and "Login with Passkey" to core's inactivity
+ * re-login modal. The modal resumes the session of `lastKnownUser`, so both
+ * paths make sure the *same* admin comes back:
  *
- * Reuses the same email-scoped WebAuthn ceremony as the main login screen,
- * but narrowed to lastKnownUser (already known here, unlike the main screen)
- * via PasskeyAdminController::loginOptions()'s optional `email` parameter -
- * tighter/faster than a fully discoverable-credential flow, since we already
- * know exactly which admin is re-authenticating.
- *
- * The SSO buttons start the normal admin OIDC login (full-page redirect);
- * the page the admin was on is carried over in sessionStorage
- * (service/sso-return-route) and restored by the sw-login override after the
- * nonce exchange. With password login disabled for admins, the password
- * field and the "Log in" button are hidden, as on the main login screen.
+ * - Passkey: the expected username goes to login-verify, which refuses an
+ *   assertion by anybody else (F-H6).
+ * - SSO: a full-page round trip. The page the admin was on and the expected
+ *   username are stored for exactly this round trip (service/sso-return-route);
+ *   the login screen only resumes the old session for the same admin (F-N1).
+ *   Core's per-tab session entries (screenshot, previous route) are cleared
+ *   before leaving, as core's own re-login does (F-N13).
  */
 Component.override('sw-inactivity-login', {
     template,
 
-    inject: ['loginService'],
+    inject: ['loginService', 'sw6oidcApiService'],
 
     data() {
         return {
@@ -55,43 +47,45 @@ Component.override('sw-inactivity-login', {
     methods: {
         async sw6oidcLoadLoginOptions() {
             try {
-                const response = await fetch('/api/sw6oidc/admin/login-options');
+                const { ssoProviders, passkeyAvailable, passwordLoginDisabled } = await this.sw6oidcApiService.get(
+                    'sw6oidc/admin/login-options',
+                    { anonymous: true },
+                );
 
-                if (!response.ok) {
-                    return;
-                }
-
-                const { ssoProviders, passkeyAvailable, passwordLoginDisabled } = await response.json();
                 this.sw6oidcSsoProviders = Array.isArray(ssoProviders) ? ssoProviders : [];
                 this.sw6oidcPasskeyAvailable = Boolean(passkeyAvailable);
-                this.sw6oidcPasswordLoginDisabled = Boolean(passwordLoginDisabled);
-            } catch (exception) {
-                // eslint-disable-next-line no-console
-                console.error('sw6oidc: failed to load admin login options', exception);
+                // Only hide the password form when this screen offers another way in (F-N4).
+                this.sw6oidcPasswordLoginDisabled = Boolean(passwordLoginDisabled)
+                    && (this.sw6oidcSsoProviders.length > 0 || this.sw6oidcPasskeyAvailable);
+            } catch {
+                this.sw6oidcSsoProviders = [];
+                this.sw6oidcPasskeyAvailable = false;
             }
         },
 
         sw6oidcSsoButtonLabel(provider) {
             return provider.label
-                ? this.$t('sw6oidc.login.ssoButtonWithProvider', { name: provider.label })
-                : this.$t('sw6oidc.login.ssoButton');
+                ? this.$t('sw-login.sw6oidc.login.ssoButtonWithProvider', { name: provider.label })
+                : this.$t('sw-login.sw6oidc.login.ssoButton');
         },
 
-        /**
-         * OIDC re-login is a full-page round trip through the IdP (usually
-         * instant while the IdP session is still alive). Core keeps the page
-         * the admin was on under sw-admin-previous-route_<hash>; copy it so the
-         * sw-login override can return there after the nonce exchange.
-         */
         sw6oidcStartSsoLogin(providerId) {
+            const previousRouteKey = `sw-admin-previous-route_${this.hash}`;
+            let returnId = null;
+
             try {
-                const previousRoute = JSON.parse(sessionStorage.getItem(`sw-admin-previous-route_${this.hash}`) || '{}');
-                rememberSsoReturnRoute(previousRoute?.fullPath);
+                const previousRoute = JSON.parse(sessionStorage.getItem(previousRouteKey) || '{}');
+                returnId = rememberSsoReturnRoute(previousRoute?.fullPath, this.lastKnownUser);
             } catch {
                 // No previous route: land on the dashboard after re-login.
             }
 
-            window.location.href = `/api/sw6oidc/admin/login?providerId=${encodeURIComponent(providerId)}`;
+            sessionStorage.removeItem(previousRouteKey);
+            sessionStorage.removeItem(`inactivityBackground_${this.hash}`);
+            rememberRememberMe(this.rememberMe);
+
+            const query = `providerId=${encodeURIComponent(providerId)}${returnId ? `&sw6oidc_return=${returnId}` : ''}`;
+            window.location.href = Sw6oidcApiService.absoluteUrl(`sw6oidc/admin/login?${query}`);
         },
 
         async sw6oidcStartPasskeyLogin() {
@@ -104,54 +98,27 @@ Component.override('sw-inactivity-login', {
             this.sw6oidcPasskeyPending = true;
 
             try {
-                const optionsResponse = await fetch('/api/sw6oidc/admin/passkey/login-options', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ email: this.lastKnownUser }),
-                });
-
-                if (!optionsResponse.ok) {
-                    throw new Error(`Passkey options request failed with status ${optionsResponse.status}`);
-                }
-
-                const { sessionId, options } = await optionsResponse.json();
+                const { sessionId, options } = await this.sw6oidcApiService.post('sw6oidc/admin/passkey/login-options', {}, { anonymous: true });
 
                 const assertion = await navigator.credentials.get({
                     publicKey: preparePublicKeyRequestOptions(options),
                 });
 
-                const verifyResponse = await fetch('/api/sw6oidc/admin/passkey/login-verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({
-                        sessionId,
-                        credential: JSON.stringify(serializeAssertionCredential(assertion)),
-                    }),
-                });
+                const tokenData = await this.sw6oidcApiService.post('sw6oidc/admin/passkey/login-verify', {
+                    sessionId,
+                    credential: JSON.stringify(serializeAssertionCredential(assertion)),
+                    // core keeps the *username* in lastKnownUser
+                    expectedUsername: this.lastKnownUser,
+                }, { anonymous: true });
 
-                if (!verifyResponse.ok) {
-                    throw new Error(`Passkey login failed with status ${verifyResponse.status}`);
-                }
+                completeLogin(this.loginService, tokenData, this.rememberMe);
 
-                const tokenData = await verifyResponse.json();
-
-                this.loginService.setBearerAuthentication({
-                    access: tokenData.access_token,
-                    refresh: tokenData.refresh_token,
-                    expiry: tokenData.expires_in,
-                });
-
-                // handleLoginSuccess() is the ORIGINAL component's own method
-                // - Component.override() merges into the same instance, so
-                // it's still available on `this`. It calls forwardLogin(),
-                // which already does the router-push + window.location.reload()
-                // dance itself and notifies the other-tab session channel -
-                // no need to duplicate any of that here.
+                // Core's own success path: route back, reload, wake other tabs.
                 this.handleLoginSuccess();
-            } catch (exception) {
-                this.sw6oidcPasskeyError = 'login_failed';
-                // eslint-disable-next-line no-console
-                console.error('sw6oidc: inactivity passkey login failed', exception);
+            } catch (error) {
+                this.sw6oidcPasskeyError = Sw6oidcApiService.errorCode(error) === 'different_user'
+                    ? 'different_user'
+                    : 'login_failed';
             } finally {
                 this.sw6oidcPasskeyPending = false;
             }

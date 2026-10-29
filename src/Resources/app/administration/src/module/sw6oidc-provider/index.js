@@ -4,10 +4,8 @@ import { registerModuleWhenReady } from '../../service/defer-module-register';
 
 /**
  * Administration module for managing OIDC providers (+ nested attribute/role
- * mappings) — sw6oidc_provider is a normal DAL entity, so declaring `entity`
- * here is enough for Shopware to auto-generate the standard CRUD privileges
- * (sw6oidc_provider.viewer/editor/creator/deleter) without any separate ACL
- * XML, exactly as the plan's Administration settings UI section describes.
+ * mappings). The role privileges (sw6oidc_provider.viewer/editor/creator/
+ * deleter) are mapped in acl/index.js.
  *
  * Registered via registerModuleWhenReady() rather than a bare
  * Shopware.Module.register() call - see that function's own comment for why.

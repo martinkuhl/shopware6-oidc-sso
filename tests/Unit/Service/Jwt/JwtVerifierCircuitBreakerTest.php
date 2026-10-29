@@ -51,7 +51,7 @@ final class JwtVerifierCircuitBreakerTest extends TestCase
         } catch (InvalidJwtException) {
         }
 
-        self::assertTrue($cache->getItem('sw6oidc_jwks_fail_' . hash('sha256', self::JWKS))->isHit());
+        self::assertTrue($cache->getItem('sw6oidc_jwks_fail_login_' . hash('sha256', self::JWKS))->isHit());
         self::assertFalse($cache->getItem('sw6oidc_jwks_' . hash('sha256', self::JWKS))->isHit());
     }
 
@@ -88,6 +88,70 @@ final class JwtVerifierCircuitBreakerTest extends TestCase
         self::assertSame(2, $client->getRequestsCount());
     }
 
+    public function testForgedTokensWithAKnownKeyNeverCostARefetch(): void
+    {
+        $signer = new JwtTestSigner('test-key');
+        $forger = new JwtTestSigner('test-key');
+        $client = new MockHttpClient(static fn (): MockResponse => new MockResponse($signer->jwksJson()));
+        $verifier = new JwtVerifier($client, new ArrayAdapter(), new NullLogger());
+
+        for ($i = 0; $i < 3; ++$i) {
+            try {
+                $this->verify($verifier, $forger->sign($this->claims()));
+                self::fail('Expected InvalidJwtException');
+            } catch (InvalidJwtException) {
+            }
+        }
+
+        self::assertSame(1, $client->getRequestsCount(), 'a known kid with a bad signature is forged, not rotated');
+    }
+
+    /**
+     * N-H2: anonymous back-channel requests can't use up the key-rotation
+     * refetch that logins need.
+     */
+    public function testBackChannelAbuseDoesNotBlockKeyRotationForLogins(): void
+    {
+        $old = new JwtTestSigner('old');
+        $new = new JwtTestSigner('new');
+        $attacker = new JwtTestSigner('new');
+        $client = new MockHttpClient([
+            new MockResponse($old->jwksJson()),
+            new MockResponse($old->jwksJson()),
+            new MockResponse($new->jwksJson()),
+        ]);
+        $verifier = new JwtVerifier($client, new ArrayAdapter(), new NullLogger());
+
+        // The attacker signs logout tokens naming the kid the IdP is about to rotate to.
+        try {
+            $verifier->verifyLogoutToken($attacker->sign($this->logoutClaims()), self::JWKS, 'https://idp.example', 'client', 3600, 5);
+            self::fail('Expected InvalidJwtException');
+        } catch (InvalidJwtException) {
+        }
+
+        // The IdP rotates; the next login still gets its refetch.
+        $claims = $this->verify($verifier, $new->sign($this->claims()));
+
+        self::assertSame('user-1', $claims['sub']);
+        self::assertSame(3, $client->getRequestsCount());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function logoutClaims(): array
+    {
+        return [
+            'iss' => 'https://idp.example',
+            'aud' => 'client',
+            'sub' => 'user-1',
+            'iat' => time(),
+            'exp' => time() + 120,
+            'jti' => 'jti-1',
+            'events' => [JwtVerifier::BACKCHANNEL_LOGOUT_EVENT => new \stdClass()],
+        ];
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -101,6 +165,6 @@ final class JwtVerifierCircuitBreakerTest extends TestCase
      */
     private function claims(): array
     {
-        return ['iss' => 'https://idp.example', 'aud' => 'client', 'sub' => 'user-1', 'exp' => time() + 300, 'nonce' => 'nonce-1'];
+        return ['iss' => 'https://idp.example', 'aud' => 'client', 'sub' => 'user-1', 'exp' => time() + 300, 'iat' => time(), 'nonce' => 'nonce-1'];
     }
 }

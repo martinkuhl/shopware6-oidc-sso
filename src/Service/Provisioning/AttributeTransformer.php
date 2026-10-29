@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Provisioning;
 
+use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\AttributeTransformFailedException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -18,9 +19,11 @@ use Psr\Log\LoggerInterface;
  *  - regex_replace {pattern: string, replacement?: string}
  *                  input and pattern capped at 4096 bytes
  *
- * Never throws: an unknown function, invalid params or a failing regex logs a
- * warning and passes the raw value through unchanged, so a misconfigured
- * mapping degrades to "no transform" instead of breaking every login.
+ * Lenient by default: an unknown function, invalid params or a failing regex
+ * logs a warning and passes the raw value through unchanged, so a
+ * misconfigured mapping degrades to "no transform". For identity attributes
+ * (email, username) the strict mode throws AttributeTransformFailedException
+ * instead, since the raw value would be used for account linking (N-L7).
  */
 class AttributeTransformer
 {
@@ -31,7 +34,7 @@ class AttributeTransformer
 
     public const FUNCTIONS = [self::CONCAT, self::SPLIT, self::PREFIX, self::REGEX_REPLACE];
 
-    private const MAX_REGEX_BYTES = 4096;
+    public const MAX_REGEX_BYTES = 4096;
 
     public function __construct(private readonly LoggerInterface $logger)
     {
@@ -40,8 +43,12 @@ class AttributeTransformer
     /**
      * @param array<string, mixed> $params
      * @param array<string, mixed> $flattenedClaims
+     * @param bool                 $strict for identity attributes (email, username): a failed transform
+     *                                     fails the login instead of passing the raw IdP value through
+     *
+     * @throws AttributeTransformFailedException in strict mode
      */
-    public function apply(?string $function, array $params, ?string $value, array $flattenedClaims): ?string
+    public function apply(?string $function, array $params, ?string $value, array $flattenedClaims, bool $strict = false): ?string
     {
         if ($function === null || $function === '') {
             return $value;
@@ -56,6 +63,15 @@ class AttributeTransformer
                 default => throw new \InvalidArgumentException(sprintf('Unknown transform function "%s".', $function)),
             };
         } catch (\Throwable $exception) {
+            if ($strict) {
+                $this->logger->warning('sw6oidc: transform of an identity attribute failed; refusing the login.', [
+                    'function' => $function,
+                    'exception' => $exception->getMessage(),
+                ]);
+
+                throw new AttributeTransformFailedException(sprintf('The "%s" transform failed.', $function), $exception);
+            }
+
             $this->logger->warning('sw6oidc: attribute transform failed; using the untransformed value.', [
                 'function' => $function,
                 'exception' => $exception->getMessage(),

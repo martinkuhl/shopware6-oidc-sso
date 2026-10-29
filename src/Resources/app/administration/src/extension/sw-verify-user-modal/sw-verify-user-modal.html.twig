@@ -1,0 +1,34 @@
+{% block sw_settings_user_detail_content_confirm_password_modal_input__confirm_password %}
+{% parent %}
+
+<div
+    v-if="sw6oidcStepUpMethods.oidc || sw6oidcStepUpMethods.passkey"
+    class="sw6oidc-step-up"
+>
+    <p class="sw6oidc-step-up__hint">
+        {{ $t('sw6oidc.stepUp.hint') }}
+    </p>
+
+    <div class="sw6oidc-step-up__actions">
+        <mt-button
+            v-if="sw6oidcStepUpMethods.oidc"
+            variant="secondary"
+            size="small"
+            :disabled="sw6oidcStepUpBusy"
+            @click="sw6oidcStepUpWithSso"
+        >
+            {{ $t('sw6oidc.stepUp.sso') }}
+        </mt-button>
+
+        <mt-button
+            v-if="sw6oidcStepUpMethods.passkey"
+            variant="secondary"
+            size="small"
+            :disabled="sw6oidcStepUpBusy"
+            @click="sw6oidcStepUpWithPasskey"
+        >
+            {{ $t('sw6oidc.stepUp.passkey') }}
+        </mt-button>
+    </div>
+</div>
+{% endblock %}

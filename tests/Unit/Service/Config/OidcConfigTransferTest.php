@@ -19,13 +19,14 @@ use MartinKuhl\Sw6Oidc\Service\Config\OidcConfigTransfer;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupDefinition;
 use Shopware\Core\Framework\Api\Acl\Role\AclRoleDefinition;
 use Shopware\Core\Framework\Api\Acl\Role\AclRoleEntity;
-use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupDefinition;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\IdSearchResult;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\EntityWriteGatewayInterface;
 use Shopware\Core\Framework\Uuid\Uuid;
@@ -60,6 +61,9 @@ final class OidcConfigTransferTest extends TestCase
     private array $transactionLog = [];
 
     private string $storedSecret = 'plain-legacy';
+
+    /** What entity hydration produced (an envelope when it could not decrypt). */
+    private string $hydratedSecret = 'decrypted-secret';
 
     protected function setUp(): void
     {
@@ -98,12 +102,22 @@ final class OidcConfigTransferTest extends TestCase
         self::assertSame('decrypted-secret', $this->exportOne(OidcConfigTransfer::SECRET_PLAINTEXT)['clientSecret']);
     }
 
+    public function testExportPlaintextRefusesAnUndecryptableSecret(): void
+    {
+        $this->hydratedSecret = (new Sw6OidcEncryptor('rotated'))->encrypt('secret', 'sw6oidc_provider.client_secret');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('cannot be decrypted');
+
+        $this->exportOne(OidcConfigTransfer::SECRET_PLAINTEXT);
+    }
+
     public function testExportEncryptedKeepsEnvelopeAndEncryptsLegacyPlaintextRows(): void
     {
         $this->storedSecret = 'legacy-plain';
-        self::assertSame('legacy-plain', $this->encryptor->decrypt($this->exportOne(OidcConfigTransfer::SECRET_ENCRYPTED)['clientSecret']));
+        self::assertSame('legacy-plain', $this->encryptor->decrypt($this->exportOne(OidcConfigTransfer::SECRET_ENCRYPTED)['clientSecret'], 'sw6oidc_provider.client_secret'));
 
-        $this->storedSecret = $this->encryptor->encrypt('already');
+        $this->storedSecret = $this->encryptor->encrypt('already', 'sw6oidc_provider.client_secret');
         self::assertSame($this->storedSecret, $this->exportOne(OidcConfigTransfer::SECRET_ENCRYPTED)['clientSecret']);
     }
 
@@ -152,7 +166,7 @@ final class OidcConfigTransferTest extends TestCase
     {
         $result = $this->transfer()->import($this->exportFile(withSecret: true), false, false, false, Context::createDefaultContext());
         self::assertArrayHasKey('authelia', $result->failed);
-        self::assertSame([], $this->upserts);
+        self::assertCount(0, $this->upserts);
 
         $result = $this->transfer()->import($this->exportFile(withSecret: true), false, true, false, Context::createDefaultContext());
         self::assertSame(['authelia'], $result->created);
@@ -191,6 +205,37 @@ final class OidcConfigTransferTest extends TestCase
         self::assertArrayNotHasKey('clientSecret', $this->upserts[0]);
         self::assertSame(['attribute', 'role', 'rule'], $this->childDeletes);
         self::assertSame(['begin', 'commit'], $this->transactionLog);
+    }
+
+    public function testOverwriteKeepsCollectionsAndReferencesMissingFromTheFile(): void
+    {
+        $this->existingProviderIds = [$this->providerId];
+        $this->existingRefs['acl_role'] = [$this->aclRole()->getId()];
+
+        $file = $this->exportFile(withSecret: false);
+        unset($file['providers'][0]['accessControlRules'], $file['providers'][0]['defaultAclRole']);
+
+        $result = $this->transfer()->import($file, true, false, false, Context::createDefaultContext());
+
+        self::assertSame(['attribute', 'role'], $this->childDeletes, 'stored access-control rules are kept (N-L11)');
+        self::assertArrayNotHasKey('accessControlRules', $this->upserts[0]);
+        self::assertArrayNotHasKey('defaultAclRoleId', $this->upserts[0]);
+        self::assertArrayHasKey('attributeMappings', $this->upserts[0]);
+        self::assertStringContainsString('accessControlRules', implode(' ', $result->warnings['authelia'] ?? []));
+    }
+
+    public function testOverwriteWithAnEmptyListStillClearsThatCollection(): void
+    {
+        $this->existingProviderIds = [$this->providerId];
+        $this->existingRefs['acl_role'] = [$this->aclRole()->getId()];
+
+        $file = $this->exportFile(withSecret: false);
+        $file['providers'][0]['accessControlRules'] = [];
+
+        $this->transfer()->import($file, true, false, false, Context::createDefaultContext());
+
+        self::assertSame(['attribute', 'role', 'rule'], $this->childDeletes);
+        self::assertSame([], $this->upserts[0]['accessControlRules']);
     }
 
     public function testDryRunWrapsEverythingInARolledBackTransaction(): void
@@ -300,7 +345,9 @@ final class OidcConfigTransferTest extends TestCase
                 return $this->ids(array_values(array_intersect($criteria->getIds(), $this->existingRefs[$entity])), $criteria);
             }
 
-            $name = $criteria->getFilters()[0]->getValue();
+            $filter = $criteria->getFilters()[0];
+            self::assertInstanceOf(EqualsFilter::class, $filter);
+            $name = $filter->getValue();
 
             return $this->ids(isset($this->refsByName[$entity][$name]) ? [$this->refsByName[$entity][$name]] : [], $criteria);
         });
@@ -313,7 +360,13 @@ final class OidcConfigTransferTest extends TestCase
      */
     private function ids(array $ids, Criteria $criteria): IdSearchResult
     {
-        return new IdSearchResult(\count($ids), array_map(static fn ($id): array => ['primaryKey' => $id, 'data' => []], $ids), $criteria, Context::createDefaultContext());
+        $data = [];
+
+        foreach ($ids as $id) {
+            $data[(string) $id] = ['primaryKey' => (string) $id, 'data' => []];
+        }
+
+        return new IdSearchResult(\count($ids), $data, $criteria, Context::createDefaultContext());
     }
 
     private function aclRole(): AclRoleEntity
@@ -336,7 +389,7 @@ final class OidcConfigTransferTest extends TestCase
             'id' => $this->providerId,
             'appName' => 'authelia',
             'clientId' => 'shop',
-            'clientSecret' => 'decrypted-secret',
+            'clientSecret' => $this->hydratedSecret,
             'accessTokenEndpoint' => 'https://idp.example/token',
             'publicClient' => false,
             'lastTestStatus' => 'passed',

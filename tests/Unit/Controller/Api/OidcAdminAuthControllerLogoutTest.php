@@ -3,20 +3,20 @@
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller\Api;
 
 use MartinKuhl\Sw6Oidc\Controller\Api\OidcAdminAuthController;
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Oidc\LogoutContextStore;
 use MartinKuhl\Sw6Oidc\Service\Provider\Exception\ProviderNotFoundException;
 use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\BuildsOidcAdminAuthController;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemoryAtomicCache;
+use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
-use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
-use Psr\Log\NullLogger;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\PlatformRequest;
-use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\HttpFoundation\Request;
 
 #[CoversClass(OidcAdminAuthController::class)]
@@ -35,7 +35,7 @@ final class OidcAdminAuthControllerLogoutTest extends TestCase
 
     public function testReturnsIdpLogoutUrlForOidcAdmin(): void
     {
-        $this->store->rememberForAdmin(self::USER_ID, 'provider-1', 'id-token');
+        $this->store->rememberForAdmin(self::USER_ID, 'a1000000000000000000000000000001');
 
         $body = $this->logout($this->provider());
 
@@ -45,38 +45,72 @@ final class OidcAdminAuthControllerLogoutTest extends TestCase
 
     public function testRegistrySessionOfTheCurrentTokenWinsOverTheFallback(): void
     {
-        $registry = new Sw6OidcSessionRegistry(new ArrayAdapter(), new NullLogger());
-        $registry->register('provider-1', 'sub', 'sid-old', 'admin', self::USER_ID, 'jti-old', null, 'old-id-token');
-        $current = $registry->register('provider-1', 'sub', 'sid-cur', 'admin', self::USER_ID, 'jti-current', null, 'current-id-token');
-        $registry->register('provider-1', 'sub', 'sid-new', 'admin', self::USER_ID, 'jti-new', null, 'new-id-token');
-        $this->store->rememberForAdmin(self::USER_ID, 'provider-1', 'fallback-id-token');
+        $registry = SqliteSessionRegistry::create();
+        $registry->register('a1000000000000000000000000000001', 'sub', 'sid-old', 'admin', self::USER_ID, 'jti-old', null, 'old-id-token');
+        $current = $registry->register('a1000000000000000000000000000001', 'sub', 'sid-cur', 'admin', self::USER_ID, 'jti-current', null, 'current-id-token');
+        $registry->register('a1000000000000000000000000000001', 'sub', 'sid-new', 'admin', self::USER_ID, 'jti-new', null, 'new-id-token');
+        $this->store->rememberForAdmin(self::USER_ID, 'a1000000000000000000000000000001');
 
         $request = new Request();
         $request->attributes->set(PlatformRequest::ATTRIBUTE_OAUTH_ACCESS_TOKEN_ID, 'jti-current');
         $provider = $this->provider();
         $provider->setEndSessionEndpoint('https://idp.example/oidc/end-session');
+        $provider->setLogoutStyle(Sw6OidcProviderDefinition::LOGOUT_STYLE_STANDARD);
 
         $body = $this->logout($provider, $registry, $request);
 
         parse_str((string) parse_url((string) $body['logoutUrl'], PHP_URL_QUERY), $query);
         self::assertSame('current-id-token', $query['id_token_hint']);
         self::assertNull($registry->get($current->id), 'the ended session leaves the registry');
-        self::assertCount(2, $registry->resolveByUser('admin', self::USER_ID));
-        self::assertNull($this->store->consumeForAdmin(self::USER_ID), 'fallback store is consumed too');
+        self::assertCount(2, SqliteSessionRegistry::sessionsOf($registry, 'admin', self::USER_ID));
     }
 
-    public function testNewestRegistrySessionIsUsedWhenTheTokenWasRefreshed(): void
+    public function testLoginSessionHandleFindsTheSessionAfterATokenRefresh(): void
     {
-        $registry = new Sw6OidcSessionRegistry(new ArrayAdapter(), new NullLogger());
-        $registry->register('provider-1', 'sub', 'sid-old', 'admin', self::USER_ID, 'jti-old', null, 'old-id-token');
-        $registry->register('provider-1', 'sub', 'sid-new', 'admin', self::USER_ID, 'jti-new', null, 'new-id-token');
+        $registry = SqliteSessionRegistry::create();
+        $mine = $registry->register('a1000000000000000000000000000001', 'sub', 'sid-a', 'admin', self::USER_ID, 'jti-first', null, 'my-id-token');
+        $other = $registry->register('a1000000000000000000000000000001', 'sub', 'sid-b', 'admin', self::USER_ID, 'jti-other', null, 'other-device-id-token');
+
+        $request = new Request([], [OidcAdminAuthController::LOGIN_SESSION_FIELD => $mine->id]);
+        $request->attributes->set(PlatformRequest::ATTRIBUTE_OAUTH_ACCESS_TOKEN_ID, 'jti-after-refresh');
         $provider = $this->provider();
         $provider->setEndSessionEndpoint('https://idp.example/oidc/end-session');
+        $provider->setLogoutStyle(Sw6OidcProviderDefinition::LOGOUT_STYLE_STANDARD);
+
+        $body = $this->logout($provider, $registry, $request);
+
+        parse_str((string) parse_url((string) $body['logoutUrl'], PHP_URL_QUERY), $query);
+        self::assertSame('my-id-token', $query['id_token_hint']);
+        self::assertNull($registry->get($mine->id));
+        self::assertNotNull($registry->get($other->id), 'the other device keeps its registry entry (N-M4)');
+    }
+
+    public function testWithoutExactMatchNothingIsRemovedAndNoOtherDevicesTokenIsUsed(): void
+    {
+        $registry = SqliteSessionRegistry::create();
+        $registry->register('a1000000000000000000000000000001', 'sub', 'sid-old', 'admin', self::USER_ID, 'jti-old', null, 'old-id-token');
+        $registry->register('a1000000000000000000000000000001', 'sub', 'sid-new', 'admin', self::USER_ID, 'jti-new', null, 'new-id-token');
+        $this->store->rememberForAdmin(self::USER_ID, 'a1000000000000000000000000000001');
+        $provider = $this->provider();
+        $provider->setEndSessionEndpoint('https://idp.example/oidc/end-session');
+        $provider->setLogoutStyle(Sw6OidcProviderDefinition::LOGOUT_STYLE_STANDARD);
 
         $body = $this->logout($provider, $registry, new Request());
 
         parse_str((string) parse_url((string) $body['logoutUrl'], PHP_URL_QUERY), $query);
-        self::assertSame('new-id-token', $query['id_token_hint']);
+        self::assertArrayNotHasKey('id_token_hint', $query);
+        self::assertCount(2, SqliteSessionRegistry::sessionsOf($registry, 'admin', self::USER_ID));
+    }
+
+    public function testAnotherAdminsLoginSessionHandleIsIgnored(): void
+    {
+        $registry = SqliteSessionRegistry::create();
+        $foreign = $registry->register('a1000000000000000000000000000001', 'sub', 'sid', 'admin', 'f0000000000000000000000000000001', 'jti', null, 'foreign-token');
+
+        $body = $this->logout($this->provider(), $registry, new Request([], [OidcAdminAuthController::LOGIN_SESSION_FIELD => $foreign->id]));
+
+        self::assertSame(['logoutUrl' => null], $body);
+        self::assertNotNull($registry->get($foreign->id));
     }
 
     public function testReturnsNullWithoutLogoutContext(): void
@@ -86,7 +120,7 @@ final class OidcAdminAuthControllerLogoutTest extends TestCase
 
     public function testReturnsNullForInactiveProvider(): void
     {
-        $this->store->rememberForAdmin(self::USER_ID, 'provider-1', 'id-token');
+        $this->store->rememberForAdmin(self::USER_ID, 'a1000000000000000000000000000001');
 
         self::assertSame(['logoutUrl' => null], $this->logout(null));
     }
@@ -119,8 +153,10 @@ final class OidcAdminAuthControllerLogoutTest extends TestCase
     private function provider(): Sw6OidcProviderEntity
     {
         $provider = new Sw6OidcProviderEntity();
-        $provider->setId('provider-1');
+        $provider->setId('a1000000000000000000000000000001');
+        $provider->setClientId('shop-client');
         $provider->setEndSessionEndpoint('https://auth.example/logout');
+        $provider->setLogoutStyle(Sw6OidcProviderDefinition::LOGOUT_STYLE_AUTHELIA_FORWARD_AUTH);
 
         return $provider;
     }

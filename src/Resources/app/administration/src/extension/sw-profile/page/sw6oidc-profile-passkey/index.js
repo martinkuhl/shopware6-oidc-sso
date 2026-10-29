@@ -7,23 +7,20 @@ import {
 const { Component, Mixin } = Shopware;
 
 /**
- * Self-service passkey management on the admin's own profile page ("Mein
- * Profil" > Passkeys tab) - register/delete only the currently authenticated
- * admin's own credentials, via PasskeyAdminController's my-credentials/delete
- * actions. Deliberately never touches the generic sw6oidc_passkey_credential
- * entity API: that one has no per-row ownership check and is meant for the
- * cross-admin lockout-recovery grid in Settings, not self-service. Mirrors
- * the Magento reference module's own-account passkey management block.
+ * Self-service passkey management on the admin's own profile page
+ * ("My profile" > Passkeys tab) — register/delete only the currently
+ * authenticated admin's own credentials (PasskeyAdminController). Adding a
+ * passkey first asks for a fresh confirmation (password, SSO or an existing
+ * passkey, see the sw-verify-user-modal override): a hijacked session alone
+ * must not be able to add a permanent way in.
  *
- * Registered as a lazy factory, matching sw6oidc-passkey-list - main.js is
- * force-loaded on the pre-auth login screen too (see
- * Resources/views/administration/index.html.twig), where the "notification"
- * mixin isn't registered yet and this component is never rendered anyway.
+ * Registered as a lazy factory: main.js is force-loaded on the pre-auth
+ * login screen too, where the "notification" mixin isn't registered yet.
  */
 Component.register('sw6oidc-profile-passkey', () => Promise.resolve({
     template,
 
-    inject: ['loginService'],
+    inject: ['loginService', 'sw6oidcApiService'],
 
     mixins: [Mixin.getByName('notification')],
 
@@ -33,15 +30,22 @@ Component.register('sw6oidc-profile-passkey', () => Promise.resolve({
             isLoading: true,
             isRegistering: false,
             deletingId: null,
+            nickname: '',
+            showVerifyModal: false,
+            credentialToDelete: null,
         };
     },
 
     computed: {
         columns() {
             return [
-                { property: 'nickname', label: this.$tc('sw6oidc.passkeySettings.list.columnNickname') },
-                { property: 'createdAt', label: this.$tc('sw6oidc.passkeySettings.list.columnCreatedAt') },
+                { property: 'nickname', label: this.$t('sw6oidc.passkeySettings.list.columnNickname') },
+                { property: 'createdAt', label: this.$t('sw6oidc.passkeySettings.list.columnCreatedAt') },
             ];
+        },
+
+        dateFilter() {
+            return Shopware.Filter.getByName('date');
         },
     },
 
@@ -54,121 +58,80 @@ Component.register('sw6oidc-profile-passkey', () => Promise.resolve({
             this.isLoading = true;
 
             try {
-                const response = await this.sw6oidcApiFetch('GET', '/api/sw6oidc/admin/passkey/my-credentials');
-
-                if (!response.ok) {
-                    throw new Error(`Failed to load passkeys with status ${response.status}`);
-                }
-
-                const { credentials } = await response.json();
-                this.credentials = credentials;
-            } catch (exception) {
-                // eslint-disable-next-line no-console
-                console.error('sw6oidc: failed to load own passkeys', exception);
+                const { credentials } = await this.sw6oidcApiService.get('sw6oidc/admin/passkey/my-credentials');
+                this.credentials = Array.isArray(credentials) ? credentials : [];
+            } catch {
+                this.createNotificationError({ message: this.$t('sw6oidc.passkeySettings.loadError') });
             } finally {
                 this.isLoading = false;
             }
         },
 
-        async registerPasskey() {
+        onClickRegister() {
             if (!window.PublicKeyCredential) {
-                this.createNotificationError({ message: this.$tc('sw6oidc.passkeySettings.registerNoSupport') });
+                this.createNotificationError({ message: this.$t('sw6oidc.passkeySettings.registerNoSupport') });
                 return;
             }
 
+            this.showVerifyModal = true;
+        },
+
+        /**
+         * The confirmation installed a `user-verified` token as the bearer;
+         * the registration request below carries it.
+         */
+        onVerified() {
+            this.showVerifyModal = false;
+            this.registerPasskey();
+        },
+
+        async registerPasskey() {
             this.isRegistering = true;
 
             try {
-                const optionsResponse = await this.sw6oidcApiFetch('POST', '/api/sw6oidc/admin/passkey/registration-options', {});
-
-                if (!optionsResponse.ok) {
-                    throw new Error(`Registration options request failed with status ${optionsResponse.status}`);
-                }
-
-                const { sessionId, options } = await optionsResponse.json();
+                const { sessionId, options } = await this.sw6oidcApiService.post('sw6oidc/admin/passkey/registration-options');
 
                 const credential = await navigator.credentials.create({
                     publicKey: preparePublicKeyCreationOptions(options),
                 });
 
-                const nickname = window.prompt(this.$tc('sw6oidc.passkeySettings.registerNicknamePrompt')) || null;
-
-                const verifyResponse = await this.sw6oidcApiFetch('POST', '/api/sw6oidc/admin/passkey/registration-verify', {
+                await this.sw6oidcApiService.post('sw6oidc/admin/passkey/registration-verify', {
                     sessionId,
                     credential: JSON.stringify(serializeAttestationCredential(credential)),
-                    nickname,
+                    nickname: this.nickname.trim() || null,
                 });
 
-                const result = await verifyResponse.json();
-
-                if (!verifyResponse.ok || !result.status) {
-                    throw new Error(result.message || `Registration failed with status ${verifyResponse.status}`);
-                }
-
-                this.createNotificationSuccess({ message: this.$tc('sw6oidc.passkeySettings.registerSuccess') });
+                this.nickname = '';
+                this.createNotificationSuccess({ message: this.$t('sw6oidc.passkeySettings.registerSuccess') });
                 await this.getList();
-            } catch (exception) {
-                // eslint-disable-next-line no-console
-                console.error('sw6oidc: admin passkey registration failed', exception);
-                this.createNotificationError({ message: this.$tc('sw6oidc.passkeySettings.registerError') });
+            } catch {
+                this.createNotificationError({ message: this.$t('sw6oidc.passkeySettings.registerError') });
             } finally {
                 this.isRegistering = false;
             }
         },
 
         async deleteCredential(item) {
-            // eslint-disable-next-line no-alert
-            if (!window.confirm(this.$tc('sw6oidc.passkeySettings.deleteConfirm'))) {
-                return;
-            }
-
+            this.credentialToDelete = null;
             this.deletingId = item.id;
 
             try {
-                const response = await this.sw6oidcApiFetch('POST', '/api/sw6oidc/admin/passkey/delete', { id: item.id });
-                const result = await response.json();
+                const result = await this.sw6oidcApiService.post('sw6oidc/admin/passkey/delete', { id: item.id });
 
-                if (!response.ok || !result.status) {
-                    throw new Error(result.message || `Delete failed with status ${response.status}`);
-                }
-
-                // The server tracks which credential authenticated THIS
-                // session's own access token (AdminPasskeyLoginTokenTracker)
-                // and tells us here if that's exactly the one just deleted -
-                // staying logged in under a since-revoked passkey would be
-                // wrong, so log out immediately instead of just refreshing
-                // the list.
-                if (result.forceLogout) {
-                    this.createNotificationSuccess({ message: this.$tc('sw6oidc.passkeySettings.deleteSuccessLoggedOut') });
+                // The deleted passkey authenticated this very session: end it.
+                if (result?.forceLogout) {
+                    this.createNotificationSuccess({ message: this.$t('sw6oidc.passkeySettings.deleteSuccessLoggedOut') });
                     this.loginService.logout();
                     return;
                 }
 
-                this.createNotificationSuccess({ message: this.$tc('sw6oidc.passkeySettings.deleteSuccess') });
+                this.createNotificationSuccess({ message: this.$t('sw6oidc.passkeySettings.deleteSuccess') });
                 await this.getList();
-            } catch (exception) {
-                // eslint-disable-next-line no-console
-                console.error('sw6oidc: admin passkey delete failed', exception);
-                this.createNotificationError({ message: this.$tc('sw6oidc.passkeySettings.deleteError') });
+            } catch {
+                this.createNotificationError({ message: this.$t('sw6oidc.passkeySettings.deleteError') });
             } finally {
                 this.deletingId = null;
             }
-        },
-
-        sw6oidcApiFetch(method, path, bodyFields) {
-            const init = {
-                method,
-                headers: { Authorization: `Bearer ${this.loginService.getToken()}` },
-            };
-
-            if (bodyFields) {
-                init.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-                init.body = new URLSearchParams(
-                    Object.fromEntries(Object.entries(bodyFields).filter(([, value]) => value !== null && value !== undefined)),
-                );
-            }
-
-            return fetch(path, init);
         },
     },
 }));

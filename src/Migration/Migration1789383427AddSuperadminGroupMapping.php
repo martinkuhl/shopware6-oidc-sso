@@ -14,10 +14,14 @@ class Migration1789383427AddSuperadminGroupMapping extends MigrationStep
 
     public function update(Connection $connection): void
     {
-        $connection->executeStatement(<<<'SQL'
-            ALTER TABLE `sw6oidc_provider`
-                ADD COLUMN `allow_superadmin_group_mapping` TINYINT(1) NOT NULL DEFAULT 0 AFTER `sync_admin_role_on_sso`
-        SQL);
+        // Idempotent: a restore with a stale `migration` table must not fail (R3-L38).
+        $columns = array_map(strtolower(...), $connection->fetchFirstColumn('SHOW COLUMNS FROM `sw6oidc_provider`'));
+
+        if (!\in_array('allow_superadmin_group_mapping', $columns, true)) {
+            $connection->executeStatement(
+                'ALTER TABLE `sw6oidc_provider` ADD COLUMN `allow_superadmin_group_mapping` TINYINT(1) NOT NULL DEFAULT 0 AFTER `sync_admin_role_on_sso`',
+            );
+        }
     }
 
     public function updateDestructive(Connection $connection): void

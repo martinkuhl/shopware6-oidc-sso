@@ -2,8 +2,11 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Passkey;
 
+use Doctrine\DBAL\Connection;
+use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity;
 use Psr\Log\LoggerInterface;
+use Shopware\Core\Defaults;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
@@ -15,7 +18,7 @@ use Webauthn\CredentialRecord;
 /**
  * Persists WebAuthn credentials to sw6oidc_passkey_credential — the sole seam
  * between web-auth/webauthn-lib's CredentialRecord objects and our DAL
- * storage. Mirrors the Magento module's ResourceModel/PasskeyCredentialRepository.php.
+ * storage.
  *
  * webauthn-lib 5.x has no repository contract of its own: the ceremony
  * services look a record up here, hand it to the validator's check(), and
@@ -28,42 +31,66 @@ use Webauthn\CredentialRecord;
  */
 class PasskeyCredentialRepository
 {
-    private readonly Context $context;
-
+    /**
+     * @param EntityRepository<Sw6OidcPasskeyCredentialCollection> $passkeyCredentialRepository
+     */
     public function __construct(
         private readonly EntityRepository $passkeyCredentialRepository,
         private readonly WebauthnCeremonyFactory $ceremonyFactory,
         private readonly LoggerInterface $logger,
+        private readonly Connection $connection,
     ) {
-        $this->context = Context::createDefaultContext();
     }
 
     /**
-     * @param string $publicKeyCredentialId raw credential id bytes
+     * Credentials are looked up and deduplicated by the sha256 of their
+     * base64 id: the column is too wide for a unique index and its
+     * case-insensitive collation can't compare base64 reliably.
      */
-    public function findOneByCredentialId(string $publicKeyCredentialId): ?CredentialRecord
+    public static function hashCredentialId(string $base64CredentialId): string
     {
-        $entity = $this->findEntityByCredentialId(base64_encode($publicKeyCredentialId));
-
-        return $entity instanceof Sw6OidcPasskeyCredentialEntity ? $this->toRecord($entity) : null;
+        return hash('sha256', $base64CredentialId);
     }
 
     /**
-     * @param string $userHandle raw WebAuthn user handle bytes
+     * Disables a credential (possible clone: its signature counter went
+     * backwards). It can no longer be used to log in; the owner has to
+     * register a new one.
+     */
+    public function disable(string $base64CredentialId): void
+    {
+        $entity = $this->findEntityByCredentialId($base64CredentialId);
+
+        if ($entity instanceof Sw6OidcPasskeyCredentialEntity && !$entity->getDisabledAt() instanceof \DateTimeInterface) {
+            $this->passkeyCredentialRepository->update([[
+                'id' => $entity->getId(),
+                'disabledAt' => new \DateTimeImmutable(),
+            ]], $this->context());
+        }
+    }
+
+
+    /**
+     * @param string $userHandle      raw WebAuthn user handle bytes
+     * @param bool   $includeDisabled registration's excludeCredentials lists disabled keys too
+     *                                (so they aren't re-registered); logins must not offer them
      *
      * @return CredentialRecord[]
      */
-    public function findAllForUserHandle(string $userHandle): array
+    public function findAllForUserHandle(string $userHandle, bool $includeDisabled = true): array
     {
         // The library's user handle is raw bytes; stored/compared as hex since
         // a varchar column can't safely round-trip arbitrary binary data.
         $criteria = new Criteria();
         $criteria->addFilter(new EqualsFilter('userHandle', bin2hex($userHandle)));
 
+        if (!$includeDisabled) {
+            $criteria->addFilter(new EqualsFilter('disabledAt', null));
+        }
+
         $records = [];
 
-        foreach ($this->passkeyCredentialRepository->search($criteria, $this->context)->getEntities() as $entity) {
-            \assert($entity instanceof Sw6OidcPasskeyCredentialEntity);
+        foreach ($this->passkeyCredentialRepository->search($criteria, $this->context())->getEntities() as $entity) {
             $records[] = $this->toRecord($entity);
         }
 
@@ -71,28 +98,44 @@ class PasskeyCredentialRepository
     }
 
     /**
-     * Persists the record returned by a successful assertion check() — the
-     * library bumps the signature counter / backup flags on it but, unlike
-     * 4.x, no longer saves it itself.
+     * How many passkeys (disabled ones included) carry this user handle,
+     * without deserializing them.
      */
-    public function updateAfterAssertion(CredentialRecord $record): void
+    public function countForUserHandle(string $userHandle): int
     {
-        $credentialId = base64_encode($record->publicKeyCredentialId);
-        $existing = $this->findEntityByCredentialId($credentialId);
+        $criteria = new Criteria();
+        $criteria->addFilter(new EqualsFilter('userHandle', bin2hex($userHandle)));
 
-        if (!$existing instanceof Sw6OidcPasskeyCredentialEntity) {
-            $this->logger->warning('sw6oidc: updateAfterAssertion() called for an unknown credential; ignoring.', [
-                'credentialId' => $credentialId,
+        return $this->passkeyCredentialRepository->search($criteria, $this->context())->getEntities()->count();
+    }
+
+    /**
+     * Persists the record a successful assertion check() returned (the
+     * library bumps the counter and backup flags but, unlike 4.x, no longer
+     * saves it) for the credential the caller already loaded. The write is a
+     * compare-and-set on the counter: of two concurrent assertions only the
+     * higher counter lands, so the counter can never go backwards (R3-L15).
+     * Authenticators without a counter (always 0) are always written.
+     */
+    public function updateAfterAssertion(Sw6OidcPasskeyCredentialEntity $entity, CredentialRecord $record): void
+    {
+        $updated = $this->connection->executeStatement(
+            'UPDATE `sw6oidc_passkey_credential`
+             SET `public_key` = :publicKey, `sign_count` = :counter, `updated_at` = :now
+             WHERE `id` = :id AND (`sign_count` < :counter OR :counter = 0)',
+            [
+                'publicKey' => $this->toJson($record),
+                'counter' => $record->counter,
+                'now' => (new \DateTimeImmutable())->format(Defaults::STORAGE_DATE_TIME_FORMAT),
+                'id' => Uuid::fromHexToBytes($entity->getId()),
+            ],
+        );
+
+        if ($updated === 0) {
+            $this->logger->info('sw6oidc: a concurrent passkey assertion already stored a higher signature counter.', [
+                'credentialId' => $entity->getId(),
             ]);
-
-            return;
         }
-
-        $this->passkeyCredentialRepository->update([[
-            'id' => $existing->getId(),
-            'publicKey' => $this->toJson($record),
-            'signCount' => $record->counter,
-        ]], $this->context);
     }
 
     public function saveNewCredentialRecord(
@@ -106,11 +149,12 @@ class PasskeyCredentialRepository
             'userType' => $userType,
             'userId' => $userId,
             'credentialId' => base64_encode($record->publicKeyCredentialId),
+            'credentialIdHash' => self::hashCredentialId(base64_encode($record->publicKeyCredentialId)),
             'publicKey' => $this->toJson($record),
             'signCount' => $record->counter,
             'userHandle' => bin2hex($record->userHandle),
             'nickname' => $nickname,
-        ]], $this->context);
+        ]], $this->context());
     }
 
     /**
@@ -162,6 +206,11 @@ class PasskeyCredentialRepository
      */
     public function deleteOwnedByUser(string $id, string $userType, string $userId, Context $context): bool
     {
+        // A malformed id from the request is "not found", not a Criteria error (R3-L16).
+        if (!Uuid::isValid($id)) {
+            return false;
+        }
+
         $criteria = new Criteria([$id]);
         $criteria->addFilter(new EqualsFilter('userType', $userType));
         $criteria->addFilter(new EqualsFilter('userId', $userId));
@@ -178,10 +227,10 @@ class PasskeyCredentialRepository
     public function findEntityByCredentialId(string $base64CredentialId): ?Sw6OidcPasskeyCredentialEntity
     {
         $criteria = new Criteria();
-        $criteria->addFilter(new EqualsFilter('credentialId', $base64CredentialId));
+        $criteria->addFilter(new EqualsFilter('credentialIdHash', self::hashCredentialId($base64CredentialId)));
         $criteria->setLimit(1);
 
-        $entity = $this->passkeyCredentialRepository->search($criteria, $this->context)->first();
+        $entity = $this->passkeyCredentialRepository->search($criteria, $this->context())->first();
 
         return $entity instanceof Sw6OidcPasskeyCredentialEntity ? $entity : null;
     }
@@ -194,5 +243,10 @@ class PasskeyCredentialRepository
     public function toJson(CredentialRecord $record): string
     {
         return $this->ceremonyFactory->serializer()->serialize($record, 'json');
+    }
+
+    private function context(): Context
+    {
+        return Context::createDefaultContext();
     }
 }

@@ -87,7 +87,6 @@ abstract class Sw6OidcIntegrationTestCase extends TestCase
         static::getContainer()->get('sw6oidc_provider.repository')->create([array_merge([
             'id' => $id,
             'pkceFlow' => 'S256',
-            'claimEncoding' => 'none',
             'groupAttribute' => 'groups',
             'loginType' => 'both',
             'isActive' => true,

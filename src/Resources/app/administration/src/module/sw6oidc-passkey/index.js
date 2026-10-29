@@ -6,8 +6,7 @@ import { registerModuleWhenReady } from '../../service/defer-module-register';
  * customer) with a delete action. The enable toggles / RP name+id override
  * themselves need no custom UI at all — they're plain config.xml fields, so
  * Shopware already renders a config form for them under this plugin's own
- * entry in Settings > System > Plugins, matching the plan's "Passkey settings
- * ... stored via SystemConfigService" note.
+ * entry in Settings > System > Plugins.
  *
  * Registered via registerModuleWhenReady() rather than a bare
  * Shopware.Module.register() call - see that function's own comment for why.

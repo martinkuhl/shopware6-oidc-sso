@@ -1,0 +1,34 @@
+# Browser E2E environment (see README.md): a Shopware 6.7 shop with this
+# plugin mounted, and Dex as the identity provider.
+#
+# Dex is reached as http://dex:5556 by the shop container (compose network)
+# AND by the browser on the host, so the host needs `127.0.0.1 dex` in
+# /etc/hosts (the CI job adds it). One issuer URL for both sides is what
+# makes id_token issuer checks pass.
+services:
+  shop:
+    image: ${SW6OIDC_E2E_SHOP_IMAGE:-dockware/shopware:6.7.4.2}
+    ports:
+      - "80:80"
+    environment:
+      # Dex is plain HTTP on a private network address: dev-only escape hatch.
+      SW6OIDC_ALLOW_INSECURE_IDP_URLS: "1"
+      SW6OIDC_LOG_LEVEL: debug
+    volumes:
+      - ../..:/var/www/html/custom/plugins/Sw6Oidc
+    depends_on:
+      dex:
+        condition: service_healthy
+
+  dex:
+    image: ghcr.io/dexidp/dex:v2.41.1
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./dex/config.yaml:/etc/dex/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

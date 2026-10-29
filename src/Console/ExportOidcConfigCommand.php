@@ -29,7 +29,8 @@ class ExportOidcConfigCommand extends Command
             ->addOption('provider-id', null, InputOption::VALUE_REQUIRED, 'Export only this provider')
             ->addOption('output', 'o', InputOption::VALUE_REQUIRED, 'Write to this file instead of stdout')
             ->addOption('keep-encrypted', null, InputOption::VALUE_NONE, 'Include the client secret as its encrypted envelope (importable only where APP_SECRET is identical)')
-            ->addOption('plaintext', null, InputOption::VALUE_NONE, 'Include the client secret in PLAINTEXT (insecure — treat the file as a credential)');
+            ->addOption('plaintext', null, InputOption::VALUE_NONE, 'Include the client secret in PLAINTEXT (insecure — treat the file as a credential)')
+            ->addOption('force', 'f', InputOption::VALUE_NONE, 'Overwrite the --output file if it already exists');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -60,14 +61,23 @@ class ExportOidcConfigCommand extends Command
             $errorOutput->writeln('<comment>Warning: the export contains client secrets in plaintext. Treat it as a credential and delete it after use.</comment>');
         }
 
-        $export = $this->transfer->export($providerId, $secretMode, Context::createCLIContext());
+        try {
+            $export = $this->transfer->export($providerId, $secretMode, Context::createCLIContext());
+        } catch (\RuntimeException $exception) {
+            $errorOutput->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
+
+            return self::FAILURE;
+        }
+
         $json = json_encode($export, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR) . "\n";
 
         $file = $input->getOption('output');
 
         if (\is_string($file) && $file !== '') {
-            if (file_put_contents($file, $json) === false) {
-                $errorOutput->writeln(sprintf('<error>Could not write "%s".</error>', $file));
+            $error = $this->writeExclusive($file, $json, (bool) $input->getOption('force'));
+
+            if ($error !== null) {
+                $errorOutput->writeln(sprintf('<error>%s</error>', $error));
 
                 return self::FAILURE;
             }
@@ -80,5 +90,48 @@ class ExportOidcConfigCommand extends Command
         $output->write($json, false, OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * The export can hold secrets (N-L9): create the file owner-only with
+     * O_EXCL semantics (never through an existing file or symlink), and only
+     * replace an existing file with --force — by unlinking it first, so a
+     * symlink is removed rather than followed.
+     */
+    private function writeExclusive(string $file, string $contents, bool $force): ?string
+    {
+        if (file_exists($file) || is_link($file)) {
+            if (!$force) {
+                return sprintf('"%s" already exists; pass --force to overwrite it.', $file);
+            }
+
+            if (!@unlink($file)) {
+                return sprintf('Could not replace "%s".', $file);
+            }
+        }
+
+        $previousUmask = umask(0o077);
+
+        try {
+            $handle = @fopen($file, 'x');
+        } finally {
+            umask($previousUmask);
+        }
+
+        if ($handle === false) {
+            return sprintf('Could not create "%s".', $file);
+        }
+
+        try {
+            @chmod($file, 0o600);
+
+            if (fwrite($handle, $contents) !== \strlen($contents)) {
+                return sprintf('Could not write "%s".', $file);
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return null;
     }
 }

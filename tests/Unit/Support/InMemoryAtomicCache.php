@@ -21,4 +21,20 @@ final class InMemoryAtomicCache implements AtomicCacheInterface
 
         return $value;
     }
+
+    public function delete(string $key): void
+    {
+        unset($this->items[$key]);
+    }
+
+    public function addIfAbsent(string $key, string $value, int $ttlSeconds): bool
+    {
+        if (\array_key_exists($key, $this->items)) {
+            return false;
+        }
+
+        $this->items[$key] = $value;
+
+        return true;
+    }
 }

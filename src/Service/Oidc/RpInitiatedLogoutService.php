@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Oidc;
 
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
 use Psr\Log\LoggerInterface;
@@ -9,12 +10,13 @@ use Psr\Log\LoggerInterface;
 /**
  * Shared RP-Initiated Logout (OIDC RP-Initiated Logout + RFC 7009 revocation),
  * session-agnostic so both the Storefront customer logout subscriber and the
- * Administration logout listener can use it — mirrors the Magento module's
- * Model/Service/RpInitiatedLogoutService.php, including its Authelia
- * forward-auth detection (in scope for Phase 1 per the plan).
+ * Administration logout listener can use it, including Authelia
+ * forward-auth detection.
  */
 class RpInitiatedLogoutService
 {
+    private const REVOCATION_TIMEOUT_SECONDS = 3;
+
     public function __construct(
         private readonly OidcHttpClient $httpClient,
         private readonly LoggerInterface $logger,
@@ -38,7 +40,7 @@ class RpInitiatedLogoutService
         $postLogoutRedirectUri = $override !== null && $override !== '' ? $override : $defaultPostLogoutRedirectUri;
         $state = $this->postLogoutState->create($target);
 
-        if ($this->isAutheliaForwardAuthLogout($endSessionEndpoint)) {
+        if ($provider->getLogoutStyle() === Sw6OidcProviderDefinition::LOGOUT_STYLE_AUTHELIA_FORWARD_AUTH) {
             // `rd` is followed verbatim, so the shared landing gets its state as a query parameter.
             if (str_ends_with((string) parse_url($postLogoutRedirectUri, PHP_URL_PATH), '/sw6oidc/postlogout')) {
                 $postLogoutRedirectUri .= $this->querySeparator($postLogoutRedirectUri) . http_build_query(['state' => $state]);
@@ -49,7 +51,10 @@ class RpInitiatedLogoutService
             ]);
         }
 
+        // client_id always: without an id_token (the admin fallback path)
+        // Keycloak and others need it to accept post_logout_redirect_uri (R3-M3).
         $params = [
+            'client_id' => $provider->getClientId(),
             'post_logout_redirect_uri' => $postLogoutRedirectUri,
             'state' => $state,
         ];
@@ -62,12 +67,19 @@ class RpInitiatedLogoutService
     }
 
     /**
-     * Fire-and-forget: a failed revocation must never block the user from
-     * logging out.
+     * RFC 7009 revocation of the login's IdP tokens (refresh token first —
+     * revoking it usually invalidates the access token too). Fire-and-forget:
+     * a failed revocation must never block the user from logging out.
      */
-    public function revokeToken(Sw6OidcProviderEntity $provider, ?string $accessToken): void
+    public function revokeTokens(Sw6OidcProviderEntity $provider, LogoutContext $logoutContext): void
     {
-        if ($accessToken === null || $accessToken === '') {
+        $this->revokeToken($provider, $logoutContext->idpRefreshToken, 'refresh_token');
+        $this->revokeToken($provider, $logoutContext->idpAccessToken, 'access_token');
+    }
+
+    private function revokeToken(Sw6OidcProviderEntity $provider, ?string $token, string $tokenTypeHint): void
+    {
+        if ($token === null || $token === '') {
             return;
         }
 
@@ -77,24 +89,30 @@ class RpInitiatedLogoutService
             return;
         }
 
-        // Same client-authentication convention as TokenExchangeService: a
-        // confidential client authenticates via HTTP Basic and omits
-        // client_id from the body; a public client has no secret, so it
-        // identifies itself via client_id in the body instead (RFC 7009 §2.1
-        // references the token endpoint's authentication methods).
-        $params = ['token' => $accessToken];
+        $secret = $provider->isPublicClient() ? null : $provider->getUsableClientSecret();
 
-        if ($provider->isPublicClient()) {
-            $params['client_id'] = $provider->getClientId();
+        if (!$provider->isPublicClient() && $secret === null) {
+            // Undecryptable secret: never send the envelope to the IdP (N-L5).
+            $this->logger->warning('sw6oidc: RFC 7009 revocation skipped, the client secret is unavailable.', ['providerId' => $provider->getId()]);
+
+            return;
         }
 
+        // RFC 7009 §2.1 uses the token endpoint's client authentication, but
+        // IdPs like Authelia register the method per endpoint, hence the
+        // provider's own `revocation_endpoint_auth_method`.
+        $authentication = ClientAuthentication::forProvider($provider, $provider->getRevocationEndpointAuthMethod(), $secret);
+
         try {
-            $this->httpClient->postForm(
+            $this->httpClient->postFormIgnoringResponseBody(
                 $revocationEndpoint,
-                $params,
-                $provider->getHttpTimeout(),
-                $provider->isPublicClient() ? null : $provider->getClientId(),
-                $provider->isPublicClient() ? null : $provider->getClientSecret(),
+                ['token' => $token, 'token_type_hint' => $tokenTypeHint] + $authentication->bodyParams,
+                // Runs inside the user's logout request: an unreachable IdP
+                // may cost seconds, never twice the provider timeout (R3-L33).
+                min($provider->getHttpTimeout(), self::REVOCATION_TIMEOUT_SECONDS),
+                $authentication->basicAuthUsername,
+                $authentication->basicAuthPassword,
+                self::REVOCATION_TIMEOUT_SECONDS,
             );
         } catch (\Throwable $exception) {
             $this->logger->warning('sw6oidc: RFC 7009 token revocation failed (non-fatal).', [
@@ -104,17 +122,6 @@ class RpInitiatedLogoutService
         }
     }
 
-    /**
-     * Authelia's forward-auth logout endpoint path ends in `/logout` (not
-     * `/oauth2/...` or `/oidc/...`) and takes `?rd=<returnUrl>` instead of the
-     * standard OIDC RP-Initiated Logout parameters.
-     */
-    private function isAutheliaForwardAuthLogout(string $endSessionEndpoint): bool
-    {
-        $path = parse_url($endSessionEndpoint, PHP_URL_PATH) ?? '';
-
-        return str_ends_with($path, '/logout') && !str_contains($path, '/oauth2/') && !str_contains($path, '/oidc/');
-    }
 
     private function querySeparator(string $url): string
     {

@@ -1,9 +1,12 @@
 {% block sw6oidc_rp_id_field %}
-<sw-text-field
-    :value="value"
+<mt-text-field
+    :model-value="value ?? ''"
+    :name="name"
     :label="label"
     :help-text="helpText"
     :placeholder="effectivePlaceholder"
-    @update:value="onInput"
+    :disabled="disabled"
+    :error="error"
+    @update:model-value="onInput"
 />
 {% endblock %}

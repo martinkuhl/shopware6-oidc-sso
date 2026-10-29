@@ -4,13 +4,19 @@ namespace MartinKuhl\Sw6Oidc\Service\Oidc;
 
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Jwt\JwtVerifier;
+use MartinKuhl\Sw6Oidc\Service\Security\Exception\AccessControlDeniedException;
+use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcAccessControlEvaluator;
+use Shopware\Core\Framework\Context;
 
 /**
  * Runs the safe subset of OidcCallbackProcessor::process()'s pipeline for the
  * "Run live login test" admin feature: exchange the code for tokens, verify
- * the id_token, fetch userinfo, merge + flatten claims — using the exact same
- * building blocks the real login callback uses, so the test is a faithful
- * end-to-end check of the provider configuration.
+ * the id_token (required with the openid scope), fetch userinfo, merge with
+ * the same id_token-wins rules (ClaimsMerger), normalize groups and flatten
+ * claims — the exact building blocks the real login callback uses, so the
+ * test is a faithful end-to-end check of the provider configuration (L5).
+ * The access-control rules are evaluated too, but only reported (status
+ * "warning"): the tested account is not necessarily one that should pass.
  *
  * Deliberately stops *before* AttributeMapper::map() and never calls
  * AdminProvisioningService/CustomerProvisioningService, AdminLoginNonceService,
@@ -27,6 +33,7 @@ class OidcLiveLoginTestService
         private readonly UserInfoService $userInfoService,
         private readonly JwtVerifier $jwtVerifier,
         private readonly ClaimsNormalizer $claimsNormalizer,
+        private readonly Sw6OidcAccessControlEvaluator $accessControlEvaluator,
     ) {
     }
 
@@ -95,11 +102,13 @@ class OidcLiveLoginTestService
                 $steps[] = ['id' => 'id_token_verification', 'status' => 'fail', 'detail' => $exception->getMessage()];
             }
         } else {
+            // A real login refuses this when openid is requested (M2).
+            $required = ClaimsMerger::requestsOpenIdScope($provider->getScope());
             $steps[] = [
                 'id' => 'id_token_verification',
-                'status' => 'skipped',
+                'status' => $required ? 'fail' : 'skipped',
                 'detail' => 'Token response did not include an id_token.',
-                'messageKey' => 'idTokenVerificationSkipped',
+                'messageKey' => $required ? 'idTokenVerificationMissing' : 'idTokenVerificationSkipped',
             ];
         }
 
@@ -116,8 +125,61 @@ class OidcLiveLoginTestService
             $steps[] = ['id' => 'userinfo_fetch', 'status' => 'skipped', 'detail' => 'No userinfo endpoint configured.', 'messageKey' => 'userinfoFetchSkipped'];
         }
 
-        $merged = array_merge($idTokenClaims, $userInfoClaims);
-        $claims = $this->claimsNormalizer->flatten($merged, $provider->getClaimEncoding());
+        try {
+            $merged = ClaimsMerger::merge($idTokenClaims, $userInfoClaims);
+        } catch (\Throwable $exception) {
+            $steps[] = ['id' => 'claims', 'status' => 'fail', 'detail' => $exception->getMessage(), 'messageKey' => 'claimsSubjectMismatch'];
+            $merged = $idTokenClaims;
+        }
+
+        try {
+            ClaimsMerger::requireSubject($merged);
+        } catch (\Throwable $exception) {
+            // Every real login with these claims fails (R3-L4).
+            $steps[] = ['id' => 'subject', 'status' => 'fail', 'detail' => $exception->getMessage()];
+        }
+
+        try {
+            $claims = $this->claimsNormalizer->flatten($merged, $provider->getBase64Claims());
+        } catch (\Throwable $exception) {
+            $steps[] = ['id' => 'claims', 'status' => 'fail', 'detail' => $exception->getMessage()];
+
+            return ['status' => 'fail', 'steps' => $steps, 'claims' => []];
+        }
+
+        $groups = $this->claimsNormalizer->decodeGroups(
+            $this->claimsNormalizer->normalizeGroups($merged[$provider->getGroupAttribute()] ?? null),
+            $provider->getGroupAttribute(),
+            $provider->getBase64Claims(),
+        );
+        $steps[] = $groups === []
+            ? [
+                'id' => 'groups',
+                'status' => 'skipped',
+                'detail' => 'No groups in the configured group claim.',
+                'messageKey' => 'groupsNone',
+                'messageParams' => ['claim' => $provider->getGroupAttribute()],
+            ]
+            : [
+                'id' => 'groups',
+                'status' => 'pass',
+                'detail' => sprintf('%d group(s) found.', \count($groups)),
+                'messageKey' => 'groupsFound',
+                'messageParams' => ['count' => \count($groups)],
+            ];
+
+        try {
+            $this->accessControlEvaluator->evaluate($provider->getId(), $claims, Context::createDefaultContext());
+            $steps[] = ['id' => 'access_control', 'status' => 'pass', 'detail' => 'The access-control rules allow this account.', 'messageKey' => 'accessControlAllowed'];
+        } catch (AccessControlDeniedException $exception) {
+            $steps[] = [
+                'id' => 'access_control',
+                'status' => 'warning',
+                'detail' => sprintf('This account would be denied by the rule on "%s".', $exception->claimKey),
+                'messageKey' => 'accessControlDenied',
+                'messageParams' => ['claim' => $exception->claimKey],
+            ];
+        }
 
         $statuses = array_column($steps, 'status');
         $status = \in_array('fail', $statuses, true) ? 'fail' : 'pass';

@@ -20,6 +20,7 @@ class Sw6OidcSessionActivityEntity extends Entity
     protected string $loginMethod;
     protected ?string $sessionKeyHash = null;
     protected ?string $registrySessionId = null;
+    protected ?string $passkeyCredentialHash = null;
     protected ?string $ipAddress = null;
     protected ?string $userAgent = null;
     protected \DateTimeInterface $loggedInAt;
@@ -66,6 +67,11 @@ class Sw6OidcSessionActivityEntity extends Entity
     public function getRegistrySessionId(): ?string
     {
         return $this->registrySessionId;
+    }
+
+    public function getPasskeyCredentialHash(): ?string
+    {
+        return $this->passkeyCredentialHash;
     }
 
     public function getIpAddress(): ?string

@@ -2,34 +2,50 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Provider;
 
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Provider\Exception\ProviderNotFoundException;
+use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsAnyFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Sorting\FieldSorting;
+use Shopware\Core\Framework\Uuid\Uuid;
 
 /**
- * Resolves sw6oidc_provider rows for the current request — multi-provider
- * support from day one, mirroring the Magento module's Model/Provider/ProviderResolver.php.
+ * Resolves sw6oidc_provider rows for the current request.
  */
 class ProviderResolver
 {
+    /**
+     * @param EntityRepository<Sw6OidcProviderCollection> $providerRepository
+     */
     public function __construct(private readonly EntityRepository $providerRepository)
     {
     }
 
     /**
+     * An active provider that serves this login type ('customer' or 'admin';
+     * providers configured for 'both' serve either). A customer-only IdP must
+     * never be usable for an Administration login, and vice versa.
+     *
      * @throws ProviderNotFoundException
      */
-    public function getActiveById(string $providerId, Context $context): Sw6OidcProviderEntity
+    public function getActiveById(string $providerId, string $loginType, Context $context): Sw6OidcProviderEntity
     {
-        $provider = $this->providerRepository->search(new Criteria([$providerId]), $context)->first();
+        // An empty or malformed id (`?providerId=`) would make Criteria throw (R3-L1).
+        $provider = Uuid::isValid($providerId)
+            ? $this->providerRepository->search(new Criteria([$providerId]), $context)->first()
+            : null;
 
-        if (!$provider instanceof Sw6OidcProviderEntity || !$provider->isActive()) {
-            throw new ProviderNotFoundException(sprintf('No active OIDC provider found for id "%s".', $providerId));
+        if (
+            !$provider instanceof Sw6OidcProviderEntity
+            || !$provider->isActive()
+            || !\in_array($provider->getLoginType(), [$loginType, 'both'], true)
+        ) {
+            throw new ProviderNotFoundException(sprintf('No active OIDC provider for login type "%s" found for id "%s".', $loginType, $providerId));
         }
 
         return $provider;
@@ -92,19 +108,13 @@ class ProviderResolver
     {
         return array_values(array_filter(
             $this->getActiveProviders($loginType, $context),
-            static fn (Sw6OidcProviderEntity $provider): bool => $loginType === 'admin' ? $provider->isShowAdminLink() : $provider->isShowCustomerLink(),
+            static fn (Sw6OidcProviderEntity $provider): bool => $loginType === LoginType::Admin->value ? $provider->isShowAdminLink() : $provider->isShowCustomerLink(),
         ));
-    }
-
-    public function hasVisibleProvider(string $loginType, Context $context): bool
-    {
-        return $this->getVisibleProviders($loginType, $context) !== [];
     }
 
     /**
      * SP-initiated login without an explicit ?provider_id= falls back to the
-     * first active provider for this login type — matches the Magento module's
-     * no-explicit-ID fallback in ProviderResolver::resolveActiveProvider().
+     * first active provider for this login type.
      *
      * @throws ProviderNotFoundException
      */

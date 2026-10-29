@@ -13,6 +13,7 @@ use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\MissingEmailClaimException
 use MartinKuhl\Sw6Oidc\Service\Provisioning\GenderMapper;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\MappedProfile;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Shopware\Core\Framework\Context;
@@ -39,6 +40,27 @@ final class AttributeMapperTest extends TestCase
         self::assertSame('de-DE', $profile->locale);
         self::assertSame('Europe/Berlin', $profile->zoneinfo);
         self::assertSame('https://idp.example.com/avatar.png', $profile->picture);
+    }
+
+    #[RequiresPhpExtension('intl')]
+    public function testInternationalDomainsAreStoredAsPunycodeLikeCore(): void
+    {
+        $mapper = new AttributeMapper($this->repositoryReturning([]), new GenderMapper(), new AttributeTransformer(new NullLogger()), new EventDispatcher());
+
+        // FILTER_VALIDATE_EMAIL alone refused this, and core would never find the account (R3-L20).
+        $profile = $mapper->map($this->provider(), ['email' => ' user@bücher.de '], [], Context::createDefaultContext());
+
+        self::assertSame('user@xn--bcher-kva.de', $profile->email);
+    }
+
+    public function testOverlongValuesAreCutToTheColumnLimits(): void
+    {
+        $mapper = new AttributeMapper($this->repositoryReturning([]), new GenderMapper(), new AttributeTransformer(new NullLogger()), new EventDispatcher());
+
+        // A WriteException on every login of this user before (R3-L21).
+        $profile = $mapper->map($this->provider(), ['email' => 'user@example.com', 'given_name' => str_repeat('ä', 300)], [], Context::createDefaultContext());
+
+        self::assertSame(255, mb_strlen((string) $profile->firstName));
     }
 
     public function testMapsLocaleZoneinfoAndPictureUsingConfiguredClaimKeyOverrides(): void

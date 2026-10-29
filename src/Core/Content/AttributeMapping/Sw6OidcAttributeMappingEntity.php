@@ -14,6 +14,7 @@ class Sw6OidcAttributeMappingEntity extends Entity
     protected string $attributeType;
     protected string $attributeName;
     protected ?string $transformFunction = null;
+    /** @var array<string, mixed>|null */
     protected ?array $transformParams = null;
 
     protected ?Sw6OidcProviderEntity $provider = null;
@@ -58,11 +59,17 @@ class Sw6OidcAttributeMappingEntity extends Entity
         $this->transformFunction = $transformFunction;
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
     public function getTransformParams(): ?array
     {
         return $this->transformParams;
     }
 
+    /**
+     * @param array<string, mixed>|null $transformParams
+     */
     public function setTransformParams(?array $transformParams): void
     {
         $this->transformParams = $transformParams;

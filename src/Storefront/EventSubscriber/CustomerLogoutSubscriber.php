@@ -10,8 +10,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
  * RP-Initiated Logout for Storefront customers: redirects to the IdP's
- * end_session_endpoint after a customer logs out — mirrors the Magento
- * module's Observer/OAuthLogoutObserver.php.
+ * end_session_endpoint after a customer logs out.
  *
  * Two-step because the logout route itself cannot replace the controller's
  * HTTP response: OidcLogoutRoute (decorating core's LogoutRoute) resolves

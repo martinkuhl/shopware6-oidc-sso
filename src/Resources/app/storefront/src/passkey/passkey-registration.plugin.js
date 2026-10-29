@@ -5,32 +5,40 @@ import {
 } from './webauthn-codec';
 
 /**
- * Self-service Passkey registration under My Account > Passkeys - calls this
- * plugin's own registration-options/registration-verify endpoints
- * (Storefront/Controller/PasskeyController.php), reloading on success so the
- * newly registered credential shows up in the server-rendered list below
- * (AccountPasskeyController renders that list itself, no client-side
- * rendering here).
+ * Self-service Passkey registration under My Account > Passkeys, against
+ * PasskeyController's registration-options/registration-verify (URLs from
+ * the template, F-H3). The nickname comes from the form's own input and
+ * errors are shown inline — no window.prompt()/alert(). Reloads on success
+ * so the server-rendered list shows the new credential.
  */
 export default class Sw6OidcPasskeyRegistrationPlugin extends Plugin {
     init() {
+        this.errorElement = document.getElementById(this.el.dataset.sw6oidcErrorTarget || '');
+        this.nicknameInput = document.getElementById(this.el.dataset.sw6oidcNicknameInput || '');
         this.el.addEventListener('click', this.register.bind(this));
     }
 
     async register() {
         if (!window.PublicKeyCredential) {
-            // eslint-disable-next-line no-alert
-            window.alert(this.el.dataset.sw6oidcNoSupportText);
+            this.showError(this.el.dataset.sw6oidcNoSupportText);
             return;
         }
 
         this.el.disabled = true;
+        this.hideError();
 
         try {
-            const optionsResponse = await fetch('/sw6oidc/passkey/registration-options', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            });
+            const optionsResponse = await this.post(this.el.dataset.sw6oidcOptionsUrl);
+
+            if (optionsResponse.status === 403) {
+                // Adding a passkey needs a recent login: re-authenticate first.
+                const { reauthUrl } = await optionsResponse.json();
+
+                if (typeof reauthUrl === 'string' && reauthUrl.startsWith('/') && !reauthUrl.startsWith('//')) {
+                    window.location.assign(reauthUrl);
+                    return;
+                }
+            }
 
             if (!optionsResponse.ok) {
                 throw new Error(`Registration options request failed with status ${optionsResponse.status}`);
@@ -42,33 +50,55 @@ export default class Sw6OidcPasskeyRegistrationPlugin extends Plugin {
                 publicKey: preparePublicKeyCreationOptions(options),
             });
 
-            // eslint-disable-next-line no-alert
-            const nickname = window.prompt(this.el.dataset.sw6oidcNicknamePromptText) || null;
-
-            const verifyResponse = await fetch('/sw6oidc/passkey/registration-verify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                    sessionId,
-                    credential: JSON.stringify(serializeAttestationCredential(credential)),
-                    ...(nickname ? { nickname } : {}),
-                }),
+            const nickname = (this.nicknameInput?.value || '').trim();
+            const verifyResponse = await this.post(this.el.dataset.sw6oidcVerifyUrl, {
+                sessionId,
+                credential: JSON.stringify(serializeAttestationCredential(credential)),
+                ...(nickname ? { nickname } : {}),
             });
+
+            if (!verifyResponse.ok) {
+                throw new Error(`Registration failed with status ${verifyResponse.status}`);
+            }
 
             const result = await verifyResponse.json();
 
-            if (!verifyResponse.ok || !result.status) {
-                throw new Error(result.message || `Registration failed with status ${verifyResponse.status}`);
+            if (!result.status) {
+                throw new Error('Registration was refused.');
             }
 
             window.location.reload();
         } catch (error) {
-            // eslint-disable-next-line no-console
-            console.error('sw6oidc: passkey registration failed', error);
-            // eslint-disable-next-line no-alert
-            window.alert(this.el.dataset.sw6oidcErrorText);
+            if (error?.name !== 'NotAllowedError') {
+                // eslint-disable-next-line no-console
+                console.error('sw6oidc: passkey registration failed', error);
+                this.showError(this.el.dataset.sw6oidcErrorText);
+            }
         } finally {
             this.el.disabled = false;
+        }
+    }
+
+    post(url, fields = {}) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+            body: new URLSearchParams(fields),
+        });
+    }
+
+    showError(message) {
+        if (!this.errorElement || !message) {
+            return;
+        }
+
+        this.errorElement.textContent = message;
+        this.errorElement.hidden = false;
+    }
+
+    hideError() {
+        if (this.errorElement) {
+            this.errorElement.hidden = true;
         }
     }
 }

@@ -22,6 +22,8 @@ class Sw6OidcPasskeyCredentialEntity extends Entity
     protected int $signCount = 0;
     protected string $userHandle;
     protected ?string $nickname = null;
+    protected ?string $credentialIdHash = null;
+    protected ?\DateTimeInterface $disabledAt = null;
 
     public function getUserType(): string
     {
@@ -91,5 +93,25 @@ class Sw6OidcPasskeyCredentialEntity extends Entity
     public function setNickname(?string $nickname): void
     {
         $this->nickname = $nickname;
+    }
+
+    public function getCredentialIdHash(): ?string
+    {
+        return $this->credentialIdHash;
+    }
+
+    public function setCredentialIdHash(?string $credentialIdHash): void
+    {
+        $this->credentialIdHash = $credentialIdHash;
+    }
+
+    public function getDisabledAt(): ?\DateTimeInterface
+    {
+        return $this->disabledAt;
+    }
+
+    public function setDisabledAt(?\DateTimeInterface $disabledAt): void
+    {
+        $this->disabledAt = $disabledAt;
     }
 }

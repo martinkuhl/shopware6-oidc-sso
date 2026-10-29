@@ -34,7 +34,7 @@ final class Migration1790685361EncryptProviderClientSecretsTest extends TestCase
         $connection = $this->createMock(Connection::class);
         $connection->expects(self::once())->method('executeStatement')->with(self::stringContains('VARCHAR(2048)'));
         $connection->expects(self::once())->method('fetchAllAssociative')
-            ->with(self::stringContains('NOT LIKE'), ['prefix' => Sw6OidcEncryptor::PREFIX . '%'])
+            ->with(self::stringContains('NOT LIKE'), ['prefix' => 'sw6oidc\_v%'])
             ->willReturn([['id' => 'id-1', 'client_secret' => 'plain-1']]);
         $connection->method('update')->willReturnCallback(static function (string $table, array $data, array $criteria) use (&$updates): int {
             $updates[] = [$table, $data, $criteria];
@@ -48,7 +48,7 @@ final class Migration1790685361EncryptProviderClientSecretsTest extends TestCase
         [$table, $data, $criteria] = $updates[0];
         self::assertSame('sw6oidc_provider', $table);
         self::assertSame(['id' => 'id-1'], $criteria);
-        self::assertSame('plain-1', (new Sw6OidcEncryptor('migration-test-secret'))->decrypt($data['client_secret']));
+        self::assertSame('plain-1', (new Sw6OidcEncryptor('migration-test-secret'))->decrypt($data['client_secret'], 'sw6oidc_provider.client_secret'));
     }
 
     public function testWithoutAppSecretOnlyWidensTheColumn(): void

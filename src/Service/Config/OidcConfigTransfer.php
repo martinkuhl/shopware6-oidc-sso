@@ -3,10 +3,16 @@
 namespace MartinKuhl\Sw6Oidc\Service\Config;
 
 use Doctrine\DBAL\Connection;
+use MartinKuhl\Sw6Oidc\Core\Content\AccessControlRule\Sw6OidcAccessControlRuleCollection;
+use MartinKuhl\Sw6Oidc\Core\Content\AttributeMapping\Sw6OidcAttributeMappingCollection;
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
+use MartinKuhl\Sw6Oidc\Core\Content\RoleMapping\Sw6OidcRoleMappingCollection;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
+use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupCollection;
 use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupEntity;
+use Shopware\Core\Framework\Api\Acl\Role\AclRoleCollection;
 use Shopware\Core\Framework\Api\Acl\Role\AclRoleEntity;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
@@ -45,6 +51,8 @@ class OidcConfigTransfer
     public const SECRET_PLAINTEXT = 'plaintext';
 
     /** Provider properties never exported/imported as plain fields. */
+    private const CHILD_COLLECTIONS = ['attributeMappings', 'roleMappings', 'accessControlRules'];
+
     private const EXCLUDED_PROPERTIES = [
         'clientSecret',
         'defaultAclRoleId',
@@ -64,6 +72,14 @@ class OidcConfigTransfer
         'updatedAt',
     ];
 
+    /**
+     * @param EntityRepository<Sw6OidcAccessControlRuleCollection> $accessControlRuleRepository
+     * @param EntityRepository<AclRoleCollection> $aclRoleRepository
+     * @param EntityRepository<Sw6OidcAttributeMappingCollection> $attributeMappingRepository
+     * @param EntityRepository<CustomerGroupCollection> $customerGroupRepository
+     * @param EntityRepository<Sw6OidcProviderCollection> $providerRepository
+     * @param EntityRepository<Sw6OidcRoleMappingCollection> $roleMappingRepository
+     */
     public function __construct(
         private readonly EntityRepository $providerRepository,
         private readonly EntityRepository $attributeMappingRepository,
@@ -93,7 +109,6 @@ class OidcConfigTransfer
         $providers = [];
 
         foreach ($this->providerRepository->search($criteria, $context)->getEntities() as $provider) {
-            \assert($provider instanceof Sw6OidcProviderEntity);
             $providers[] = $this->exportProvider($provider, $secretMode);
         }
 
@@ -151,7 +166,7 @@ class OidcConfigTransfer
 
         $secret = match ($secretMode) {
             self::SECRET_OMIT => null,
-            self::SECRET_PLAINTEXT => $provider->getClientSecret(),
+            self::SECRET_PLAINTEXT => $this->plaintextSecret($provider),
             self::SECRET_ENCRYPTED => $this->storedSecretEnvelope($provider->getId()),
             default => throw new \InvalidArgumentException(sprintf('Unknown secret mode "%s".', $secretMode)),
         };
@@ -222,7 +237,7 @@ class OidcConfigTransfer
             return null;
         }
 
-        return $this->encryptor->isEncrypted($stored) ? $stored : $this->encryptor->encrypt($stored);
+        return $this->encryptor->isEncrypted($stored) ? $stored : $this->encryptor->encrypt($stored, Sw6OidcProviderDefinition::CLIENT_SECRET_PURPOSE);
     }
 
     /**
@@ -260,8 +275,24 @@ class OidcConfigTransfer
             throw new \InvalidArgumentException('New confidential provider without "clientSecret": export it with --keep-encrypted (same APP_SECRET) or --plaintext.');
         }
 
-        $payload['defaultAclRoleId'] = $this->resolveReference($provider['defaultAclRole'] ?? null, 'acl_role', $skipUnresolved, $result, $label, $context);
-        $payload['defaultCustomerGroupId'] = $this->resolveReference($provider['defaultCustomerGroup'] ?? null, 'customer_group', $skipUnresolved, $result, $label, $context);
+        // A key the file doesn't carry (hand-edited, filtered, older export)
+        // keeps what is stored: an overwrite must never silently drop
+        // access-control rules or mappings (N-L11).
+        if (!$exists || \array_key_exists('defaultAclRole', $provider)) {
+            $payload['defaultAclRoleId'] = $this->resolveReference($provider['defaultAclRole'] ?? null, 'acl_role', $skipUnresolved, $result, $label, $context);
+        }
+
+        if (!$exists || \array_key_exists('defaultCustomerGroup', $provider)) {
+            $payload['defaultCustomerGroupId'] = $this->resolveReference($provider['defaultCustomerGroup'] ?? null, 'customer_group', $skipUnresolved, $result, $label, $context);
+        }
+
+        if ($exists) {
+            foreach (self::CHILD_COLLECTIONS as $collection) {
+                if (!\array_key_exists($collection, $provider)) {
+                    $result->warnings[$label][] = sprintf('"%s" is missing from the file; the stored ones were kept.', $collection);
+                }
+            }
+        }
 
         $payload['attributeMappings'] = [];
 
@@ -323,11 +354,25 @@ class OidcConfigTransfer
 
         // One transaction per provider: a rejected upsert (SSRF, lockout
         // guard, validation) must not leave its mappings deleted.
-        $this->connection->transactional(function () use ($exists, $id, $payload, $context): void {
+        $replaced = [];
+
+        foreach (self::CHILD_COLLECTIONS as $collection) {
+            if ($exists && !\array_key_exists($collection, $provider)) {
+                unset($payload[$collection]);
+            } else {
+                $replaced[] = $collection;
+            }
+        }
+
+        $this->connection->transactional(function () use ($exists, $id, $payload, $replaced, $context): void {
             if ($exists) {
-                $this->deleteChildren($this->attributeMappingRepository, $id, $context);
-                $this->deleteChildren($this->roleMappingRepository, $id, $context);
-                $this->deleteChildren($this->accessControlRuleRepository, $id, $context);
+                foreach ($replaced as $collection) {
+                    match ($collection) {
+                        'attributeMappings' => $this->deleteChildren($this->attributeMappingRepository, $id, $context),
+                        'roleMappings' => $this->deleteChildren($this->roleMappingRepository, $id, $context),
+                        'accessControlRules' => $this->deleteChildren($this->accessControlRuleRepository, $id, $context),
+                    };
+                }
             }
 
             $this->providerRepository->upsert([$payload], $context);
@@ -382,6 +427,11 @@ class OidcConfigTransfer
         return null;
     }
 
+    /**
+     * @template TCollection of \Shopware\Core\Framework\DataAbstractionLayer\EntityCollection
+     *
+     * @param \Shopware\Core\Framework\DataAbstractionLayer\EntityRepository<TCollection> $repository
+     */
     private function deleteChildren(EntityRepository $repository, string $providerId, Context $context): void
     {
         $ids = $repository->searchIds((new Criteria())->addFilter(new EqualsFilter('providerId', $providerId)), $context)->getIds();
@@ -409,5 +459,27 @@ class OidcConfigTransfer
         }
 
         return $properties;
+    }
+
+    /**
+     * --plaintext must export the secret, never an envelope that merely
+     * looks like one (N-L5).
+     */
+    private function plaintextSecret(Sw6OidcProviderEntity $provider): ?string
+    {
+        if ($provider->isPublicClient() || (string) $provider->getClientSecret() === '') {
+            return null;
+        }
+
+        $secret = $provider->getUsableClientSecret();
+
+        if ($secret === null) {
+            throw new \RuntimeException(sprintf(
+                'The client secret of provider "%s" cannot be decrypted with this APP_SECRET; re-enter it before exporting.',
+                $provider->getAppName(),
+            ));
+        }
+
+        return $secret;
     }
 }

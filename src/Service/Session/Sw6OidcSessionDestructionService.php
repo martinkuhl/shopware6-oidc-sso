@@ -64,8 +64,22 @@ class Sw6OidcSessionDestructionService
         $this->contextPersister->revokeAllCustomerTokens($userId);
     }
 
-    public function destroyCustomerSession(string $contextToken, string $salesChannelId, ?string $customerId = null): void
+    private function destroyCustomerSession(string $contextToken, string $salesChannelId, ?string $customerId = null): void
     {
+        $known = $this->connection->fetchOne(
+            'SELECT 1 FROM `sales_channel_api_context` WHERE `token` = :token',
+            ['token' => $contextToken],
+        ) !== false;
+
+        if (!$known && $customerId !== null) {
+            // Core rotated the token since the login (e.g. a password change):
+            // the registered one is gone, but the session lives on under the
+            // new token, which can't be targeted — end all of them (R3-L30).
+            $this->contextPersister->revokeAllCustomerTokens($customerId);
+
+            return;
+        }
+
         $this->contextPersister->delete($contextToken, $salesChannelId, $customerId);
     }
 

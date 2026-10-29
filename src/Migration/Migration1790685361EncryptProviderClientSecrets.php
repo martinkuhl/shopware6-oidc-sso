@@ -41,13 +41,14 @@ class Migration1790685361EncryptProviderClientSecrets extends MigrationStep
         /** @var list<array{id: string, client_secret: string}> $rows */
         $rows = $connection->fetchAllAssociative(
             'SELECT `id`, `client_secret` FROM `sw6oidc_provider` WHERE `client_secret` NOT LIKE :prefix',
-            ['prefix' => Sw6OidcEncryptor::PREFIX . '%'],
+            // Any envelope version counts as already encrypted.
+            ['prefix' => 'sw6oidc\_v%'],
         );
 
         foreach ($rows as $row) {
             $connection->update(
                 'sw6oidc_provider',
-                ['client_secret' => $encryptor->encrypt($row['client_secret'])],
+                ['client_secret' => $encryptor->encrypt($row['client_secret'], 'sw6oidc_provider.client_secret')],
                 ['id' => $row['id']],
             );
         }

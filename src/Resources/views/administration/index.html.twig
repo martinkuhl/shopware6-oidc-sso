@@ -24,14 +24,6 @@
     manifest directly instead, so the content-hashed filename is still never
     hardcoded here.
 
-    VERIFICATION NEEDED: confirms via reading shopware/core's actual
-    application.ts and index.html.twig at the installed v6.7.14.0 tag, but
-    the exact script execution ordering relative to
-    window.startApplication() (a plain module-script document-order
-    assumption) hasn't been confirmed by seeing this actually run - watch for
-    the SSO/Passkey buttons appearing, or a JS console error, on the next
-    deploy.
-
     A script tag without the page's CSP nonce gets silently blocked by
     Shopware's Content-Security-Policy (confirmed live: showed as
     "(blocked:csp)" in the network panel) - every other script tag in this

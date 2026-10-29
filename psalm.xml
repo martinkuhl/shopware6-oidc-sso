@@ -3,7 +3,8 @@
     errorLevel="4"
     resolveFromConfigFile="true"
     findUnusedBaselineEntry="true"
-    findUnusedCode="false"
+    findUnusedCode="true"
+    errorBaseline="psalm-baseline.xml"
     findUnusedIssueHandlerSuppression="false"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns="https://getpsalm.org/schema/config"
@@ -65,6 +66,12 @@
                 <referencedMethod name="Shopware\Core\Framework\Context::createDefaultContext" />
                 <file name="src/Core/Content/Provider/Field/Sw6OidcEncryptedFieldSerializer.php" />
                 <file name="src/Subscriber/Sw6OidcProviderWriteGuardSubscriber.php" />
+                <file name="src/Subscriber/SessionActivityWriteGuardSubscriber.php" />
+                <file name="src/Subscriber/AttributeMappingWriteGuardSubscriber.php" />
+                <file name="src/Subscriber/AdminLockoutGuardSubscriber.php" />
+                <file name="src/Subscriber/ProviderTrustGuardSubscriber.php" />
+                <file name="src/Subscriber/TrustEntityWriteGuardSubscriber.php" />
+                <file name="src/Subscriber/PasskeyDeletionSubscriber.php" />
             </errorLevel>
         </InternalMethod>
 

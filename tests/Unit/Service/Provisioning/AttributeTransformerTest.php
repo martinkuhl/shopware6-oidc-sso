@@ -76,4 +76,16 @@ final class AttributeTransformerTest extends TestCase
 
         self::assertSame($value, (new T(new NullLogger()))->apply(T::REGEX_REPLACE, ['pattern' => '/(a+)+$/', 'replacement' => 'x'], $value, []));
     }
+
+    public function testStrictModeRefusesInsteadOfPassingTheRawValueThrough(): void
+    {
+        $this->expectException(\MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\AttributeTransformFailedException::class);
+
+        (new T(new NullLogger()))->apply(T::REGEX_REPLACE, ['pattern' => '/(unclosed', 'replacement' => ''], 'Jane@Example.com', [], true);
+    }
+
+    public function testStrictModeStillTransformsNormally(): void
+    {
+        self::assertSame('jane@example.com', (new T(new NullLogger()))->apply(T::REGEX_REPLACE, ['pattern' => '/@EXAMPLE\.COM$/i', 'replacement' => '@example.com'], 'jane@EXAMPLE.COM', [], true));
+    }
 }

@@ -51,14 +51,18 @@ Restart Authelia and check the logs for configuration errors.
 | Client secret | the `Random Password` from step 1 |
 | Well-known configuration URL | `https://auth.example.com/.well-known/openid-configuration`, then **Load configuration** |
 | End-session endpoint | `https://auth.example.com/logout` — enter it by hand (see below) |
-| Scope | `openid profile email groups` |
+| Scope | `openid profile email groups` (`openid` is required: the plugin then expects an ID token and fails the login without one) |
 | PKCE flow | `S256` |
 | Group attribute | `groups` |
 | Login type | customer, admin or both |
 
 Save, then use **Test connection** and **Run live login test**. The live test shows every claim Authelia sends. Use it to set up the attribute mapping (Authelia sends `email`, `email_verified`, `name`, `preferred_username`, `groups`).
 
-Since Authelia 4.39, most claims come from the userinfo endpoint rather than the ID token. That's fine: the plugin always fetches userinfo and merges both.
+Since Authelia 4.39, most claims come from the userinfo endpoint rather than the ID token. That's fine: the plugin always fetches userinfo and merges both (userinfo must describe the same `sub`; `sub`, `email` and `email_verified` are taken from the ID token when it contains them).
+
+**Verified email**: the provider's **Require a verified email** setting is on by default, so the live test must show `email_verified: true`. Turn the setting off only deliberately, if your Authelia user database is the only source of email addresses and you trust it completely.
+
+**Existing shop accounts** with the same email are not taken over automatically. Users connect them with **Connect SSO** in their account/profile, or you enable **Link existing accounts by verified email** on the provider.
 
 ## 3. Groups, roles and access control
 
@@ -77,5 +81,6 @@ At the time of writing, Authelia supports neither **Back-Channel** nor **Front-C
 
 - **`invalid_client` at the token endpoint**: the client secret in Shopware must be the plain value, not the digest, and `token_endpoint_auth_method` must be `client_secret_basic` (or be left out).
 - **"The 'redirect_uris' registered … did not match"**: add the exact URI from the error to `redirect_uris`.
-- **Login loops back to the login page**: check the plugin log `var/log/sw6oidc-<env>.log`.
+- **Login loops back to the login page**: check the plugin log `var/log/sw6oidc-<env>.log` (switch on **Enable debug logging** in the plugin settings for details).
+- **"email address not verified"**: Authelia didn't send `email_verified: true`; see "Verified email" above.
 - **Private addresses**: the plugin only talks to IdPs on public HTTPS addresses. For a test setup on a local network, set `SW6OIDC_ALLOW_INSECURE_IDP_URLS=1`, and never in production.

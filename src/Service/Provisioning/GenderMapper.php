@@ -4,10 +4,9 @@ namespace MartinKuhl\Sw6Oidc\Service\Provisioning;
 
 /**
  * Normalizes gender-claim string variants (including German locale) to a
- * Shopware `salutation` entity technical_name ('mr'/'mrs'), mirroring the
- * Magento module's unified Model/Attribute/GenderMapper.php — Shopware has no
+ * Shopware `salutation` entity technical_name ('mr'/'mrs') — Shopware has no
  * plain "gender" field, salutation is the closest equivalent and is resolved
- * to a salutationId by SalutationResolver.
+ * to a salutationId by CustomerProvisioningService::resolveSalutationId().
  */
 class GenderMapper
 {

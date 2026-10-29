@@ -52,27 +52,35 @@ final class JwtVerifierLogoutTokenTest extends TestCase
      */
     public static function invalidTokens(): iterable
     {
-        yield 'no events' => [self::claims(['events' => null]), 'events'];
-        yield 'events without the logout member' => [self::claims(['events' => ['http://schemas.openid.net/event/other' => []]]), 'events'];
-        yield 'logout member not an object' => [self::claims(['events' => [JwtVerifier::BACKCHANNEL_LOGOUT_EVENT => 'yes']]), 'events'];
-        yield 'nonce present (id_token substitution)' => [self::claims(['nonce' => 'n']), 'nonce'];
-        yield 'neither sub nor sid' => [self::claims(['sub' => null, 'sid' => null]), 'neither'];
-        yield 'no iat' => [self::claims(['iat' => null]), 'iat'];
-        yield 'expired' => [self::claims(['exp' => time() - 5]), 'expired'];
-        yield 'wrong audience' => [self::claims(['aud' => 'other-client']), 'audience'];
-        yield 'wrong issuer' => [self::claims(['iss' => 'https://evil.example']), 'issuer'];
+        yield 'no events' => [['events' => null], 'events'];
+        yield 'events without the logout member' => [['events' => ['http://schemas.openid.net/event/other' => []]], 'events'];
+        yield 'logout member not an object' => [['events' => [JwtVerifier::BACKCHANNEL_LOGOUT_EVENT => 'yes']], 'events'];
+        yield 'nonce present (id_token substitution)' => [['nonce' => 'n'], 'nonce'];
+        yield 'neither sub nor sid' => [['sub' => null, 'sid' => null], 'neither'];
+        yield 'no iat' => [['iat' => null], 'iat'];
+        yield 'expired' => [['exp' => -JwtVerifier::LEEWAY_SECONDS - 5], 'expired'];
+        yield 'no jti' => [['jti' => null], 'jti'];
+        yield 'too old' => [['iat' => -3600], 'too old'];
+        yield 'wrong audience' => [['aud' => 'other-client'], 'audience'];
+        yield 'wrong issuer' => [['iss' => 'https://evil.example'], 'issuer'];
     }
 
     /**
-     * @param array<string, mixed> $claims
+     * @param array<string, mixed> $overrides iat/exp as offsets from now (resolved when the test runs, not when the provider does)
      */
     #[DataProvider('invalidTokens')]
-    public function testInvalidLogoutTokensAreRejected(array $claims, string $messagePart): void
+    public function testInvalidLogoutTokensAreRejected(array $overrides, string $messagePart): void
     {
         $this->expectException(InvalidJwtException::class);
         $this->expectExceptionMessageMatches('/' . preg_quote($messagePart, '/') . '/i');
 
-        $this->verify($claims);
+        foreach (['iat', 'exp'] as $timeClaim) {
+            if (\is_int($overrides[$timeClaim] ?? null)) {
+                $overrides[$timeClaim] += time();
+            }
+        }
+
+        $this->verify(self::claims($overrides));
     }
 
     public function testTokenSignedByAnotherKeyIsRejected(): void
@@ -80,6 +88,77 @@ final class JwtVerifierLogoutTokenTest extends TestCase
         $this->expectException(InvalidJwtException::class);
 
         $this->verifier->verifyLogoutToken((new JwtTestSigner('other'))->sign(self::claims()), 'https://idp.example/jwks', self::ISSUER, self::AUDIENCE, 60, 5);
+    }
+
+    /**
+     * R3-M1: anonymous logout tokens with a fresh random `kid` each must not
+     * force one JWKS fetch each.
+     */
+    public function testRandomKidsCostAtMostOneRefetchPerEndpoint(): void
+    {
+        $signer = $this->signer;
+        $client = new MockHttpClient(static fn (): MockResponse => new MockResponse($signer->jwksJson()));
+        $verifier = new JwtVerifier($client, new ArrayAdapter(), new NullLogger());
+
+        for ($i = 0; $i < 5; ++$i) {
+            try {
+                $verifier->verifyLogoutToken((new JwtTestSigner('random-' . $i))->sign(self::claims()), 'https://idp.example/jwks', self::ISSUER, self::AUDIENCE, 60, 5);
+                self::fail('A token signed by an unknown key must be rejected.');
+            } catch (InvalidJwtException) {
+            }
+        }
+
+        // The initial fetch plus one rotation refetch for the whole flood.
+        self::assertSame(2, $client->getRequestsCount());
+    }
+
+    public function testOversizedKidIsRejectedBeforeAnyFetch(): void
+    {
+        $client = new MockHttpClient(static fn (): MockResponse => new MockResponse('{}'));
+        $verifier = new JwtVerifier($client, new ArrayAdapter(), new NullLogger());
+
+        try {
+            $verifier->verifyLogoutToken((new JwtTestSigner(str_repeat('k', 300)))->sign(self::claims()), 'https://idp.example/jwks', self::ISSUER, self::AUDIENCE, 60, 5);
+            self::fail('An oversized kid must be rejected.');
+        } catch (InvalidJwtException $exception) {
+            self::assertStringContainsString('kid', $exception->getMessage());
+        }
+
+        self::assertSame(0, $client->getRequestsCount());
+    }
+
+    public function testRateLimitedCallersOnlyUseCachedKeys(): void
+    {
+        $signer = $this->signer;
+        $client = new MockHttpClient(static fn (): MockResponse => new MockResponse($signer->jwksJson()));
+        $verifier = new JwtVerifier($client, new ArrayAdapter(), new NullLogger());
+        $verifier->verifyLogoutToken($this->signer->sign(self::claims()), 'https://idp.example/jwks', self::ISSUER, self::AUDIENCE, 60, 5);
+
+        // A correctly signed token still passes from the cache ...
+        $verifier->verifyLogoutToken($this->signer->sign(self::claims()), 'https://idp.example/jwks', self::ISSUER, self::AUDIENCE, 60, 5, allowRefetch: false);
+
+        // ... an unknown kid never triggers a fetch.
+        try {
+            $verifier->verifyLogoutToken((new JwtTestSigner('rotated'))->sign(self::claims()), 'https://idp.example/jwks', self::ISSUER, self::AUDIENCE, 60, 5, allowRefetch: false);
+            self::fail('An unknown key must be rejected.');
+        } catch (InvalidJwtException) {
+        }
+
+        self::assertSame(1, $client->getRequestsCount());
+    }
+
+    public function testAFailingLogoutFetchDoesNotPauseLogins(): void
+    {
+        $cache = new ArrayAdapter();
+        $failing = new JwtVerifier(new MockHttpClient(static fn (): MockResponse => new MockResponse('', ['http_code' => 503])), $cache, new NullLogger());
+
+        try {
+            $failing->verifyLogoutToken($this->signer->sign(self::claims()), 'https://idp.example/jwks', self::ISSUER, self::AUDIENCE, 60, 5);
+        } catch (InvalidJwtException) {
+        }
+
+        self::assertFalse($cache->getItem('sw6oidc_jwks_fail_login_' . hash('sha256', 'https://idp.example/jwks'))->isHit());
+        self::assertTrue($cache->getItem('sw6oidc_jwks_fail_logout_' . hash('sha256', 'https://idp.example/jwks'))->isHit());
     }
 
     public function testDecodeUnverifiedReadsWithoutChecking(): void

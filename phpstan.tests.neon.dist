@@ -1,0 +1,9 @@
+# The test suites, at a lower level than src/ (phpstan.neon.dist): test
+# doubles and fixtures are deliberately loose, but calls into the plugin's
+# API must still type-check (R3-L51).
+parameters:
+    level: 5
+    paths:
+        - tests/Unit
+    tmpDir: var/cache/phpstan-tests
+    treatPhpDocTypesAsCertain: false

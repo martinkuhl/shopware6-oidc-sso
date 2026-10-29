@@ -44,7 +44,7 @@ final class PostLogoutStateTest extends TestCase
         $container->set('router', $router);
         $controller->setContainer($container);
 
-        $landing = static fn (array $query): ?string => $controller->landing(new Request($query))->getTargetUrl();
+        $landing = static fn (array $query): string => $controller->landing(new Request($query))->getTargetUrl();
 
         self::assertSame('https://shop.example/admin/', $landing(['state' => $state->create('admin')]));
         self::assertSame('/account/login', $landing(['state' => $state->create('customer')]));

@@ -18,6 +18,9 @@ use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
 use Shopware\Core\Framework\Uuid\Uuid;
 use Symfony\Component\HttpFoundation\Request;
+use MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant;
+use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSsoSchema;
+use Shopware\Core\PlatformRequest;
 
 #[CoversClass(OidcUserProviderAdminController::class)]
 final class OidcUserProviderAdminControllerTest extends TestCase
@@ -125,9 +128,37 @@ final class OidcUserProviderAdminControllerTest extends TestCase
             ->with(Sw6OidcUserProviderEntity::USER_TYPE_ADMIN, $userId, self::isInstanceOf(Context::class));
 
         $response = $this->controller($this->createMock(EntityRepository::class), $bindingService)
-            ->unlink(new Request(request: ['userType' => 'admin', 'userId' => $userId]), $this->context(['user:update']));
+            ->unlink($this->verifiedRequest(['userType' => 'admin', 'userId' => $userId]), $this->context(['user:update']));
 
         self::assertSame(204, $response->getStatusCode());
+    }
+
+    public function testUnlinkingAnAdminNeedsAUserVerifiedToken(): void
+    {
+        $bindingService = $this->createMock(UserProviderBindingService::class);
+        $bindingService->expects(self::never())->method('unbind');
+
+        $response = $this->controller($this->createMock(EntityRepository::class), $bindingService)
+            ->unlink(new Request(request: ['userType' => 'admin', 'userId' => Uuid::randomHex()]), $this->context(['user:update']));
+
+        self::assertSame(403, $response->getStatusCode());
+        self::assertStringContainsString('user_verification_required', (string) $response->getContent());
+    }
+
+    public function testUnlinkingTheLastSsoAdminIsRefusedUnderSsoOnlyMode(): void
+    {
+        $db = new SqliteSsoSchema();
+        $provider = $db->provider(['disable_non_oidc_admin_login' => 1]);
+        $admin = $db->admin();
+        $db->bind($provider, $admin);
+
+        $bindingService = $this->createMock(UserProviderBindingService::class);
+        $bindingService->expects(self::never())->method('unbind');
+
+        $response = $this->controller($this->createMock(EntityRepository::class), $bindingService, $db)
+            ->unlink($this->verifiedRequest(['userType' => 'admin', 'userId' => $admin]), $this->context(['user:update']));
+
+        self::assertSame(409, $response->getStatusCode());
     }
 
     public function testUnlinkDeniesSourceWithOnlyReadPrivilege(): void
@@ -149,13 +180,25 @@ final class OidcUserProviderAdminControllerTest extends TestCase
         self::assertSame(400, $response->getStatusCode());
     }
 
-    private function controller(EntityRepository $repository, ?UserProviderBindingService $bindingService = null): OidcUserProviderAdminController
+    private function controller(EntityRepository $repository, ?UserProviderBindingService $bindingService = null, ?SqliteSsoSchema $db = null): OidcUserProviderAdminController
     {
         return new OidcUserProviderAdminController(
             $repository,
             $bindingService ?? $this->createMock(UserProviderBindingService::class),
             new NullLogger(),
+            new SsoOnlyInvariant(($db ?? new SqliteSsoSchema())->connection),
         );
+    }
+
+    /**
+     * @param array<string, string> $body
+     */
+    private function verifiedRequest(array $body): Request
+    {
+        $request = new Request(request: $body);
+        $request->attributes->set(PlatformRequest::ATTRIBUTE_OAUTH_SCOPES, ['write', 'user-verified']);
+
+        return $request;
     }
 
     /**

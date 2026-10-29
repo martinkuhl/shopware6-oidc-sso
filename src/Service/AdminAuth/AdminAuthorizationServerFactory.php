@@ -17,11 +17,12 @@ use League\OAuth2\Server\Repositories\ScopeRepositoryInterface;
  * A factory (not a plain XML service definition) only because
  * AuthorizationServer::enableGrantType() needs a \DateInterval argument,
  * which isn't constructible from services.xml.
+ *
+ * The access-token TTL is the shop's own `shopware.api.access_token_ttl`, so
+ * SSO sessions follow the same policy as password logins (H10).
  */
 class AdminAuthorizationServerFactory
 {
-    private const ACCESS_TOKEN_TTL = 'PT10M';
-
     public function __construct(
         private readonly ClientRepositoryInterface $clientRepository,
         private readonly AccessTokenRepositoryInterface $accessTokenRepository,
@@ -29,6 +30,7 @@ class AdminAuthorizationServerFactory
         private readonly CryptKeyInterface $privateKey,
         private readonly string $encryptionKey,
         private readonly AdminOidcGrant $grant,
+        private readonly string $accessTokenTtl,
     ) {
     }
 
@@ -42,7 +44,7 @@ class AdminAuthorizationServerFactory
             $this->encryptionKey,
         );
 
-        $server->enableGrantType($this->grant, new \DateInterval(self::ACCESS_TOKEN_TTL));
+        $server->enableGrantType($this->grant, new \DateInterval($this->accessTokenTtl));
 
         return $server;
     }

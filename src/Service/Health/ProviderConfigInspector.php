@@ -36,7 +36,7 @@ class ProviderConfigInspector
         }
 
         if (!$provider->isPublicClient()) {
-            $secret = $provider->getClientSecret();
+            $secret = (string) $provider->getClientSecret();
 
             if ($secret === '') {
                 $problems[] = 'client_secret_missing';

@@ -2,15 +2,20 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Session;
 
+use MartinKuhl\Sw6Oidc\Core\Content\SessionActivity\Sw6OidcSessionActivityCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\SessionActivity\Sw6OidcSessionActivityDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\SessionActivity\Sw6OidcSessionActivityEntity;
+use MartinKuhl\Sw6Oidc\Service\Health\NodeHeartbeat;
 use Psr\Log\LoggerInterface;
+use Shopware\Core\Framework\Api\Context\SystemSource;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\MultiFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Sorting\FieldSorting;
 use Shopware\Core\Framework\Uuid\Uuid;
+use Symfony\Component\HttpFoundation\IpUtils;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -24,9 +29,17 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class Sw6OidcSessionActivityRecorder
 {
+    private const CLOSE_BATCH_SIZE = 200;
+
+    /**
+     * @param EntityRepository<Sw6OidcSessionActivityCollection> $activityRepository
+     */
     public function __construct(
         private readonly EntityRepository $activityRepository,
         private readonly LoggerInterface $logger,
+        private readonly ?NodeHeartbeat $nodeHeartbeat = null,
+        /** SW6OIDC_SESSION_ACTIVITY_TRUNCATE_IP: keep only IPv4 /24 and IPv6 /64 (N-L12) */
+        private readonly bool $truncateIp = false,
     ) {
     }
 
@@ -38,6 +51,8 @@ class Sw6OidcSessionActivityRecorder
         ?Request $request,
         ?string $providerId = null,
         ?Sw6OidcSession $registrySession = null,
+        /** credential_id_hash of the passkey that logged in, so deleting it ends this session (R3-M6) */
+        ?string $passkeyCredentialHash = null,
     ): void {
         try {
             $this->activityRepository->create([[
@@ -46,23 +61,28 @@ class Sw6OidcSessionActivityRecorder
                 'userType' => $userType,
                 'userId' => $userId,
                 'sub' => $registrySession?->sub,
-                'sid' => $registrySession?->sid,
+                // A `sid` lets anyone end the IdP session: only its hash is kept (R3-L40).
+                'sid' => $registrySession?->sid !== null ? self::hashSid($registrySession->sid) : null,
                 'loginMethod' => $loginMethod,
                 'sessionKeyHash' => $this->hash($sessionKey),
                 'registrySessionId' => $registrySession?->id,
-                'ipAddress' => $request?->getClientIp(),
+                'passkeyCredentialHash' => $passkeyCredentialHash,
+                'ipAddress' => $this->ipAddress($request),
                 'userAgent' => $this->userAgent($request),
                 'loggedInAt' => new \DateTimeImmutable(),
-            ]], Context::createDefaultContext());
+            ]], $this->systemContext());
         } catch (\Throwable $exception) {
             $this->logger->warning('sw6oidc: could not record session login.', ['exception' => $exception->getMessage()]);
         }
+
+        // Every login path passes through here: a cheap way to learn which app servers serve SSO.
+        $this->nodeHeartbeat?->record();
     }
 
     /**
-     * Closes the open login row of one session. With $fallbackToNewest, the
-     * account's newest open row is closed when nothing matches (admin
-     * logouts after a token refresh, when the jti is no longer the first one).
+     * Closes the open login row of exactly one session (by registry entry or
+     * session key). Nothing matching means nothing is closed — guessing
+     * "the newest row" would mark another device's session as logged out.
      */
     public function recordLogout(
         string $userType,
@@ -70,31 +90,24 @@ class Sw6OidcSessionActivityRecorder
         string $reason,
         ?string $sessionKey = null,
         ?string $registrySessionId = null,
-        bool $fallbackToNewest = false,
     ): void {
+        $identifiers = [];
+
+        if ($registrySessionId !== null) {
+            $identifiers[] = new EqualsFilter('registrySessionId', $registrySessionId);
+        }
+
+        if ($sessionKey !== null) {
+            $identifiers[] = new EqualsFilter('sessionKeyHash', $this->hash($sessionKey));
+        }
+
+        if ($identifiers === []) {
+            return;
+        }
+
         try {
-            $open = $this->openActivities($userType, $userId);
-            $keyHash = $sessionKey !== null ? $this->hash($sessionKey) : null;
-            $match = null;
-
-            foreach ($open as $activity) {
-                $byRegistry = $registrySessionId !== null && $activity->getRegistrySessionId() === $registrySessionId;
-                $byKey = $keyHash !== null && $activity->getSessionKeyHash() === $keyHash;
-
-                if ($byRegistry || $byKey) {
-                    $match = $activity;
-
-                    break;
-                }
-            }
-
-            if ($match === null && $fallbackToNewest) {
-                $match = $open[0] ?? null;
-            }
-
-            if ($match !== null) {
-                $this->close([$match], $reason);
-            }
+            // One indexed lookup instead of scanning the account's open rows (R3-L31).
+            $this->close($this->openActivities($userType, $userId, new MultiFilter(MultiFilter::CONNECTION_OR, $identifiers), 1), $reason);
         } catch (\Throwable $exception) {
             $this->logger->warning('sw6oidc: could not record session logout.', ['exception' => $exception->getMessage()]);
         }
@@ -107,7 +120,11 @@ class Sw6OidcSessionActivityRecorder
     public function recordLogoutOfAllSessions(string $userType, string $userId, string $reason): void
     {
         try {
-            $this->close($this->openActivities($userType, $userId), $reason);
+            // In batches, so an account with many open rows is closed completely (R3-L31).
+            do {
+                $batch = $this->openActivities($userType, $userId, null, self::CLOSE_BATCH_SIZE);
+                $this->close($batch, $reason);
+            } while (\count($batch) === self::CLOSE_BATCH_SIZE);
         } catch (\Throwable $exception) {
             $this->logger->warning('sw6oidc: could not record session logout.', ['exception' => $exception->getMessage()]);
         }
@@ -123,14 +140,18 @@ class Sw6OidcSessionActivityRecorder
     /**
      * @return list<Sw6OidcSessionActivityEntity> newest first
      */
-    private function openActivities(string $userType, string $userId): array
+    private function openActivities(string $userType, string $userId, ?MultiFilter $identifiers, int $limit): array
     {
         $criteria = (new Criteria())
             ->addFilter(new EqualsFilter('userType', $userType))
             ->addFilter(new EqualsFilter('userId', $userId))
             ->addFilter(new EqualsFilter('loggedOutAt', null))
             ->addSorting(new FieldSorting('loggedInAt', FieldSorting::DESCENDING))
-            ->setLimit(200);
+            ->setLimit($limit);
+
+        if ($identifiers instanceof MultiFilter) {
+            $criteria->addFilter($identifiers);
+        }
 
         $activities = [];
 
@@ -157,7 +178,15 @@ class Sw6OidcSessionActivityRecorder
         $this->activityRepository->update(array_map(
             static fn (Sw6OidcSessionActivityEntity $activity): array => ['id' => $activity->getId(), 'loggedOutAt' => $now, 'logoutReason' => $reason],
             $activities,
-        ), Context::createDefaultContext());
+        ), $this->systemContext());
+    }
+
+    /**
+     * The activity fields are WriteProtected(system) (N-M8).
+     */
+    private function systemContext(): Context
+    {
+        return new Context(new SystemSource());
     }
 
     private function userAgent(?Request $request): ?string
@@ -167,8 +196,23 @@ class Sw6OidcSessionActivityRecorder
         return \is_string($userAgent) && $userAgent !== '' ? mb_substr($userAgent, 0, 512) : null;
     }
 
+    /**
+     * The stored form of an IdP session id: `sha256:<hex>`.
+     */
+    public static function hashSid(string $sid): string
+    {
+        return 'sha256:' . hash('sha256', $sid);
+    }
+
     private function hash(string $sessionKey): string
     {
         return hash('sha256', $sessionKey);
+    }
+
+    private function ipAddress(?Request $request): ?string
+    {
+        $ip = $request?->getClientIp();
+
+        return $ip !== null && $this->truncateIp ? IpUtils::anonymize($ip) : $ip;
     }
 }

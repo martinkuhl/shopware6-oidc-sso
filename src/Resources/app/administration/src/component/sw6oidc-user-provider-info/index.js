@@ -1,13 +1,13 @@
 import template from './sw6oidc-user-provider-info.html.twig';
 import './sw6oidc-user-provider-info.scss';
 import { fetchUserProviderBindings, unlinkUserProvider } from '../../service/user-provider-api';
+import Sw6oidcApiService from '../../service/sw6oidc-api.service';
 
 const { Component, Mixin } = Shopware;
 
 /**
  * "OIDC Provider: <name> (<bound at>)" or "none", plus an "Unlink IdP"
- * button - the Administration counterpart of the Magento reference module's
- * OidcUserInfoPlugin (admin user edit) and OidcInfoPlugin (customer view).
+ * button, shown on the admin user and customer detail pages.
  *
  * Registered as a lazy factory like sw6oidc-profile-passkey: main.js is also
  * force-loaded on the pre-auth login screen, where the "notification" mixin
@@ -19,6 +19,8 @@ Component.register('sw6oidc-user-provider-info', () => Promise.resolve({
     inject: ['acl'],
 
     mixins: [Mixin.getByName('notification')],
+
+    emits: ['unlinked'],
 
     props: {
         userType: {
@@ -41,12 +43,19 @@ Component.register('sw6oidc-user-provider-info', () => Promise.resolve({
             binding: null,
             isLoading: true,
             isUnlinking: false,
+            showUnlinkConfirm: false,
+            /** Unlinking an admin needs a fresh re-authentication (R3-H7). */
+            showVerify: false,
         };
     },
 
     computed: {
         canUnlink() {
             return this.allowUnlink && this.acl.can(this.userType === 'admin' ? 'users_and_permissions.editor' : 'customer.editor');
+        },
+
+        unlinkConfirmText() {
+            return this.$t(`sw6oidc.userProvider.${this.userType === 'admin' ? 'unlinkConfirmAdmin' : 'unlinkConfirmCustomer'}`);
         },
 
         formattedCreatedAt() {
@@ -65,39 +74,71 @@ Component.register('sw6oidc-user-provider-info', () => Promise.resolve({
 
     methods: {
         async loadBinding() {
+            const userId = this.userId;
             this.isLoading = true;
 
             try {
-                const bindings = await fetchUserProviderBindings(this.userType, [this.userId]);
-                this.binding = bindings[this.userId] ?? null;
+                const bindings = await fetchUserProviderBindings(this.userType, [userId]);
+
+                // A response for a previous userId must not overwrite the current one (F-N17).
+                if (userId === this.userId) {
+                    this.binding = bindings[userId] ?? null;
+                }
             } catch (exception) {
                 // eslint-disable-next-line no-console
                 console.error('sw6oidc: failed to load OIDC provider binding', exception);
-                this.binding = null;
+
+                if (userId === this.userId) {
+                    this.binding = null;
+                }
             } finally {
-                this.isLoading = false;
+                if (userId === this.userId) {
+                    this.isLoading = false;
+                }
             }
         },
 
-        async onUnlink() {
-            const confirmKey = this.userType === 'admin' ? 'unlinkConfirmAdmin' : 'unlinkConfirmCustomer';
+        onUnlink() {
+            this.showUnlinkConfirm = true;
+        },
 
-            // eslint-disable-next-line no-alert
-            if (!window.confirm(this.$tc(`sw6oidc.userProvider.${confirmKey}`))) {
+        onCancelUnlink() {
+            this.showUnlinkConfirm = false;
+        },
+
+        onConfirmUnlink() {
+            this.showUnlinkConfirm = false;
+
+            if (this.userType === 'admin') {
+                this.showVerify = true;
+
                 return;
             }
 
+            this.unlink();
+        },
+
+        onVerified() {
+            this.showVerify = false;
+            this.unlink();
+        },
+
+        async unlink() {
             this.isUnlinking = true;
 
             try {
                 await unlinkUserProvider(this.userType, this.userId);
                 this.binding = null;
-                this.createNotificationSuccess({ message: this.$tc('sw6oidc.userProvider.unlinkSuccess') });
+                this.createNotificationSuccess({ message: this.$t('sw6oidc.userProvider.unlinkSuccess') });
                 this.$emit('unlinked');
             } catch (exception) {
                 // eslint-disable-next-line no-console
                 console.error('sw6oidc: failed to unlink OIDC provider', exception);
-                this.createNotificationError({ message: this.$tc('sw6oidc.userProvider.unlinkError') });
+                this.createNotificationError({
+                    message: this.$t(Sw6oidcApiService.errorCode(exception) === 'last_sso_admin'
+                        ? 'sw6oidc.userProvider.unlinkLastSsoAdmin'
+                        : 'sw6oidc.userProvider.unlinkError'),
+                });
             } finally {
                 this.isUnlinking = false;
             }

@@ -2,6 +2,10 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Http\Exception;
 
-class OidcHttpException extends \RuntimeException
+use MartinKuhl\Sw6Oidc\Exception\Sw6OidcException;
+
+class OidcHttpException extends Sw6OidcException
 {
+    protected const STATUS_CODE = 502;
+    protected const ERROR_CODE = 'SW6OIDC_IDP_REQUEST_FAILED';
 }

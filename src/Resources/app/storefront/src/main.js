@@ -1,8 +1,5 @@
-import Sw6OidcPasskeyLoginPlugin from './passkey/passkey-login.plugin';
-import Sw6OidcPasskeyRegistrationPlugin from './passkey/passkey-registration.plugin';
-import Sw6OidcPasskeyDeleteConfirmPlugin from './passkey/passkey-delete-confirm.plugin';
-
+// Loaded on demand: only pages with a matching element fetch the plugin code.
 const PluginManager = window.PluginManager;
-PluginManager.register('Sw6OidcPasskeyLogin', Sw6OidcPasskeyLoginPlugin, '[data-sw6oidc-passkey-login]');
-PluginManager.register('Sw6OidcPasskeyRegistration', Sw6OidcPasskeyRegistrationPlugin, '[data-sw6oidc-passkey-register]');
-PluginManager.register('Sw6OidcPasskeyDeleteConfirm', Sw6OidcPasskeyDeleteConfirmPlugin, '[data-sw6oidc-passkey-delete-form]');
+PluginManager.register('Sw6OidcPasskeyLogin', () => import('./passkey/passkey-login.plugin'), '[data-sw6oidc-passkey-login]');
+PluginManager.register('Sw6OidcPasskeyRegistration', () => import('./passkey/passkey-registration.plugin'), '[data-sw6oidc-passkey-register]');
+PluginManager.register('Sw6OidcPasskeyDeleteConfirm', () => import('./passkey/passkey-delete-confirm.plugin'), '[data-sw6oidc-passkey-delete-form]');

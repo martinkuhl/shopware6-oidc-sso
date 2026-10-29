@@ -24,9 +24,24 @@ final class Sw6OidcSessionDestructionServiceTest extends TestCase
         $refreshTokens->expects(self::never())->method('revokeRefreshTokensForUser');
 
         $connection = $this->createMock(Connection::class);
+        $connection->method('fetchOne')->willReturn(1);
         $connection->expects(self::never())->method('executeStatement');
 
         (new Sw6OidcSessionDestructionService($persister, $refreshTokens, $connection, new NullLogger()))
+            ->destroy($this->session('customer', 'cust-1', 'ctx-token', 'sc-1'));
+    }
+
+    public function testRotatedCustomerTokenEndsAllOfTheCustomersSessions(): void
+    {
+        $persister = $this->createMock(SalesChannelContextPersister::class);
+        $persister->expects(self::never())->method('delete');
+        $persister->expects(self::once())->method('revokeAllCustomerTokens')->with('cust-1');
+
+        $connection = $this->createMock(Connection::class);
+        // Core replaced the context token since the login (R3-L30).
+        $connection->method('fetchOne')->willReturn(false);
+
+        (new Sw6OidcSessionDestructionService($persister, $this->createMock(RefreshTokenRepository::class), $connection, new NullLogger()))
             ->destroy($this->session('customer', 'cust-1', 'ctx-token', 'sc-1'));
     }
 

@@ -6,6 +6,7 @@ use MartinKuhl\Sw6Oidc\Controller\Api\OidcDiagnosticsController;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
+use MartinKuhl\Sw6Oidc\Service\Health\InfrastructureInspector;
 use MartinKuhl\Sw6Oidc\Service\Health\ProviderConfigInspector;
 use MartinKuhl\Sw6Oidc\Service\Health\ProviderReachabilityChecker;
 use MartinKuhl\Sw6Oidc\Service\Security\SsrfUrlValidator;
@@ -71,6 +72,15 @@ final class OidcDiagnosticsControllerTest extends TestCase
             $repository,
             new ProviderConfigInspector(new Sw6OidcEncryptor('app-secret')),
             new ProviderReachabilityChecker(new MockHttpClient(new MockResponse('{"keys":[{"kty":"RSA"}]}')), new SsrfUrlValidator(false, static fn (): array => ['93.184.215.14'])),
+            $this->infrastructure(),
         );
+    }
+
+    private function infrastructure(): InfrastructureInspector
+    {
+        $inspector = $this->createStub(InfrastructureInspector::class);
+        $inspector->method('inspect')->willReturn(['atomicStore' => 'database', 'nodesSeen' => 2, 'warnings' => ['multi_node_without_redis']]);
+
+        return $inspector;
     }
 }

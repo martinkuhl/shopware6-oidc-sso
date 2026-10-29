@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Security;
 
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use Psr\Cache\CacheItemPoolInterface;
 use Shopware\Core\Framework\Context;
@@ -19,6 +20,9 @@ class Sw6OidcCspHostCollector
 {
     private const CACHE_KEY = 'sw6oidc_csp_hosts';
 
+    /**
+     * @param EntityRepository<Sw6OidcProviderCollection> $providerRepository
+     */
     public function __construct(
         private readonly EntityRepository $providerRepository,
         private readonly CacheItemPoolInterface $cache,
@@ -41,8 +45,6 @@ class Sw6OidcCspHostCollector
         $origins = [];
 
         foreach ($this->providerRepository->search($criteria, $context)->getEntities() as $provider) {
-            \assert($provider instanceof Sw6OidcProviderEntity);
-
             $urls = [
                 $provider->getAuthorizeEndpoint(),
                 $provider->getEndSessionEndpoint(),

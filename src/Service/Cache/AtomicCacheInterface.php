@@ -3,12 +3,13 @@
 namespace MartinKuhl\Sw6Oidc\Service\Cache;
 
 /**
- * Atomic one-time-token storage: PKCE verifiers, OAuth state tokens, OIDC nonces,
- * admin-login hand-off nonces, WebAuthn challenge nonces.
+ * Atomic one-time-token storage: OAuth state (PKCE verifier, nonce), admin
+ * login hand-off nonces, WebAuthn ceremonies, logout contexts, error tickets
+ * and back-channel `jti` replay markers.
  *
- * getAndDelete() must be a single atomic read-and-remove so two concurrent requests
- * can never both successfully consume the same one-time token (the TOCTOU race the
- * Magento module's AtomicCacheInterface/RedisAtomicCache close via Redis GETDEL).
+ * getAndDelete() must be a single atomic read-and-remove so two concurrent
+ * requests can never both consume the same token; addIfAbsent() must be an
+ * atomic "set if not exists".
  */
 interface AtomicCacheInterface
 {
@@ -19,4 +20,16 @@ interface AtomicCacheInterface
      * exist (already consumed, expired, or never set).
      */
     public function getAndDelete(string $key): ?string;
+
+    /**
+     * Stores the value only if the key doesn't exist yet (or has expired).
+     * Returns whether this call stored it — false means "already seen".
+     */
+    public function addIfAbsent(string $key, string $value, int $ttlSeconds): bool;
+
+    /**
+     * Removes the key if present (e.g. a replay marker whose work failed, so
+     * the sender's retry is processed, R3-M19).
+     */
+    public function delete(string $key): void;
 }

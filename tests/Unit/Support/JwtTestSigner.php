@@ -6,21 +6,27 @@ use Jose\Component\Core\AlgorithmManager;
 use Jose\Component\Core\JWK;
 use Jose\Component\Core\JWKSet;
 use Jose\Component\KeyManagement\JWKFactory;
+use Jose\Component\Signature\Algorithm\ES256;
 use Jose\Component\Signature\Algorithm\HS256;
+use Jose\Component\Signature\Algorithm\PS256;
 use Jose\Component\Signature\Algorithm\RS256;
 use Jose\Component\Signature\JWSBuilder;
 use Jose\Component\Signature\Serializer\CompactSerializer;
 
 /**
- * Signs test id_tokens with a throwaway RSA key and exposes the matching JWKS.
+ * Signs test id_tokens with a throwaway key (RS256 by default, PS256 or
+ * ES256 on request) and exposes the matching JWKS.
  */
 final class JwtTestSigner
 {
     public readonly JWK $key;
 
-    public function __construct(string $kid = 'test-key')
+    public function __construct(string $kid = 'test-key', public readonly string $alg = 'RS256')
     {
-        $this->key = JWKFactory::createRSAKey(2048, ['kid' => $kid, 'alg' => 'RS256', 'use' => 'sig']);
+        $parameters = ['kid' => $kid, 'alg' => $alg, 'use' => 'sig'];
+        $this->key = $alg === 'ES256'
+            ? JWKFactory::createECKey('P-256', $parameters)
+            : JWKFactory::createRSAKey(2048, $parameters);
     }
 
     public function jwksJson(): string
@@ -30,13 +36,14 @@ final class JwtTestSigner
 
     /**
      * @param array<string, mixed> $claims
+     * @param array<string, mixed> $extraHeader additional protected header parameters
      */
-    public function sign(array $claims): string
+    public function sign(array $claims, array $extraHeader = []): string
     {
-        $jws = (new JWSBuilder(new AlgorithmManager([new RS256()])))
+        $jws = (new JWSBuilder(new AlgorithmManager([new RS256(), new PS256(), new ES256()])))
             ->create()
             ->withPayload(json_encode($claims, \JSON_THROW_ON_ERROR))
-            ->addSignature($this->key, ['alg' => 'RS256', 'kid' => $this->key->get('kid')])
+            ->addSignature($this->key, ['alg' => $this->alg, 'kid' => $this->key->get('kid')] + $extraHeader)
             ->build();
 
         return (new CompactSerializer())->serialize($jws, 0);

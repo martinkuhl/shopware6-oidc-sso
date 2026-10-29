@@ -44,6 +44,32 @@ final class BackChannelLogoutTest extends Sw6OidcIntegrationTestCase
             'scope' => 'openid',
         ]);
 
+        $this->seedJwks();
+    }
+
+    /**
+     * N-H3: the registry is security state, so a cache:clear (or a deploy)
+     * between login and logout must not make the IdP's logout a silent no-op.
+     */
+    public function testLogoutStillWorksAfterTheCacheWasCleared(): void
+    {
+        [$contextToken, $customerId] = $this->loggedInCustomerSession();
+        $this->registry()->register($this->providerId, 'idp-user-1', 'idp-session-1', 'customer', $customerId, $contextToken, $this->salesChannelId());
+
+        $cache = static::getContainer()->get('cache.app');
+        \assert($cache instanceof CacheItemPoolInterface);
+        $cache->clear();
+        $this->seedJwks();
+
+        $browser = $this->browser();
+        $browser->request('POST', $this->shopUrl() . '/sw6oidc/backchannel-logout', ['logout_token' => $this->logoutToken(['sid' => 'idp-session-1'])]);
+
+        self::assertSame(200, $browser->getResponse()->getStatusCode(), (string) $browser->getResponse()->getContent());
+        self::assertFalse($this->contextExists($contextToken), 'the customer context was deleted');
+    }
+
+    private function seedJwks(): void
+    {
         $cache = static::getContainer()->get('cache.app');
         \assert($cache instanceof CacheItemPoolInterface);
         $item = $cache->getItem('sw6oidc_jwks_' . hash('sha256', self::JWKS));

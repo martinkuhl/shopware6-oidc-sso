@@ -100,15 +100,33 @@ final class ClaimsNormalizerTest extends TestCase
         $this->normalizer->flatten($claims);
     }
 
-    public function testFlattenDecodesBase64LeafStringsWhenEncodingIsBase64(): void
+    public function testFlattenDecodesOnlyListedClaimsAndTheirChildren(): void
     {
         $flattened = $this->normalizer->flatten([
             'given_name' => base64_encode('Jürgen'),
             'org' => ['name' => base64_encode('ACME GmbH')],
-        ], 'base64');
+            'organisation' => 'YWJj',
+            'nickname' => 'YWJj',
+        ], ['given_name', 'org']);
 
         self::assertSame('Jürgen', $flattened['given_name']);
         self::assertSame('ACME GmbH', $flattened['org.name']);
+        self::assertSame('YWJj', $flattened['organisation'], 'a name prefix is not a parent');
+        self::assertSame('YWJj', $flattened['nickname'], 'plain claims that happen to be valid base64 stay untouched (M10)');
+    }
+
+    public function testWildcardDecodesEveryClaim(): void
+    {
+        self::assertSame(['a' => 'abc', 'b.c' => 'abc'], $this->normalizer->flatten(['a' => 'YWJj', 'b' => ['c' => 'YWJj']], ['*']));
+    }
+
+    public function testDecodeGroupsOnlyWhenTheGroupClaimIsListed(): void
+    {
+        $groups = [base64_encode('Admins'), base64_encode('Staff')];
+
+        self::assertSame(['Admins', 'Staff'], $this->normalizer->decodeGroups($groups, 'groups', ['groups']));
+        self::assertSame(['Admins', 'Staff'], $this->normalizer->decodeGroups($groups, 'groups', ['*']));
+        self::assertSame($groups, $this->normalizer->decodeGroups($groups, 'groups', ['given_name']));
     }
 
     public function testFlattenLeavesInvalidBase64AndNonUtf8ResultsUntouched(): void
@@ -120,7 +138,7 @@ final class ClaimsNormalizerTest extends TestCase
             'binary' => $binary,
             'empty' => '',
             'number' => 7,
-        ], 'base64');
+        ], ['*']);
 
         self::assertSame('user@example.com', $flattened['email']);
         self::assertSame($binary, $flattened['binary']);
@@ -182,21 +200,22 @@ final class ClaimsNormalizerTest extends TestCase
         ]));
     }
 
-    public function testExtractEmailPrefersConfiguredAttribute(): void
+    public function testObjectShapedBase64ClaimHasItsMemberNamesDecodedLikeGroups(): void
     {
-        self::assertSame('primary@example.com', $this->normalizer->extractEmail([
-            'other' => 'fallback@example.com',
-            'mail' => 'primary@example.com',
-        ], 'mail'));
+        $roles = [base64_encode('Admins') => ['orgId' => '1'], base64_encode('Editors') => ['orgId' => '2']];
+
+        $flattened = $this->normalizer->flatten(['roles' => $roles], ['roles']);
+        $groups = $this->normalizer->decodeGroups($this->normalizer->normalizeGroups($roles), 'roles', ['roles']);
+
+        // Access rules (flattened keys) and group mapping see the same names (R3-L6).
+        self::assertSame(['roles.Admins.orgId', 'roles.Editors.orgId'], array_keys($flattened));
+        self::assertSame(['Admins', 'Editors'], $groups);
     }
 
-    public function testExtractEmailFallsBackToEmailLikeKeyThenAnyEmailValue(): void
+    public function testMemberNamesOfUnlistedClaimsStayEncoded(): void
     {
-        self::assertSame('a@example.com', $this->normalizer->extractEmail([
-            'x' => 'b@example.com',
-            'user.email_address' => 'a@example.com',
-        ], 'email'));
-        self::assertSame('b@example.com', $this->normalizer->extractEmail(['x' => 'b@example.com'], 'email'));
-        self::assertNull($this->normalizer->extractEmail(['x' => 'no-email'], 'email'));
+        $key = base64_encode('Admins');
+
+        self::assertSame(['roles.' . $key . '.orgId'], array_keys($this->normalizer->flatten(['roles' => [$key => ['orgId' => '1']]], ['other'])));
     }
 }

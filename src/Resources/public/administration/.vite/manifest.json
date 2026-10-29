@@ -1,0 +1,11 @@
+{
+  "main.js": {
+    "file": "assets/sw6-oidc-AX9RzOW-.js",
+    "name": "sw6-oidc",
+    "src": "main.js",
+    "isEntry": true,
+    "css": [
+      "assets/sw6-oidc-BOCPErVo.css"
+    ]
+  }
+}

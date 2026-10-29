@@ -17,6 +17,8 @@ use Shopware\Core\Framework\Validation\WriteConstraintViolationException;
 #[CoversClass(Sw6OidcEncryptedFieldSerializer::class)]
 final class Sw6OidcEncryptedFieldSerializerTest extends TestCase
 {
+    private const PURPOSE = 'sw6oidc_provider.client_secret';
+
     private Sw6OidcEncryptor $encryptor;
 
     /** @var list<mixed> values the inner (string) serializer was asked to encode */
@@ -32,7 +34,8 @@ final class Sw6OidcEncryptedFieldSerializerTest extends TestCase
         $out = $this->encode('  my-secret  ');
 
         self::assertSame(['  my-secret  '], $this->innerSaw);
-        self::assertSame('my-secret', $this->encryptor->decrypt($out['client_secret']));
+        self::assertSame('my-secret', $this->encryptor->decrypt($out['client_secret'], self::PURPOSE));
+        self::assertNull($this->encryptor->decryptOrNull($out['client_secret']), 'bound to its field');
     }
 
     public function testEncodeKeepsNull(): void
@@ -42,10 +45,16 @@ final class Sw6OidcEncryptedFieldSerializerTest extends TestCase
 
     public function testDecryptableEnvelopeIsReEncryptedFromPlaintext(): void
     {
-        $out = $this->encode($this->encryptor->encrypt('from-export'));
+        $out = $this->encode($this->encryptor->encrypt('from-export', self::PURPOSE));
 
         self::assertSame(['from-export'], $this->innerSaw, 'validation must see the plaintext');
-        self::assertSame('from-export', $this->encryptor->decrypt($out['client_secret']));
+        self::assertSame('from-export', $this->encryptor->decrypt($out['client_secret'], self::PURPOSE));
+    }
+
+    public function testEnvelopeOfAnotherFieldIsRejected(): void
+    {
+        $this->expectException(WriteConstraintViolationException::class);
+        $this->encode($this->encryptor->encrypt('webhook', 'sw6oidc_provider.health_alert_webhook_url'));
     }
 
     public function testForeignEnvelopeIsRejected(): void
@@ -61,7 +70,7 @@ final class Sw6OidcEncryptedFieldSerializerTest extends TestCase
         $serializer = new Sw6OidcEncryptedFieldSerializer($this->createMock(FieldSerializerInterface::class), $this->encryptor);
         $field = new Sw6OidcEncryptedField('client_secret', 'clientSecret');
 
-        self::assertSame('abc', $serializer->decode($field, $this->encryptor->encrypt('abc')));
+        self::assertSame('abc', $serializer->decode($field, $this->encryptor->encrypt('abc', self::PURPOSE)));
         self::assertSame('legacy', $serializer->decode($field, 'legacy'));
         self::assertNull($serializer->decode($field, null));
     }

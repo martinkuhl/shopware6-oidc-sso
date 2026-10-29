@@ -6,7 +6,7 @@ use MartinKuhl\Sw6Oidc\Service\Oidc\PostLogoutState;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * Shared landing page after RP-Initiated Logout, for IdPs that accept only

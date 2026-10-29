@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Integration;
 
+use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
 use MartinKuhl\Sw6Oidc\Tests\Integration\Support\DexLoginDriver;
 use MartinKuhl\Sw6Oidc\Tests\Integration\Support\Sw6OidcIntegrationTestCase;
@@ -42,7 +43,7 @@ final class StorefrontOidcLoginTest extends Sw6OidcIntegrationTestCase
 
         $registry = static::getContainer()->get(Sw6OidcSessionRegistry::class);
         \assert($registry instanceof Sw6OidcSessionRegistry);
-        self::assertNotSame([], $registry->resolveByUser('customer', $customerId), 'the session was registered');
+        self::assertNotSame([], SqliteSessionRegistry::sessionsOf($registry, 'customer', $customerId), 'the session was registered');
 
         $activity = static::getContainer()->get('Doctrine\DBAL\Connection')->fetchAssociative(
             'SELECT login_method, logged_out_at FROM sw6oidc_session_activity WHERE user_id = UNHEX(:id)',

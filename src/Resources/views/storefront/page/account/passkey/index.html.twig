@@ -1,58 +1,125 @@
 {% sw_extends '@Storefront/storefront/page/account/_page.html.twig' %}
 
 {% block page_account_main_content %}
-    <div class="account-passkey">
-        <div class="account-welcome">
-            <h1>{{ 'sw6oidc.passkey.pageTitle'|trans|sw_sanitize }}</h1>
-            <p>{{ 'sw6oidc.passkey.pageIntro'|trans|sw_sanitize }}</p>
-        </div>
+    {% block page_account_passkey %}
+        <div class="account-passkey">
+            {% block page_account_passkey_welcome %}
+                <div class="account-welcome">
+                    <h1>{{ 'sw6oidc.passkey.pageTitle'|trans|sw_sanitize }}</h1>
+                    <p>{{ 'sw6oidc.passkey.pageIntro'|trans|sw_sanitize }}</p>
+                </div>
+            {% endblock %}
 
-        <div class="card account-passkey-list mb-3">
-            <div class="card-body">
-                {% if sw6oidcPasskeyEnabled %}
-                    <button type="button"
-                            class="btn btn-secondary mb-3"
-                            data-sw6oidc-passkey-register="true"
-                            data-sw6oidc-no-support-text="{{ 'sw6oidc.passkey.noSupport'|trans|striptags }}"
-                            data-sw6oidc-nickname-prompt-text="{{ 'sw6oidc.passkey.nicknamePrompt'|trans|striptags }}"
-                            data-sw6oidc-error-text="{{ 'sw6oidc.passkey.registerError'|trans|striptags }}">
-                        {{ 'sw6oidc.passkey.registerButton'|trans|sw_sanitize }}
-                    </button>
-                {% endif %}
+            {% block page_account_passkey_card %}
+                <div class="card account-passkey-list mb-3">
+                    <div class="card-body">
+                        {% block page_account_passkey_register %}
+                            {% if sw6oidcPasskeyEnabled %}
+                                <div class="row g-2 align-items-end mb-3">
+                                    <div class="col-sm-6">
+                                        <label class="form-label" for="sw6oidc-passkey-nickname">
+                                            {{ 'sw6oidc.passkey.nicknamePrompt'|trans|sw_sanitize }}
+                                        </label>
+                                        <input type="text"
+                                               class="form-control"
+                                               id="sw6oidc-passkey-nickname"
+                                               maxlength="255"
+                                               autocomplete="off">
+                                    </div>
+                                    <div class="col-sm-auto">
+                                        <button type="button"
+                                                class="btn btn-secondary"
+                                                data-sw6oidc-passkey-register="true"
+                                                data-sw6oidc-options-url="{{ path('frontend.sw6oidc.passkey.registration-options') }}"
+                                                data-sw6oidc-verify-url="{{ path('frontend.sw6oidc.passkey.registration-verify') }}"
+                                                data-sw6oidc-nickname-input="sw6oidc-passkey-nickname"
+                                                data-sw6oidc-error-target="sw6oidc-passkey-register-error"
+                                                data-sw6oidc-no-support-text="{{ 'sw6oidc.passkey.noSupport'|trans|striptags }}"
+                                                data-sw6oidc-error-text="{{ 'sw6oidc.passkey.registerError'|trans|striptags }}">
+                                            {{ 'sw6oidc.passkey.registerButton'|trans|sw_sanitize }}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="sw6oidc-passkey-register-error" class="alert alert-danger" role="alert" hidden></div>
+                            {% endif %}
+                        {% endblock %}
 
-                {% if sw6oidcCredentials|length %}
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>{{ 'sw6oidc.passkey.columnNickname'|trans|sw_sanitize }}</th>
-                                <th>{{ 'sw6oidc.passkey.columnCreatedAt'|trans|sw_sanitize }}</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for credential in sw6oidcCredentials %}
-                                <tr>
-                                    <td>{{ credential.nickname ?: '-' }}</td>
-                                    <td>{{ credential.createdAt|format_date('medium') }}</td>
-                                    <td class="text-end">
-                                        <form action="{{ path('frontend.account.passkey.delete', {credentialId: credential.id}) }}"
-                                              method="post"
-                                              data-sw6oidc-passkey-delete-form="true"
-                                              data-sw6oidc-confirm-text="{{ 'sw6oidc.passkey.deleteConfirm'|trans|striptags }}">
-                                            <button type="submit" class="btn btn-sm btn-link p-0">
-                                                {% sw_icon 'trash' style {'size': 'xs'} %}
-                                                {{ 'sw6oidc.passkey.deleteButton'|trans|sw_sanitize }}
-                                            </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p>{{ 'sw6oidc.passkey.emptyState'|trans|sw_sanitize }}</p>
-                {% endif %}
-            </div>
+                        {% block page_account_passkey_list %}
+                            {% if sw6oidcCredentials|length %}
+                                <table class="table">
+                                    {% block page_account_passkey_list_header %}
+                                        <thead>
+                                            <tr>
+                                                <th>{{ 'sw6oidc.passkey.columnNickname'|trans|sw_sanitize }}</th>
+                                                <th>{{ 'sw6oidc.passkey.columnCreatedAt'|trans|sw_sanitize }}</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                    {% endblock %}
+                                    <tbody>
+                                        {% for credential in sw6oidcCredentials %}
+                                            {% block page_account_passkey_list_row %}
+                                                <tr>
+                                                    {% block page_account_passkey_list_row_nickname %}
+                                                        <td>
+                                                            {{ credential.nickname ?: '-' }}
+                                                            {# Disabled by clone detection: can no longer log in (R3-L18). #}
+                                                            {% if credential.disabledAt %}
+                                                                <span class="badge bg-danger ms-1">{{ 'sw6oidc.passkey.disabledBadge'|trans|sw_sanitize }}</span>
+                                                            {% endif %}
+                                                        </td>
+                                                    {% endblock %}
+                                                    {% block page_account_passkey_list_row_created_at %}
+                                                        <td>{{ credential.createdAt|format_date('medium') }}</td>
+                                                    {% endblock %}
+                                                    {% block page_account_passkey_list_row_actions %}
+                                                        <td class="text-end">
+                                                            {% block page_account_passkey_list_row_delete_form %}
+                                                                <form action="{{ path('frontend.account.passkey.delete', {credentialId: credential.id}) }}"
+                                                                      method="post"
+                                                                      data-sw6oidc-passkey-delete-form="true"
+                                                                      data-sw6oidc-confirm-dialog="sw6oidc-passkey-delete-dialog-{{ credential.id }}">
+                                                                    <button type="submit" class="btn btn-sm btn-link p-0">
+                                                                        {% sw_icon 'trash' style {'size': 'xs'} %}
+                                                                        {{ 'sw6oidc.passkey.deleteButton'|trans|sw_sanitize }}
+                                                                    </button>
+                                                                </form>
+                                                            {% endblock %}
+                                                            {% block page_account_passkey_list_row_delete_dialog %}
+                                                                {# One dialog per row: a shared one made every row's form submit on confirm (R3-F3). #}
+                                                                <dialog id="sw6oidc-passkey-delete-dialog-{{ credential.id }}"
+                                                                        class="sw6oidc-passkey-delete-dialog border-0 rounded p-4 text-start"
+                                                                        aria-labelledby="sw6oidc-passkey-delete-dialog-text-{{ credential.id }}">
+                                                                    <form method="dialog">
+                                                                        <p id="sw6oidc-passkey-delete-dialog-text-{{ credential.id }}">{{ 'sw6oidc.passkey.deleteConfirm'|trans|sw_sanitize }}</p>
+                                                                        <p>{{ 'sw6oidc.passkey.deleteConfirmSessions'|trans|sw_sanitize }}</p>
+                                                                        <div class="d-flex justify-content-end gap-2">
+                                                                            <button type="submit" value="cancel" class="btn btn-light">
+                                                                                {{ 'sw6oidc.passkey.cancel'|trans|sw_sanitize }}
+                                                                            </button>
+                                                                            <button type="submit" value="confirm" class="btn btn-danger">
+                                                                                {{ 'sw6oidc.passkey.deleteButton'|trans|sw_sanitize }}
+                                                                            </button>
+                                                                        </div>
+                                                                    </form>
+                                                                </dialog>
+                                                            {% endblock %}
+                                                        </td>
+                                                    {% endblock %}
+                                                </tr>
+                                            {% endblock %}
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            {% else %}
+                                {% block page_account_passkey_list_empty %}
+                                    <p>{{ 'sw6oidc.passkey.emptyState'|trans|sw_sanitize }}</p>
+                                {% endblock %}
+                            {% endif %}
+                        {% endblock %}
+                    </div>
+                </div>
+            {% endblock %}
         </div>
-    </div>
+    {% endblock %}
 {% endblock %}

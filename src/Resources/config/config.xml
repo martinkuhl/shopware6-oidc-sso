@@ -44,8 +44,18 @@
             <label lang="de-DE">Relying-Party-ID (Domain), Override</label>
             <placeholder>Defaults to the current shop host</placeholder>
             <placeholder lang="de-DE">Standardmaessig der aktuelle Shop-Host</placeholder>
-            <helpText>The registrable domain (for example "example.com") passkeys are bound to. Leave blank to use this shop's current host automatically (shown above once resolved). Changing this invalidates every passkey already registered, since a passkey registered under one domain never authenticates on a different one.</helpText>
-            <helpText lang="de-DE">Die Domain (zum Beispiel "example.com"), an die Passkeys gebunden werden. Leer lassen, um automatisch den aktuellen Host dieses Shops zu verwenden (wird oben angezeigt, sobald ermittelt). Eine Aenderung macht alle bereits registrierten Passkeys ungueltig, da ein unter einer Domain registrierter Passkey auf keiner anderen Domain funktioniert.</helpText>
+            <helpText>Storefront: the domain (for example "example.com") customer passkeys are bound to; can be set per sales channel. Leave blank to use the host of the current sales channel domain (never the request's Host header). Must be that host or one of its parent domains. Changing this invalidates every passkey already registered there, since a passkey registered under one domain never authenticates on a different one.</helpText>
+            <helpText lang="de-DE">Storefront: die Domain (zum Beispiel "example.com"), an die Kunden-Passkeys gebunden werden; pro Verkaufskanal einstellbar. Leer lassen, um den Host der aktuellen Verkaufskanal-Domain zu verwenden (nie den Host-Header der Anfrage). Muss dieser Host oder eine übergeordnete Domain sein. Eine Änderung macht alle dort registrierten Passkeys ungültig, da ein unter einer Domain registrierter Passkey auf keiner anderen Domain funktioniert.</helpText>
+        </component>
+
+        <component name="sw6oidc-rp-id-field">
+            <name>passkeyRpIdAdmin</name>
+            <label>Administration Relying Party ID (domain) override</label>
+            <label lang="de-DE">Relying-Party-ID (Domain) der Administration, Override</label>
+            <placeholder>Defaults to the host of APP_URL</placeholder>
+            <placeholder lang="de-DE">Standardmäßig der Host aus APP_URL</placeholder>
+            <helpText>Administration: the domain admin passkeys are bound to. Leave blank to use the host of APP_URL. Must be that host or one of its parent domains. Only read from the global setting (all sales channels).</helpText>
+            <helpText lang="de-DE">Administration: die Domain, an die Admin-Passkeys gebunden werden. Leer lassen, um den Host aus APP_URL zu verwenden. Muss dieser Host oder eine übergeordnete Domain sein. Wird nur aus der globalen Einstellung (alle Verkaufskanäle) gelesen.</helpText>
         </component>
     </card>
 
@@ -57,8 +67,8 @@
             <name>debugLoggingEnabled</name>
             <label>Enable debug logging</label>
             <label lang="de-DE">Debug-Protokollierung aktivieren</label>
-            <helpText>Writes detailed OIDC and Passkey flow logs to var/log/sw6oidc-*.log for troubleshooting. Disable again once you're done, since these logs can contain sensitive claim data.</helpText>
-            <helpText lang="de-DE">Schreibt detaillierte OIDC- und Passkey-Ablaufprotokolle zur Fehlersuche nach var/log/sw6oidc-*.log. Nach Abschluss der Fehlersuche wieder deaktivieren, da diese Protokolle sensible Claim-Daten enthalten koennen.</helpText>
+            <helpText>Raises the plugin log (var/log/sw6oidc-*.log) from its normal level (SW6OIDC_LOG_LEVEL, default "warning") to "debug" for troubleshooting. Credentials are masked, but debug logs contain more personal data — disable it again once you're done.</helpText>
+            <helpText lang="de-DE">Hebt das Plugin-Log (var/log/sw6oidc-*.log) von seiner normalen Stufe (SW6OIDC_LOG_LEVEL, Standard "warning") auf "debug" zur Fehlersuche an. Zugangsdaten werden maskiert, Debug-Logs enthalten aber mehr personenbezogene Daten — nach der Fehlersuche wieder deaktivieren.</helpText>
             <defaultValue>false</defaultValue>
         </input-field>
     </card>

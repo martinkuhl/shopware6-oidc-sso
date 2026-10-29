@@ -2,40 +2,66 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Passkey;
 
+use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity;
 use MartinKuhl\Sw6Oidc\Service\Cache\AtomicCacheInterface;
 use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyCeremonyException;
+use Psr\Log\LoggerInterface;
 use Webauthn\AuthenticatorAssertionResponse;
+use Webauthn\Exception\CounterException;
 use Webauthn\PublicKeyCredentialDescriptor;
 use Webauthn\PublicKeyCredentialRequestOptions;
 
 /**
  * Builds WebAuthn authentication (assertion) ceremonies and verifies the
- * result, resolving back to our own userType/userId — shared by Storefront
- * (usernameless/discoverable: empty allowCredentials) and Administration
- * (email-scoped: allowCredentials limited to that admin's own credentials).
- * Mirrors the Magento module's Model/Passkey/PasskeyAuthenticationService.php.
+ * result, resolving back to our own userType/userId. Used for usernameless
+ * (discoverable, empty allowCredentials) login on both sides, and for the
+ * Administration step-up (allowCredentials = the current admin's own keys).
+ *
+ * The relying party (RP ID and exact allowed origins) is pinned into the
+ * ceremony when the options are built; verification never trusts the
+ * request's host. User verification is always required.
  */
 class PasskeyAuthenticationService
 {
     private const TTL_SECONDS = 300;
     private const CACHE_PREFIX = 'sw6oidc_passkey_auth_';
 
+    /**
+     * Ceremony purposes (R3-M7): a ceremony can only be redeemed by the
+     * endpoint it was started for — a Storefront ceremony never logs into the
+     * Administration, even with an RP ID that covers both hosts, and a
+     * step-up ceremony belongs to the admin who started it.
+     */
+    public const PURPOSE_ADMIN_LOGIN = 'admin-login';
+
+    public static function storefrontLoginPurpose(string $salesChannelId): string
+    {
+        return 'storefront-login:' . $salesChannelId;
+    }
+
+    public static function adminStepUpPurpose(string $userId): string
+    {
+        return 'admin-stepup:' . $userId;
+    }
+
     public function __construct(
         private readonly WebauthnCeremonyFactory $ceremonyFactory,
         private readonly PasskeyCredentialRepository $credentialRepository,
         private readonly AtomicCacheInterface $cache,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
     /**
      * @param PublicKeyCredentialDescriptor[] $allowCredentials empty = usernameless/discoverable login
+     * @param string                          $purpose          see PURPOSE_ADMIN_LOGIN and the *Purpose() factories
      *
      * @return array{optionsJson: string, nonce: string}
      */
-    public function buildRequestOptions(array $allowCredentials, string $rpId): array
+    public function buildRequestOptions(array $allowCredentials, PasskeyRelyingParty $relyingParty, string $purpose): array
     {
         $challenge = random_bytes(32);
-        $options = $this->buildOptions($challenge, $rpId, $allowCredentials);
+        $options = $this->buildOptions($challenge, $relyingParty->id, $allowCredentials);
 
         $nonce = bin2hex(random_bytes(16));
 
@@ -44,8 +70,10 @@ class PasskeyAuthenticationService
         $this->cache->save(
             self::CACHE_PREFIX . $nonce,
             json_encode([
+                'purpose' => $purpose,
                 'challenge' => bin2hex($challenge),
-                'rpId' => $rpId,
+                'rpId' => $relyingParty->id,
+                'origins' => $relyingParty->origins,
                 'allowCredentials' => array_map(
                     static fn (PublicKeyCredentialDescriptor $descriptor): array => [
                         'type' => $descriptor->type,
@@ -62,13 +90,15 @@ class PasskeyAuthenticationService
     }
 
     /**
-     * @param string $host the request host the ceremony ran on (origin/rpId check)
+     * @param string $host the request host (passed to the library; the origin check itself uses the pinned origins)
      *
-     * @return array{userType: string, userId: string, credentialId: string}
+     * @param string $expectedPurpose the purpose the ceremony must have been started for (R3-M7)
+     *
+     * @return array{userType: string, userId: string, credentialId: string, credentialIdHash: string}
      *
      * @throws PasskeyCeremonyException
      */
-    public function verifyAssertion(string $nonce, string $assertionResponseJson, string $host): array
+    public function verifyAssertion(string $nonce, string $assertionResponseJson, string $host, string $expectedPurpose): array
     {
         $raw = $this->cache->getAndDelete(self::CACHE_PREFIX . $nonce);
 
@@ -77,6 +107,10 @@ class PasskeyAuthenticationService
         }
 
         $stored = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+
+        if (!\is_array($stored) || ($stored['purpose'] ?? null) !== $expectedPurpose) {
+            throw new PasskeyCeremonyException('The passkey ceremony was started for a different purpose.');
+        }
 
         $options = $this->buildOptions(
             (string) hex2bin($stored['challenge']),
@@ -101,30 +135,48 @@ class PasskeyAuthenticationService
         $rawId = $publicKeyCredential->rawId;
         $entity = $this->credentialRepository->findEntityByCredentialId(base64_encode($rawId));
 
-        if (!$entity instanceof \MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity) {
+        if (!$entity instanceof Sw6OidcPasskeyCredentialEntity) {
             throw new PasskeyCeremonyException('This passkey is not registered.');
+        }
+
+        if ($entity->getDisabledAt() instanceof \DateTimeInterface) {
+            throw new PasskeyCeremonyException('This passkey has been disabled.');
         }
 
         $record = $this->credentialRepository->toRecord($entity);
 
         try {
-            $record = $this->ceremonyFactory->assertionResponseValidator()->check(
+            $record = $this->ceremonyFactory->assertionResponseValidator(array_values($stored['origins'] ?? []))->check(
                 $record,
                 $response,
                 $options,
                 $host,
-                // Email-scoped (allowCredentials) login identified the user
-                // before the ceremony, so the authenticator's own userHandle
-                // is optional; usernameless login must get it from the response.
+                // A ceremony scoped to known credentials (step-up) identified
+                // the user beforehand, so the authenticator's userHandle is
+                // optional; usernameless login must get it from the response.
                 $options->allowCredentials !== [] ? $record->userHandle : null,
             );
+        } catch (CounterException $exception) {
+            $this->credentialRepository->disable(base64_encode($rawId));
+            $this->logger?->warning('sw6oidc: passkey signature counter did not increase — possible cloned authenticator; the credential was disabled.', [
+                'credentialId' => $entity->getId(),
+                'userType' => $entity->getUserType(),
+                'userId' => $entity->getUserId(),
+            ]);
+
+            throw new PasskeyCeremonyException('This passkey has been disabled.', $exception);
         } catch (\Throwable $exception) {
-            throw new PasskeyCeremonyException($exception->getMessage(), 0, $exception);
+            throw new PasskeyCeremonyException($exception->getMessage(), $exception);
         }
 
-        $this->credentialRepository->updateAfterAssertion($record);
+        $this->credentialRepository->updateAfterAssertion($entity, $record);
 
-        return ['userType' => $entity->getUserType(), 'userId' => $entity->getUserId(), 'credentialId' => $entity->getId()];
+        return [
+            'userType' => $entity->getUserType(),
+            'userId' => $entity->getUserId(),
+            'credentialId' => $entity->getId(),
+            'credentialIdHash' => (string) $entity->getCredentialIdHash(),
+        ];
     }
 
     /**
@@ -136,6 +188,7 @@ class PasskeyAuthenticationService
             $challenge,
             rpId: $rpId,
             allowCredentials: $allowCredentials,
+            userVerification: PublicKeyCredentialRequestOptions::USER_VERIFICATION_REQUIREMENT_REQUIRED,
             timeout: 60000,
         );
     }

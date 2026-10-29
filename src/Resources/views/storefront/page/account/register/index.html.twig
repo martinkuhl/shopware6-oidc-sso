@@ -1,0 +1,11 @@
+{% sw_extends '@Storefront/storefront/page/account/register/index.html.twig' %}
+
+{#
+    disable_non_oidc_customer_login: new password accounts are refused
+    server-side (PasswordLoginGuardRegisterRoute), so don't offer the form.
+#}
+{% block page_account_register_container %}
+    {% if not sw6oidc_storefront_password_login_disabled(context) %}
+        {{ parent() }}
+    {% endif %}
+{% endblock %}

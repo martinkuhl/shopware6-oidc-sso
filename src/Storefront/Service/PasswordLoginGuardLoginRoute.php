@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Storefront\Service;
 
+use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\PasswordLoginDisabledException;
 use MartinKuhl\Sw6Oidc\Service\Security\PasswordLoginPolicy;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractLoginRoute;
@@ -13,7 +14,7 @@ use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
  * Decorates core's password LoginRoute (Storefront form + Store API
  * /store-api/account/login) to enforce disable_non_oidc_customer_login.
  * OIDC and Passkey logins don't go through this route at all — they use
- * the plugin's standalone OidcCustomerLoginRoute — so they're unaffected.
+ * core's AccountService::loginById() directly — so they're unaffected.
  */
 class PasswordLoginGuardLoginRoute extends AbstractLoginRoute
 {
@@ -30,7 +31,7 @@ class PasswordLoginGuardLoginRoute extends AbstractLoginRoute
 
     public function login(#[\SensitiveParameter] RequestDataBag $data, SalesChannelContext $context): ContextTokenResponse
     {
-        if ($this->passwordLoginPolicy->isPasswordLoginDisabled('customer', $context->getContext())) {
+        if ($this->passwordLoginPolicy->isPasswordLoginDisabled(LoginType::Customer->value, $context->getContext())) {
             throw new PasswordLoginDisabledException();
         }
 

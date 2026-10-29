@@ -9,9 +9,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
  * Thin wrapper around Symfony's HttpClientInterface for the token/userinfo/
- * discovery/webhook calls the OIDC flow needs — replaces the Magento module's
- * Helper/Curl.php. One retry on an empty/network-error response, matching the
- * Magento module's single 500ms-later retry for token/JWKS calls.
+ * discovery calls the OIDC flow needs. Idempotent GETs are retried once,
+ * 500 ms after a transport error; POSTs never are (see requestJson()).
  */
 class OidcHttpClient
 {
@@ -23,6 +22,7 @@ class OidcHttpClient
 
     /**
      * @param array<string, string> $formParams
+     * @param int|null              $maxDurationSeconds cap on the whole request (`timeout` alone is an idle timeout)
      *
      * @return array<string, mixed>
      */
@@ -32,6 +32,48 @@ class OidcHttpClient
         int $timeoutSeconds,
         ?string $basicAuthUsername = null,
         ?string $basicAuthPassword = null,
+        ?int $maxDurationSeconds = null,
+    ): array {
+        return $this->requestJson('POST', $url, $this->formOptions($formParams, $timeoutSeconds, $basicAuthUsername, $basicAuthPassword, $maxDurationSeconds));
+    }
+
+    /**
+     * POST for endpoints whose success answer has no meaningful body, like
+     * RFC 7009 revocation (§2.2: HTTP 200, the content is ignored — Authelia
+     * sends an empty body). Only the status code decides.
+     *
+     * @param array<string, string> $formParams
+     * @param int|null              $maxDurationSeconds cap on the whole request (`timeout` alone is an idle timeout)
+     */
+    public function postFormIgnoringResponseBody(
+        string $url,
+        array $formParams,
+        int $timeoutSeconds,
+        ?string $basicAuthUsername = null,
+        ?string $basicAuthPassword = null,
+        ?int $maxDurationSeconds = null,
+    ): void {
+        $options = $this->formOptions($formParams, $timeoutSeconds, $basicAuthUsername, $basicAuthPassword, $maxDurationSeconds);
+        [, $statusCode] = $this->send('POST', $url, $options);
+
+        $this->logResponse('POST', $url, $statusCode, null);
+
+        if ($statusCode >= 400) {
+            throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed with status %d.', $this->withoutQuery($url), $statusCode));
+        }
+    }
+
+    /**
+     * @param array<string, string> $formParams
+     *
+     * @return array<string, mixed>
+     */
+    private function formOptions(
+        array $formParams,
+        int $timeoutSeconds,
+        ?string $basicAuthUsername,
+        ?string $basicAuthPassword,
+        ?int $maxDurationSeconds,
     ): array {
         $headers = ['Accept' => 'application/json'];
 
@@ -39,11 +81,17 @@ class OidcHttpClient
             $headers['Authorization'] = 'Basic ' . base64_encode($basicAuthUsername . ':' . ($basicAuthPassword ?? ''));
         }
 
-        return $this->requestJson('POST', $url, [
+        $options = [
             'body' => $formParams,
             'timeout' => $timeoutSeconds,
             'headers' => $headers,
-        ]);
+        ];
+
+        if ($maxDurationSeconds !== null) {
+            $options['max_duration'] = $maxDurationSeconds;
+        }
+
+        return $options;
     }
 
     /**
@@ -78,6 +126,29 @@ class OidcHttpClient
      */
     private function requestJson(string $method, string $url, array $options): array
     {
+        [$content, $statusCode] = $this->send($method, $url, $options);
+        $decoded = json_decode($content, true);
+
+        $this->logResponse($method, $url, $statusCode, $decoded);
+
+        if ($statusCode >= 400) {
+            throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed with status %d.', $this->withoutQuery($url), $statusCode));
+        }
+
+        if (!\is_array($decoded)) {
+            throw new OidcHttpException(sprintf('OIDC HTTP response from "%s" was not valid JSON.', $this->withoutQuery($url)));
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     *
+     * @return array{0: string, 1: int} content and status code
+     */
+    private function send(string $method, string $url, array $options): array
+    {
         // Only ever logs field *names*, never values - a userinfo response in
         // particular is arbitrary IdP-supplied PII (email, address, phone,
         // birthdate, ...) with no fixed set of key names to denylist the way
@@ -85,9 +156,11 @@ class OidcHttpClient
         // (client_secret/code/code_verifier/*_token). $options['headers'] is
         // deliberately never logged at all - that's where a Basic-auth
         // Authorization header lives for a confidential client.
+        $logUrl = $this->withoutQuery($url);
+
         $this->logger->debug('sw6oidc: sending IdP HTTP request.', [
             'method' => $method,
-            'url' => $url,
+            'url' => $logUrl,
             'formParamKeys' => array_keys($options['body'] ?? []),
         ]);
 
@@ -96,32 +169,45 @@ class OidcHttpClient
             $content = $response->getContent(false);
             $statusCode = $response->getStatusCode();
         } catch (HttpClientExceptionInterface $exception) {
+            // Only idempotent GETs are retried: a POST to the token endpoint
+            // carries a single-use authorization code that a retry would burn
+            // (or replay, making the IdP revoke the session). A destination
+            // the SSRF guard blocked stays blocked (M3).
+            if ($method !== 'GET' || $this->isBlockedAddress($exception)) {
+                throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed.', $logUrl), $exception);
+            }
+
             $this->logger->warning('sw6oidc: retrying HTTP request after transport error.', [
-                'url' => $url,
-                'exception' => $exception->getMessage(),
+                'url' => $logUrl,
+                'exceptionClass' => $exception::class,
             ]);
 
-            [$content, $statusCode] = $this->retryOnce($method, $url, $options);
+            return $this->retryOnce($method, $url, $options);
         }
 
-        $decoded = json_decode($content, true);
+        return [$content, $statusCode];
+    }
 
+    private function logResponse(string $method, string $url, int $statusCode, mixed $decoded): void
+    {
         $this->logger->log($statusCode >= 400 ? 'warning' : 'debug', 'sw6oidc: received IdP HTTP response.', [
             'method' => $method,
-            'url' => $url,
+            'url' => $this->withoutQuery($url),
             'statusCode' => $statusCode,
             'bodyKeys' => \is_array($decoded) ? array_keys($decoded) : null,
         ]);
+    }
 
-        if ($statusCode >= 400) {
-            throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed with status %d.', $url, $statusCode));
-        }
+    private function withoutQuery(string $url): string
+    {
+        $position = strcspn($url, '?#');
 
-        if (!\is_array($decoded)) {
-            throw new OidcHttpException(sprintf('OIDC HTTP response from "%s" was not valid JSON.', $url));
-        }
+        return substr($url, 0, $position);
+    }
 
-        return $decoded;
+    private function isBlockedAddress(\Throwable $exception): bool
+    {
+        return str_contains($exception->getMessage(), ' is blocked for ');
     }
 
     /**
@@ -138,7 +224,7 @@ class OidcHttpClient
 
             return [$response->getContent(false), $response->getStatusCode()];
         } catch (HttpClientExceptionInterface $exception) {
-            throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed: %s', $url, $exception->getMessage()), 0, $exception);
+            throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed.', $this->withoutQuery($url)), $exception);
         }
     }
 }

@@ -20,6 +20,22 @@
         >
             {{ $t('sw6oidc.userProvider.unlinkButton') }}
         </mt-button>
+
+        <sw-confirm-modal
+            v-if="showUnlinkConfirm"
+            type="yesno"
+            :title="$t('sw6oidc.userProvider.unlinkButton')"
+            :text="unlinkConfirmText"
+            @confirm="onConfirmUnlink"
+            @cancel="onCancelUnlink"
+            @close="onCancelUnlink"
+        />
+
+        <sw-verify-user-modal
+            v-if="showVerify"
+            @verified="onVerified"
+            @close="showVerify = false"
+        />
     </template>
 
     <span

@@ -1,55 +1,48 @@
 {#
-    sw_login_login_sso (wrapping Shopware's own native SSO-forwarding button)
-    only exists as a named, overridable block in newer Shopware versions than
-    the one this plugin was actually tested against (v6.7.14.0) - confirmed
-    by checking out that exact tag from shopware/shopware and reading
-    sw-login-login.html.twig directly: in that version the SSO <div> isn't
-    wrapped in any block at all, so overriding sw_login_login_sso silently
-    produced nothing (no build error, no button). sw_login_login - the
-    outermost block wrapping the entire <form> - is the one block guaranteed
-    to exist across versions, so our buttons render as a sibling after the
-    form closes instead.
+    While disable_non_oidc_admin_login is on and another way in is offered,
+    only the username field, the password field and the login button are
+    hidden (R3-F10): core's "Keep me logged in" checkbox sits next to the
+    button inside sw_login_login_submit and has to stay, because the SSO and
+    passkey logins honour it (rememberMe). Cosmetic only, the server refuses
+    password logins either way.
 #}
-{% block sw_login_login %}
-{#
-    Native username/password form, hidden while disable_non_oidc_admin_login
-    is on — cosmetic only, AdminPasswordLoginGuardSubscriber rejects the
-    password grant server-side either way.
-#}
-<div v-show="!sw6oidcPasswordLoginDisabled">
-{% parent %}
-</div>
-
+{% block sw_login_login_user_field %}
 <p
     v-if="sw6oidcPasswordLoginDisabled"
     class="sw6oidc-login-actions__notice"
+    role="status"
 >
-    {{ sw6oidcTranslate('sw6oidc.login.passwordLoginDisabled', 'Password login is disabled. Please sign in with single sign-on or a passkey.') }}
+    {{ sw6oidcText('passwordLoginDisabled') }}
 </p>
+<template v-else>
+{% parent %}
+</template>
+{% endblock %}
+
+{% block sw_login_login_password_field %}
+<template v-if="!sw6oidcPasswordLoginDisabled">
+{% parent %}
+</template>
+{% endblock %}
+
+{% block sw_login_login_submit_button %}
+<template v-if="!sw6oidcPasswordLoginDisabled">
+{% parent %}
+</template>
+{% endblock %}
 
 {#
-    Real <mt-button> components, not plain <button> with copied class
-    strings: verified against the exact v6.7.14.0 source that core's own
-    "Anmelden"/SSO buttons are themselves rendered as
-    <mt-button variant="primary" size="default" :block="true">, and
-    mt-button's visual styling is produced by scoped component CSS tied to
-    its own rendered markup (icon slots, wrapper spans, etc.) - copying its
-    class list onto a bare <button> can never reproduce that. mt-button is
-    one of Shopware's own core Meteor components, already globally
-    registered long before sw-login-login mounts, so it resolves here the
-    same as it does for the real "Anmelden" button right above.
+    The SSO and passkey buttons are rendered as siblings after core's form:
+    they are not part of the password form, and must also show when core's
+    own SSO hides the default login (loginConfig.useDefault = false).
 #}
+{% block sw_login_login %}
+{% parent %}
+
 <div
     v-if="sw6oidcSsoProviders.length || sw6oidcPasskeyAvailable"
     class="sw6oidc-login-actions"
 >
-    {#
-        One button per visible admin-scoped provider - each labeled with its
-        own displayName (sw6oidcSsoButtonLabel() falls back to the generic
-        translated text only when a provider has none), rather than a single
-        button that only ever reaches whichever provider happens to resolve
-        as the "default" one.
-    #}
     <mt-button
         v-for="provider in sw6oidcSsoProviders"
         :key="provider.id"
@@ -74,21 +67,24 @@
         :is-loading="sw6oidcPasskeyPending"
         @click="sw6oidcStartPasskeyLogin"
     >
-        {{ sw6oidcTranslate('sw6oidc.login.passkeyButton', 'Login with Passkey') }}
+        {{ sw6oidcText('passkeyButton') }}
     </mt-button>
+</div>
 
-    <div
-        v-if="sw6oidcExchangeError"
-        class="sw6oidc-login-actions__error"
-    >
-        {{ sw6oidcErrorMessage }}
-    </div>
+{# Outside the buttons' v-if: a denial must show even when no button is visible (F-M13). #}
+<div
+    v-if="sw6oidcExchangeError"
+    class="sw6oidc-login-actions__error"
+    role="alert"
+>
+    {{ sw6oidcErrorMessage }}
+</div>
 
-    <div
-        v-if="sw6oidcPasskeyError"
-        class="sw6oidc-login-actions__error"
-    >
-        {{ sw6oidcTranslate('sw6oidc.login.passkeyError', 'Passkey login failed. Please try again or log in with your username and password.') }}
-    </div>
+<div
+    v-if="sw6oidcPasskeyError"
+    class="sw6oidc-login-actions__error"
+    role="alert"
+>
+    {{ sw6oidcText('passkeyError') }}
 </div>
 {% endblock %}

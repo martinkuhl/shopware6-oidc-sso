@@ -56,8 +56,27 @@ class AdminEntrypointsExtension extends AbstractExtension
             return [];
         }
 
-        $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+        // A truncated or half-deployed manifest must not take the
+        // Administration login page down: without it only the SSO/passkey
+        // buttons are missing, the password login still works.
+        $manifest = json_decode((string) @file_get_contents($manifestPath), true);
+        $entry = \is_array($manifest) ? ($manifest['entryPoints'][self::ENTRY_NAME] ?? null) : null;
 
-        return $manifest['entryPoints'][self::ENTRY_NAME] ?? [];
+        if (!\is_array($entry)) {
+            return [];
+        }
+
+        return [
+            'js' => $this->strings($entry['js'] ?? []),
+            'css' => $this->strings($entry['css'] ?? []),
+        ];
+    }
+
+    /**
+     * @return string[]
+     */
+    private function strings(mixed $value): array
+    {
+        return \is_array($value) ? array_values(array_filter($value, \is_string(...))) : [];
     }
 }

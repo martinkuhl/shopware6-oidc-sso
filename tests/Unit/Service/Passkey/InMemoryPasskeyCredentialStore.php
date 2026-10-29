@@ -5,6 +5,7 @@ namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Passkey;
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity;
+use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\MockObject\MockObject;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
@@ -12,6 +13,7 @@ use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenContainerEve
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
+use Shopware\Core\Framework\Uuid\Uuid;
 
 /**
  * Backs a mocked sw6oidc_passkey_credential.repository with a plain array,
@@ -27,7 +29,34 @@ final class InMemoryPasskeyCredentialStore
      */
     public function add(array $row): void
     {
-        $this->rows[(string) $row['id']] = $row + ['signCount' => 0, 'nickname' => null];
+        // Rows written before the hash column existed get it like the migration backfills it.
+        $this->rows[(string) $row['id']] = $row + [
+            'signCount' => 0,
+            'nickname' => null,
+            'credentialIdHash' => hash('sha256', (string) $row['credentialId']),
+        ];
+    }
+
+    /**
+     * The repository's conditional counter UPDATE, applied to the rows.
+     */
+    public function connection(Connection&MockObject $mock): Connection
+    {
+        $mock->method('executeStatement')->willReturnCallback(function (string $sql, array $params): int {
+            \assert(str_contains($sql, 'UPDATE `sw6oidc_passkey_credential`'));
+            $id = Uuid::fromBytesToHex($params['id']);
+            $row = $this->rows[$id] ?? null;
+
+            if ($row === null || !($row['signCount'] < $params['counter'] || $params['counter'] === 0)) {
+                return 0;
+            }
+
+            $this->rows[$id] = ['publicKey' => $params['publicKey'], 'signCount' => $params['counter']] + $row;
+
+            return 1;
+        });
+
+        return $mock;
     }
 
     public function wire(EntityRepository&MockObject $mock): EntityRepository

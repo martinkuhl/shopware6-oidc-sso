@@ -12,6 +12,7 @@ Shopware.Component.override('sw-users-permissions-user-listing', {
     data() {
         return {
             sw6oidcBindings: {},
+            sw6oidcBindingsRequestId: 0,
         };
     },
 
@@ -21,7 +22,7 @@ Shopware.Component.override('sw-users-permissions-user-listing', {
 
             columns.push({
                 property: 'sw6oidcProvider',
-                label: this.$tc('sw6oidc.userProvider.label'),
+                label: this.$t('sw6oidc.userProvider.label'),
                 sortable: false,
             });
 
@@ -39,14 +40,23 @@ Shopware.Component.override('sw-users-permissions-user-listing', {
         },
 
         async sw6oidcLoadBindings() {
+            // Paging/searching quickly must not let an older response win.
+            const requestId = ++this.sw6oidcBindingsRequestId;
             const ids = Array.from(this.user ?? []).map((user) => user.id);
 
             try {
-                this.sw6oidcBindings = await fetchUserProviderBindings('admin', ids);
+                const bindings = await fetchUserProviderBindings('admin', ids);
+
+                if (requestId === this.sw6oidcBindingsRequestId) {
+                    this.sw6oidcBindings = bindings;
+                }
             } catch (exception) {
                 // eslint-disable-next-line no-console
                 console.error('sw6oidc: failed to load OIDC provider bindings', exception);
-                this.sw6oidcBindings = {};
+
+                if (requestId === this.sw6oidcBindingsRequestId) {
+                    this.sw6oidcBindings = {};
+                }
             }
         },
     },

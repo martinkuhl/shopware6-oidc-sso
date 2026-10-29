@@ -4,9 +4,8 @@ namespace MartinKuhl\Sw6Oidc\Service\Passkey;
 
 use Cose\Algorithm\Manager as CoseAlgorithmManager;
 use Cose\Algorithm\Signature\ECDSA\ES256;
-use Cose\Algorithm\Signature\ECDSA\ES512;
+use Cose\Algorithm\Signature\EdDSA\EdDSA;
 use Cose\Algorithm\Signature\RSA\RS256;
-use Cose\Algorithm\Signature\RSA\RS512;
 use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyCeremonyException;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -23,14 +22,20 @@ use Webauthn\PublicKeyCredentialRpEntity;
 
 /**
  * The single seam constructing every web-auth/webauthn-lib (5.x) object this
- * plugin needs — mirrors the Magento module's Model/Passkey/WebauthnCeremonyFactory.php.
- * Attestation conveyance is always 'none' (same deliberate trade-off as the
- * Magento module: broad authenticator compatibility over hardware provenance).
+ * plugin needs.
+ *
+ * - Attestation conveyance is always 'none' (broad authenticator
+ *   compatibility over hardware provenance).
+ * - User verification (PIN, biometrics) is *required* for registration and
+ *   login: a passkey replaces a password, so possession of a key alone is
+ *   not enough (H6).
+ * - Validators only accept the exact origins pinned into the ceremony, never
+ *   subdomains of the RP ID (N-M1).
+ * - Offered algorithms: ES256, EdDSA and RS256 — the ones actually verified.
  *
  * 5.x validators no longer take a credential repository: callers look up the
- * CredentialRecord themselves and pass it into check(). All JSON (browser
- * responses, options sent to the browser, stored credential records) goes
- * through the library's own Symfony serializer.
+ * CredentialRecord themselves and pass it into check(). All JSON goes through
+ * the library's own Symfony serializer.
  */
 class WebauthnCeremonyFactory
 {
@@ -48,6 +53,7 @@ class WebauthnCeremonyFactory
     {
         return [
             new PublicKeyCredentialParameters('public-key', ES256::ID),
+            new PublicKeyCredentialParameters('public-key', EdDSA::identifier()),
             new PublicKeyCredentialParameters('public-key', RS256::ID),
         ];
     }
@@ -55,6 +61,7 @@ class WebauthnCeremonyFactory
     public function residentKeyAuthenticatorSelection(): AuthenticatorSelectionCriteria
     {
         return new AuthenticatorSelectionCriteria(
+            userVerification: AuthenticatorSelectionCriteria::USER_VERIFICATION_REQUIREMENT_REQUIRED,
             residentKey: AuthenticatorSelectionCriteria::RESIDENT_KEY_REQUIREMENT_REQUIRED,
         );
     }
@@ -72,7 +79,7 @@ class WebauthnCeremonyFactory
         try {
             $credential = $this->serializer()->deserialize($json, PublicKeyCredential::class, 'json');
         } catch (\Throwable $exception) {
-            throw new PasskeyCeremonyException('The WebAuthn credential response could not be parsed.', 0, $exception);
+            throw new PasskeyCeremonyException('The WebAuthn credential response could not be parsed.', $exception);
         }
 
         if (!$credential instanceof PublicKeyCredential) {
@@ -93,21 +100,35 @@ class WebauthnCeremonyFactory
         ]);
     }
 
-    public function attestationResponseValidator(): AuthenticatorAttestationResponseValidator
+    /**
+     * @param list<string> $allowedOrigins exact origins the ceremony may come from
+     */
+    public function attestationResponseValidator(array $allowedOrigins): AuthenticatorAttestationResponseValidator
     {
-        return AuthenticatorAttestationResponseValidator::create($this->ceremonyStepManagerFactory()->creationCeremony());
+        return AuthenticatorAttestationResponseValidator::create($this->ceremonyStepManagerFactory($allowedOrigins)->creationCeremony());
     }
 
-    public function assertionResponseValidator(): AuthenticatorAssertionResponseValidator
+    /**
+     * @param list<string> $allowedOrigins exact origins the ceremony may come from
+     */
+    public function assertionResponseValidator(array $allowedOrigins): AuthenticatorAssertionResponseValidator
     {
-        return AuthenticatorAssertionResponseValidator::create($this->ceremonyStepManagerFactory()->requestCeremony());
+        return AuthenticatorAssertionResponseValidator::create($this->ceremonyStepManagerFactory($allowedOrigins)->requestCeremony());
     }
 
-    private function ceremonyStepManagerFactory(): CeremonyStepManagerFactory
+    /**
+     * @param list<string> $allowedOrigins
+     */
+    private function ceremonyStepManagerFactory(array $allowedOrigins): CeremonyStepManagerFactory
     {
+        if ($allowedOrigins === []) {
+            throw new PasskeyCeremonyException('No allowed origin is configured for this passkey ceremony.');
+        }
+
         $factory = new CeremonyStepManagerFactory();
         $factory->setAlgorithmManager($this->coseAlgorithmManager());
         $factory->setAttestationStatementSupportManager($this->attestationStatementSupportManager());
+        $factory->setAllowedOrigins($allowedOrigins, false);
 
         return $factory;
     }
@@ -119,6 +140,6 @@ class WebauthnCeremonyFactory
 
     private function coseAlgorithmManager(): CoseAlgorithmManager
     {
-        return CoseAlgorithmManager::create()->add(ES256::create(), ES512::create(), RS256::create(), RS512::create());
+        return CoseAlgorithmManager::create()->add(ES256::create(), new EdDSA(), RS256::create());
     }
 }

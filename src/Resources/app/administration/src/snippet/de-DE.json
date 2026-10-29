@@ -3,13 +3,8 @@
         "login": {
             "ssoButton": "Mit SSO anmelden",
             "ssoButtonWithProvider": "Login mit {name}",
-            "error": "Die Single-Sign-on-Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut oder melden Sie sich mit Benutzername und Passwort an.",
-            "errorRoleMissing": "Ihr Konto konnte nicht automatisch angelegt werden, da keine Administratorrolle zugewiesen werden konnte. Bitte wenden Sie sich an Ihren Administrator.",
-            "errorAutoCreateDisabled": "Die automatische Kontoerstellung ist für diese Anmeldemethode deaktiviert. Bitte wenden Sie sich an Ihren Administrator.",
             "passkeyButton": "Login mit Passkey",
-            "passkeyError": "Die Passkey-Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut oder melden Sie sich mit Benutzername und Passwort an.",
-            "passwordLoginDisabled": "Die Anmeldung mit Passwort ist deaktiviert. Bitte melden Sie sich mit Single Sign-on oder einem Passkey an.",
-            "errorAccessDenied": "Zugriff verweigert: Ihr Konto erfüllt nicht die Voraussetzungen für die Anmeldung an der Administration."
+            "passkeyError": "Die Passkey-Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut oder melden Sie sich mit Benutzername und Passwort an."
         },
         "provider": {
             "moduleTitle": "OIDC-Anbieter",
@@ -24,12 +19,20 @@
                     "pass": "Erfolgreich",
                     "fail": "Fehlgeschlagen",
                     "untested": "Noch nicht getestet"
-                }
+                },
+                "loadError": "Die Anbieter konnten nicht geladen werden.",
+                "active": "Aktiv",
+                "inactive": "Inaktiv",
+                "deleteConfirm": "Konten, die sich über diesen Anbieter anmelden, verlieren Single Sign-on: ihre Verknüpfung wird mit dem Anbieter gelöscht. Trotzdem löschen?",
+                "deleteError": "Der Anbieter konnte nicht gelöscht werden."
             },
             "detail": {
                 "buttonSave": "Speichern",
                 "buttonCancel": "Abbrechen",
                 "saveError": "Der Anbieter konnte nicht gespeichert werden.",
+                "saveSuccess": "Der Anbieter wurde gespeichert.",
+                "errorSecretRequiredForEndpointChange": "Bitte das Client-Secret erneut eingeben: Es wird an geänderte Endpunkt-URLs gesendet.",
+                "errorClientSecretRequired": "Ein vertraulicher Client benötigt sein Client-Secret.",
                 "buttonLoadConfiguration": "Konfiguration laden",
                 "buttonTestConnection": "Verbindung testen",
                 "discoverySuccess": "Konfiguration von der Well-Known-URL geladen.",
@@ -57,6 +60,12 @@
                     "tokenExchangeNoAccessToken": "Die Antwort des Token-Endpunkts enthielt kein access_token.",
                     "idTokenVerificationPass": "Signatur und Claims des id_token erfolgreich geprüft.",
                     "idTokenVerificationSkipped": "Die Token-Antwort enthielt kein id_token.",
+                    "idTokenVerificationMissing": "Die Token-Antwort enthielt kein id_token, das der Scope \"openid\" erfordert. Echte Anmeldungen mit diesem Anbieter schlagen fehl.",
+                    "claimsSubjectMismatch": "Die Userinfo-Antwort beschreibt ein anderes Subjekt (sub) als das id_token. Echte Anmeldungen mit diesem Anbieter schlagen fehl.",
+                    "groupsNone": "Keine Gruppen im Claim \"{claim}\" gefunden.",
+                    "groupsFound": "{count} Gruppe(n) gefunden.",
+                    "accessControlAllowed": "Die Zugriffsregeln lassen dieses Konto zu.",
+                    "accessControlDenied": "Dieses Konto würde von der Zugriffsregel auf \"{claim}\" abgelehnt.",
                     "userinfoFetchPass": "Der Userinfo-Endpunkt hat erfolgreich geantwortet.",
                     "userinfoFetchSkipped": "Kein Userinfo-Endpunkt konfiguriert.",
                     "wellKnownReachablePass": "Well-Known-Konfigurationsdokument erfolgreich abgerufen und ausgewertet.",
@@ -84,6 +93,9 @@
                         "token_exchange": "Token-Austausch",
                         "id_token_verification": "ID-Token-Prüfung",
                         "userinfo_fetch": "Userinfo-Abruf",
+                        "claims": "Claims",
+                        "groups": "Gruppen",
+                        "access_control": "Zugriffskontrolle",
                         "callback": "Rückruf",
                         "authorization": "Autorisierung"
                     }
@@ -106,21 +118,39 @@
                 "clientIdHelp": "Die beim Identity Provider für diese Anwendung registrierte OAuth2-Client-ID.",
                 "clientSecret": "Client-Secret",
                 "clientSecretHelp": "Das OAuth2-Client-Secret für diesen Client. Wird verschlüsselt gespeichert und nach dem Speichern nicht mehr angezeigt – leer lassen, um das gespeicherte Secret zu behalten.",
-                "clientSecretStoredPlaceholder": "Gespeichert – leer lassen zum Beibehalten",
+                "clientSecretStoredPlaceholder": "Gespeichert – leer lassen zum Beibehalten (nach Änderung von Endpunkt-URLs neu eingeben)",
                 "wellKnownConfigUrl": "Well-Known-Konfigurations-URL (Auto-Discovery)",
                 "wellKnownConfigUrlHelp": "Das OpenID-Connect-Discovery-Dokument Ihres IdP (…/.well-known/openid-configuration). Über „Konfiguration laden“ unten werden die Endpunkt-Felder automatisch befüllt.",
                 "authorizeEndpoint": "Authorize-Endpunkt",
                 "authorizeEndpointHelp": "Der Authorize-Endpunkt des IdP, zu dem Kunde bzw. Administrator beim Login-Start weitergeleitet wird.",
                 "accessTokenEndpoint": "Access-Token-Endpunkt",
                 "accessTokenEndpointHelp": "Der Token-Endpunkt des IdP zum Einlösen des Autorisierungscodes gegen Tokens.",
+                "tokenEndpointAuthMethod": {
+                    "label": "Client-Authentifizierung am Token-Endpunkt",
+                    "help": "Wie sich der Shop am Token-Endpunkt mit Client-ID und Client-Secret ausweist. Muss zur token_endpoint_auth_method des Clients beim IdP passen. Gilt nicht für Public Clients."
+                },
+                "clientAuthMethod": {
+                    "client_secret_basic": "HTTP Basic (client_secret_basic)",
+                    "client_secret_post": "Im Request-Body (client_secret_post)"
+                },
                 "userInfoEndpoint": "Userinfo-Endpunkt",
                 "userInfoEndpointHelp": "Der Userinfo-Endpunkt des IdP für zusätzliche Claims nach dem Token-Austausch. Optional – leer lassen, wenn der IdP alles Nötige bereits im ID-Token liefert.",
                 "jwksEndpoint": "JWKS-Endpunkt",
                 "jwksEndpointHelp": "Der JWKS-Endpunkt des IdP zur Prüfung der Signatur des ID-Tokens.",
                 "endSessionEndpoint": "End-Session-Endpunkt (Logout)",
+                "logoutStyle": {
+                    "label": "Logout-Verfahren",
+                    "help": "Wie der Benutzer an den End-Session-Endpunkt geleitet wird. Standard: OIDC RP-Initiated Logout (id_token_hint, client_id, post_logout_redirect_uri, state), für Keycloak, Auth0, Okta, Entra ID, Zitadel, Authentik und Authelias OIDC-Logout. Authelia-Portal-Logout: Authelias Forward-Auth-Logout /logout?rd=<Rückkehr-URL>.",
+                    "standard": "Standard (OIDC RP-Initiated Logout)",
+                    "authelia_forward_auth": "Authelia-Portal-Logout (?rd=)"
+                },
                 "endSessionEndpointHelp": "Der End-Session-Endpunkt des IdP, über den beim Storefront- und Administration-Logout auch beim IdP abgemeldet wird. Leer lassen, falls nicht unterstützt (siehe Authelia-Hinweis in der Dokumentation).",
                 "revocationEndpoint": "Token-Revocation-Endpunkt",
                 "revocationEndpointHelp": "Der Token-Revocation-Endpunkt (RFC 7009) des IdP zum Widerruf des Access Tokens beim Logout. Optional – ein fehlgeschlagener Widerruf blockiert den lokalen Logout nie.",
+                "revocationEndpointAuthMethod": {
+                    "label": "Client-Authentifizierung am Revocation-Endpunkt",
+                    "help": "Wie sich der Shop beim Token-Widerruf ausweist. Muss zur revocation_endpoint_auth_method des Clients beim IdP passen (Authelia legt sie getrennt von der token_endpoint_auth_method fest). Gilt nicht für Public Clients."
+                },
                 "issuer": "Issuer",
                 "issuerHelp": "Der exakte Issuer-Wert („iss“), den der IdP in seinen Tokens setzt – wird bei jedem eingehenden ID-Token geprüft.",
                 "scope": "Scope",
@@ -129,8 +159,9 @@
                 "groupAttributeHelp": "Der Claim-Schlüssel mit den Gruppen-/Rollenzugehörigkeiten des Nutzers (Standard: „groups“), Grundlage für die Rollen-/Gruppenzuordnung unten.",
                 "pkceFlow": "PKCE-Methode",
                 "pkceFlowHelp": "Code-Challenge-Methode für PKCE. „S256“ wird bevorzugt; „plain“ nur verwenden, wenn der IdP S256 nicht unterstützt.",
-                "claimEncoding": "Claim-Kodierung",
-                "claimEncodingHelp": "Auf „base64“ setzen, wenn dieser IdP Claim-Werte Base64-kodiert (z. B. Zitadel-artige verschachtelte Rollenobjekte).",
+                "base64Claims": "Base64-kodierte Claims",
+                "base64ClaimsHelp": "Nur für IdPs, die einzelne Claim-Werte Base64-kodieren: genau diese Claims eintragen (ein Name umfasst auch alles darunter Verschachtelte; * = alle Claims, nicht empfohlen). Andere Claims werden nie dekodiert.",
+                "base64ClaimsPlaceholder": "Claim-Name, dann Enter",
                 "publicClient": "Public Client (PKCE, ohne Client-Secret)",
                 "publicClientHelp": "Aktivieren für einen reinen PKCE-Client ohne Client-Secret (RFC 6749 §2.1).",
                 "httpTimeout": "HTTP-Timeout (Sekunden)",
@@ -237,7 +268,7 @@
                     "closeButton": "Fenster schließen"
                 },
                 "cardAccessControl": "Zugriffskontrolle (Claim-basierte Regeln)",
-                "accessControlHint": "Jede Regel muss erfüllt sein (UND-Verknüpfung, in Sortierreihenfolge), damit eine Anmeldung gelingt; die erste nicht erfüllte Regel lehnt die Anmeldung mit ihrer Meldung ab. Claim-Schlüssel verwenden die abgeflachte Punktnotation (z. B. realm_access.roles). Listen-Claims wie groups werden über ihre Einträge geprüft. Groß-/Kleinschreibung wird ignoriert; true/1 und false/0 gelten als gleich. Keine Regeln = jeder darf sich anmelden.",
+                "accessControlHint": "Jede Regel muss erfüllt sein (UND-Verknüpfung, in Sortierreihenfolge), damit eine Anmeldung gelingt; die erste nicht erfüllte Regel lehnt die Anmeldung mit ihrer Meldung ab. Claim-Schlüssel verwenden die abgeflachte Punktnotation (z. B. realm_access.roles). Listen-Claims wie groups werden über ihre Einträge geprüft (\"ist gleich\" = irgendein Eintrag). \"Enthält\" auf einem Einzelwert prüft ganze Wörter, nie Teile davon – zur Einschränkung nach Domain \"E-Mail-Domain ist\" verwenden. \"Ist ungleich\" und \"enthält nicht\" lehnen ab, wenn der Claim fehlt. Groß-/Kleinschreibung wird ignoriert; true/1 und false/0 gelten als gleich. Keine Regeln = jeder darf sich anmelden.",
                 "accessControlDiscoveredClaims": "Beim letzten Live-Test empfangene Claims: {claims}",
                 "claimKey": "Claim",
                 "operator": "Operator",
@@ -251,7 +282,9 @@
                     "contains": "enthält",
                     "not_contains": "enthält nicht",
                     "exists": "existiert",
-                    "not_exists": "existiert nicht"
+                    "not_exists": "existiert nicht",
+                    "ends_with": "endet mit",
+                    "email_domain": "E-Mail-Domain ist"
                 },
                 "postLogoutUrl": "Weiterleitungs-URI nach dem Logout",
                 "postLogoutUrlHelp": "Wohin der IdP den Benutzer nach dem Logout dort schickt. Leer lassen für die Standardwerte (Kunden: Storefront-Login-Seite, Admins: die Administration). Für IdPs, die nur eine Post-Logout-URI akzeptieren, die angezeigte /sw6oidc/postlogout-URL eintragen und nur diese registrieren – sie leitet Kunden und Admins zur jeweils richtigen Login-Seite.",
@@ -284,7 +317,41 @@
                     "client_id_missing": "Client-ID fehlt",
                     "client_secret_missing": "Client-Secret fehlt",
                     "client_secret_undecryptable": "Client-Secret kann nicht entschlüsselt werden (APP_SECRET geändert?) — bitte neu eingeben"
-                }
+                },
+                "cardAccountLinking": "Kontoverknüpfung",
+                "requireEmailVerified": "Bestätigte E-Mail-Adresse verlangen",
+                "requireEmailVerifiedHelp": "Anmeldungen ablehnen, wenn der IdP für die zugeordnete E-Mail nicht email_verified: true sendet. Nur für IdPs deaktivieren, die den Claim nie senden und die E-Mail-Adressen aller Benutzer vollständig kontrollieren.",
+                "linkExistingAccounts": "Bestehende Konten per bestätigter E-Mail verknüpfen",
+                "linkExistingAccountsHelp": "Beim ersten SSO-Login ein bestehendes Shopware-Konto mit derselben, bestätigten E-Mail-Adresse verknüpfen. Aus: Bestehende Konten müssen im Profil ausdrücklich verbunden werden („SSO verbinden“). Superadmins werden nie automatisch verknüpft.",
+                "linkExistingAccountsUnverifiedWarning": "Bestehende Konten werden nie mit einer unbestätigten E-Mail-Adresse verknüpft, auch wenn keine Bestätigung verlangt wird — diese Benutzer müssen SSO in ihrem Profil verbinden.",
+                "lockoutConfirmTitle": "Admins ohne Single Sign-on aussperren?",
+                "lockoutConfirmButton": "Passwort-Anmeldung trotzdem deaktivieren",
+                "diagnosticsAtomicStore": "Speicher für Einmal-Token",
+                "atomicStore": {
+                    "redis": "Redis (SW6OIDC_REDIS_DSN)",
+                    "database": "Datenbank"
+                },
+                "infrastructureWarning": {
+                    "redis_dsn_unusable": "SW6OIDC_REDIS_DSN ist gesetzt, Redis kann aber nicht verwendet werden (PHP-Erweiterung fehlt, nicht erreichbar oder Anmeldung fehlgeschlagen). Einmal-Token werden stattdessen in der Datenbank gespeichert — Details stehen im Log.",
+                    "multi_node_without_redis": "Mehrere App-Server haben kürzlich SSO-Anmeldungen verarbeitet, Redis wird aber nicht verwendet. Anmeldungen bleiben korrekt, aber Rate-Limiter und JWKS-Cache sind pro Server getrennt, sofern die Cache-Pools von Shopware nicht gemeinsam genutzt werden. Bitte SW6OIDC_REDIS_DSN setzen.",
+                    "redis_may_evict": "Das für Einmal-Tokens verwendete Redis kann Schlüssel verdrängen (maxmemory-policy ist nicht noeviction). Ein verdrängter Schlüssel kann eine Anmeldung scheitern lassen oder die Wiederverwendung eines Logout-Tokens erlauben. Bitte maxmemory-policy für dieses Redis auf noeviction setzen."
+                },
+                "frontchannelAdminLogout": "Front-Channel-Logout beendet Admin-Sitzungen",
+                "frontchannelAdminLogoutHelp": "Front-Channel-Logout-Anfragen sind nicht authentifiziert (nur iss und sid). Administrationssitzungen können nur alle gemeinsam beendet werden und bleiben daher standardmäßig bestehen; Back-Channel-Logout (signiert) beendet sie immer. Nur aktivieren, wenn Ihr IdP ausschließlich Front-Channel-Logout unterstützt.",
+                "revokeSuperadminOnSso": "Rollen-Sync darf Superadmin entziehen",
+                "revokeSuperadminOnSsoHelp": "Bei aktivem Admin-Rollen-Sync: Gewähren die Gruppen eines Logins keinen Superadmin mehr, wird das Superadmin-Flag entfernt (die zugeordnete ACL-Rolle bleibt). Wird nie beim letzten aktiven Superadmin angewendet.",
+                "issuerChange": {
+                    "title": "Issuer geändert",
+                    "explanation": "Verknüpft lassen, wenn es derselbe Identity Provider unter einer neuen URL ist (zum Beispiel ein umbenannter Realm oder eine neue Domain). Trennen, wenn der Anbieter jetzt auf einen anderen Identity Provider oder Mandanten zeigt: dessen Benutzer dürfen sich nie an diesen Konten anmelden; sie können sich in ihrem Profil neu verknüpfen.",
+                    "rebind": "Verknüpft lassen",
+                    "disconnect": "Trennen"
+                },
+                "superadminRequiredHint": "Nur Superadmins können Anbieter anlegen oder ihre sicherheitsrelevanten Einstellungen ändern: Endpunkte, Issuer, Client-ID, Scope, Public Client, Anmeldetyp, Claim-Verarbeitung, Kontoverknüpfung, automatische Admin-Anlage, die Standard- und Superadmin-Rollenzuordnungen sowie die E-Mail-/Benutzernamen-Zuordnungen und Zugriffsregeln von Anbietern für die Administration. Alles andere können Sie ändern.",
+                "readOnlyHint": "Sie können diesen Anbieter ansehen, aber nicht ändern (Bearbeitungsrecht fehlt).",
+                "removeWebhook": "Webhook entfernen",
+                "webhookRemovedOnSave": "Die gespeicherte Webhook-URL wird beim Speichern entfernt.",
+                "loadError": "Der Anbieter konnte nicht geladen werden.",
+                "liveTestPopupBlocked": "Der Browser hat das Testfenster blockiert. Erlauben Sie Pop-ups für die Administration und versuchen Sie es erneut."
             }
         },
         "userProvider": {
@@ -295,7 +362,13 @@
             "unlinkConfirmAdmin": "Soll die Verknüpfung dieses Admin-Benutzers mit seinem OIDC-Anbieter wirklich gelöst werden? Beim nächsten SSO-Login kann er mit einem anderen Anbieter verknüpft werden.",
             "unlinkConfirmCustomer": "Soll die Verknüpfung dieses Kunden mit seinem OIDC-Anbieter wirklich gelöst werden? Beim nächsten SSO-Login kann er mit einem anderen Anbieter verknüpft werden.",
             "unlinkSuccess": "Die Verknüpfung mit dem OIDC-Anbieter wurde gelöst.",
-            "unlinkError": "Die Verknüpfung mit dem OIDC-Anbieter konnte nicht gelöst werden."
+            "unlinkError": "Die Verknüpfung mit dem OIDC-Anbieter konnte nicht gelöst werden.",
+            "unlinkLastSsoAdmin": "Die Passwort-Anmeldung für die Administration ist deaktiviert und dies ist der letzte Admin, der sich per Single Sign-on anmelden kann. Die Verknüpfung kann daher nicht gelöst werden.",
+            "connectIntro": "Verbinden Sie Ihr Konto mit Single Sign-on, um sich über Ihren Identitätsanbieter anzumelden.",
+            "connectButton": "Mit {name} verbinden",
+            "connectSuccess": "Single Sign-on wurde mit Ihrem Konto verbunden.",
+            "connectError": "Single Sign-on konnte nicht verbunden werden. Bitte versuchen Sie es erneut.",
+            "connectVerificationRequired": "Bitte bestätigen Sie Ihre Identität, bevor Sie Single Sign-on verbinden."
         },
         "passkeySettings": {
             "moduleTitle": "Passkey-Einstellungen",
@@ -306,6 +379,9 @@
             "registerError": "Der Passkey konnte nicht registriert werden. Bitte versuchen Sie es erneut.",
             "registerNoSupport": "Dieser Browser unterstützt keine Passkeys (WebAuthn).",
             "deleteConfirm": "Diesen Passkey löschen? Er kann danach nicht mehr zur Anmeldung verwendet werden.",
+            "deleteConfirmSessionsOwn": "Wenn Sie sich mit diesem Passkey angemeldet haben, beendet das Löschen alle Ihre Sitzungen in der Administration, auch diese, und Sie müssen sich erneut anmelden.",
+            "deleteConfirmSessionsAdmin": "Wenn sich dieser Administrator mit diesem Passkey angemeldet hat, beendet das Löschen alle seine Sitzungen in der Administration (sie lassen sich nur alle gemeinsam beenden). Ist es Ihr eigener Passkey, gilt das auch für Ihre aktuelle Sitzung.",
+            "deleteConfirmSessionsCustomer": "Sitzungen, die der Kunde mit diesem Passkey begonnen hat, werden beendet; er muss sich in diesen Verkaufskanälen erneut anmelden.",
             "deleteSuccess": "Passkey gelöscht.",
             "deleteSuccessLoggedOut": "Passkey gelöscht. Sie wurden abgemeldet, da mit diesem Passkey die aktuelle Sitzung gestartet wurde.",
             "deleteError": "Der Passkey konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
@@ -317,17 +393,26 @@
                 "columnOwner": "Besitzer",
                 "columnNickname": "Bezeichnung",
                 "columnCreatedAt": "Registriert am"
+            },
+            "disabledBadge": "Deaktiviert (möglicher Klon)",
+            "loadError": "Die Passkeys konnten nicht geladen werden.",
+            "manageOwnButton": "Eigene Passkeys verwalten",
+            "userType": {
+                "admin": "Administrationsbenutzer",
+                "customer": "Kunde"
             }
         },
         "sessions": {
             "moduleTitle": "OIDC- & Passkey-Sitzungen",
             "hint": "Jede Anmeldung über OIDC oder einen Passkey, mit Zeitpunkt und Grund der Abmeldung. „Abmelden erzwingen“ beendet die OIDC-Sitzung eines Kunden genau; bei Passkey-Anmeldungen und bei Administration-Benutzern werden alle Sitzungen dieses Kontos beendet. Einträge werden nach der Aufbewahrungsdauer gelöscht (SW6OIDC_SESSION_ACTIVITY_RETENTION_DAYS, Standard 90 Tage).",
-            "onlyActive": "Nur aktive Sitzungen",
+            "onlyActive": "Nur Sitzungen ohne Abmeldung",
             "refresh": "Aktualisieren",
             "active": "Aktiv",
             "forceLogout": "Abmelden erzwingen",
             "forceLogoutConfirm": "Diese Sitzung beenden? Der Kunde muss sich erneut anmelden.",
-            "forceLogoutConfirmAdmin": "Alle Administration-Sitzungen dieses Benutzers beenden? Er muss sich erneut anmelden.",
+            "forceLogoutConfirmAll": "Alle Sitzungen dieses Kontos beenden? Passkey-Anmeldungen und Administration-Benutzer können nur überall gleichzeitig abgemeldet werden; die Person muss sich erneut anmelden.",
+            "expired": "Abgelaufen (keine Abmeldung erfasst)",
+            "loadError": "Die Sitzungsaktivität konnte nicht geladen werden.",
             "forceLogoutSuccess": "Die Sitzung wurde beendet.",
             "forceLogoutSuccessAll": "Alle Sitzungen dieses Kontos wurden beendet.",
             "forceLogoutError": "Die Sitzung konnte nicht beendet werden. Bitte versuchen Sie es erneut.",
@@ -354,6 +439,50 @@
                 "backchannel": "IdP (Back-Channel)",
                 "frontchannel": "IdP (Front-Channel)",
                 "forced": "Durch Administrator erzwungen"
+            }
+        },
+        "stepUp": {
+            "hint": "Oder bestätigen Sie Ihre Identität mit:",
+            "sso": "Single Sign-on",
+            "passkey": "Passkey",
+            "error": "Die Bestätigung ist fehlgeschlagen oder wurde abgebrochen. Bitte versuchen Sie es erneut."
+        }
+    },
+    "sw-privileges": {
+        "permissions": {
+            "sw6oidc_provider": {
+                "label": "OIDC-Anbieter (sicherheitsrelevante Einstellungen nur durch Superadmins)"
+            },
+            "sw6oidc_passkey_credential": {
+                "label": "Passkeys"
+            },
+            "sw6oidc_session_activity": {
+                "label": "SSO-Sitzungsaktivität"
+            }
+        },
+        "additional_permissions": {
+            "sw6oidc_session_activity": {
+                "label": "SSO-Sitzungsaktivität",
+                "force_logout": "Abmeldung erzwingen"
+            }
+        }
+    },
+    "sw-login": {
+        "sw6oidc": {
+            "login": {
+                "ssoButton": "Mit SSO anmelden",
+                "ssoButtonWithProvider": "Login mit {name}",
+                "error": "Die Single-Sign-on-Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut oder melden Sie sich mit Benutzername und Passwort an.",
+                "errorRoleMissing": "Ihr Konto konnte nicht automatisch angelegt werden, da keine Administratorrolle zugewiesen werden konnte. Bitte wenden Sie sich an Ihren Administrator.",
+                "errorAutoCreateDisabled": "Die automatische Kontoerstellung ist für diese Anmeldemethode deaktiviert. Bitte wenden Sie sich an Ihren Administrator.",
+                "passkeyButton": "Login mit Passkey",
+                "passkeyError": "Die Passkey-Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut oder melden Sie sich mit Benutzername und Passwort an.",
+                "passkeyDifferentUser": "Dieser Passkey gehört zu einem anderen Konto. Verwenden Sie einen Passkey des Kontos, das angemeldet war.",
+                "passwordLoginDisabled": "Die Anmeldung mit Passwort ist deaktiviert. Bitte melden Sie sich mit Single Sign-on oder einem Passkey an.",
+                "errorAccessDenied": "Zugriff verweigert: Ihr Konto erfüllt nicht die Voraussetzungen für die Anmeldung an der Administration.",
+                "errorLinkRequired": "Es gibt bereits ein Konto mit dieser E-Mail-Adresse. Bitte melden Sie sich mit Ihrem Passwort an und verbinden Sie Single Sign-on in Ihrem Profil.",
+                "errorEmailNotVerified": "Ihr Identitätsanbieter hat Ihre E-Mail-Adresse nicht bestätigt.",
+                "errorProviderMismatch": "Dieses Konto ist mit einer anderen Single-Sign-on-Identität verbunden."
             }
         }
     }

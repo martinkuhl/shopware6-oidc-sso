@@ -2,13 +2,13 @@
 <sw-page class="sw6oidc-provider-list">
     {% block sw6oidc_provider_list_smart_bar_actions %}
     <template #smart-bar-actions>
-        <sw-button
-            variant="primary"
-            :router-link="{ name: 'sw6oidc.provider.create' }"
+        <mt-button
             v-if="acl.can('sw6oidc_provider.creator')"
+            variant="primary"
+            @click="$router.push({ name: 'sw6oidc.provider.create' })"
         >
-            {{ $tc('sw6oidc.provider.list.buttonAdd') }}
-        </sw-button>
+            {{ $t('sw6oidc.provider.list.buttonAdd') }}
+        </mt-button>
     </template>
     {% endblock %}
 
@@ -20,28 +20,65 @@
             :repository="providerRepository"
             :columns="columns"
             :is-loading="isLoading"
+            :sort-by="sortBy"
+            :sort-direction="sortDirection"
             :disable-data-fetching="true"
+            :show-selection="false"
+            :allow-edit="acl.can('sw6oidc_provider.editor') || undefined"
+            :allow-view="acl.can('sw6oidc_provider.viewer') || undefined"
+            :allow-delete="acl.can('sw6oidc_provider.deleter') || undefined"
             detail-route="sw6oidc.provider.detail"
+            @column-sort="onSortColumn"
+            @page-change="onPageChange"
+            @delete-item-finish="getList"
         >
+            <template #column-loginType="{ item }">
+                {{ $t(`sw6oidc.provider.detail.loginType.${item.loginType}`) }}
+            </template>
+            <template #column-isActive="{ item }">
+                <mt-icon
+                    v-if="item.isActive"
+                    name="regular-checkmark-xs"
+                    size="16px"
+                    :aria-label="$t('sw6oidc.provider.list.active')"
+                />
+                <mt-icon
+                    v-else
+                    name="regular-times-s"
+                    size="16px"
+                    :aria-label="$t('sw6oidc.provider.list.inactive')"
+                />
+            </template>
+            {% block sw6oidc_provider_list_delete_confirm %}
+            <template #delete-confirm-text>
+                {{ $t('sw6oidc.provider.list.deleteConfirm') }}
+            </template>
+            <template #delete-modal-delete-item="{ item }">
+                <mt-button
+                    variant="critical"
+                    size="small"
+                    :is-loading="isDeleting"
+                    @click="onDeleteProvider(item.id)"
+                >
+                    {{ $t('global.default.delete') }}
+                </mt-button>
+            </template>
+            {% endblock %}
             {% block sw6oidc_provider_list_column_last_test_status %}
             <template #column-lastTestStatus="{ item }">
-                <sw-label
+                <mt-badge
                     v-if="item.lastTestStatus === 'pass'"
-                    size="medium"
-                    appearance="pill"
-                    variant="success"
+                    variant="positive"
                 >
-                    {{ $tc('sw6oidc.provider.list.lastTestStatus.pass') }}
-                </sw-label>
-                <sw-label
+                    {{ $t('sw6oidc.provider.list.lastTestStatus.pass') }}
+                </mt-badge>
+                <mt-badge
                     v-else-if="item.lastTestStatus"
-                    size="medium"
-                    appearance="pill"
-                    variant="danger"
+                    variant="critical"
                 >
-                    {{ $tc('sw6oidc.provider.list.lastTestStatus.fail') }}
-                </sw-label>
-                <span v-else>{{ $tc('sw6oidc.provider.list.lastTestStatus.untested') }}</span>
+                    {{ $t('sw6oidc.provider.list.lastTestStatus.fail') }}
+                </mt-badge>
+                <span v-else>{{ $t('sw6oidc.provider.list.lastTestStatus.untested') }}</span>
             </template>
             {% endblock %}
         </sw-entity-listing>

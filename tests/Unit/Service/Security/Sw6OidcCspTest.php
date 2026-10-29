@@ -88,6 +88,25 @@ final class Sw6OidcCspTest extends TestCase
         self::assertSame("connect-src 'self' https://idp.example", $storefront->getResponse()->headers->get('Content-Security-Policy'));
     }
 
+    public function testEveryPolicyHeaderAndReportOnlyAreExtended(): void
+    {
+        $collector = new Sw6OidcCspHostCollector($this->repositoryWith([$this->provider('https://idp.example/a', null, null)]), new ArrayAdapter());
+
+        $event = $this->event(['storefront'], null);
+        $headers = $event->getResponse()->headers;
+        $headers->set('Content-Security-Policy', ["connect-src 'self'", "form-action 'self'; img-src 'none'"]);
+        $headers->set('Content-Security-Policy-Report-Only', "frame-src 'self'");
+
+        (new Sw6OidcCspSubscriber($collector))->onResponse($event);
+
+        self::assertSame(
+            ["connect-src 'self' https://idp.example", "form-action 'self' https://idp.example; img-src 'none'"],
+            $headers->all('content-security-policy'),
+            'a second, stricter policy is kept and extended, not dropped (N-L15)',
+        );
+        self::assertSame("frame-src 'self' https://idp.example", $headers->get('Content-Security-Policy-Report-Only'));
+    }
+
     /**
      * @param list<string> $scopes
      */

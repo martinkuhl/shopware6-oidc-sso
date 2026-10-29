@@ -2,9 +2,9 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller\Oidc;
 
+use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
 use MartinKuhl\Sw6Oidc\Controller\Oidc\FrontChannelLogoutController;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
-use MartinKuhl\Sw6Oidc\Service\Oidc\LogoutContextStore;
 use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcIdpLogoutHandler;
@@ -34,17 +34,17 @@ final class FrontChannelLogoutControllerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->registry = new Sw6OidcSessionRegistry(new ArrayAdapter(), new NullLogger());
+        $this->registry = SqliteSessionRegistry::create();
         $this->rateLimiter = new Sw6OidcRateLimiter(null, new ArrayAdapter());
     }
 
     public function testKnownSidEndsTheSession(): void
     {
-        $this->registry->register('p1', 'user-1', 'sid-1', 'customer', 'c1', 'ctx-1', 'sc');
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-1', 'customer', 'c1000000000000000000000000000001', 'ctx-1', '5c000000000000000000000000000001');
 
         $this->assertPixel($this->get(['iss' => self::ISSUER, 'sid' => 'sid-1']));
         self::assertCount(1, $this->destroyed);
-        self::assertSame([], $this->registry->resolveBySid('p1', 'sid-1'));
+        self::assertSame([], $this->registry->resolveBySid('a1000000000000000000000000000001', 'sid-1'));
     }
 
     public function testUnknownSidStillReturnsThePixel(): void
@@ -55,7 +55,7 @@ final class FrontChannelLogoutControllerTest extends TestCase
 
     public function testUnknownIssuerOrMissingParametersDoNothing(): void
     {
-        $this->registry->register('p1', 'user-1', 'sid-1', 'customer', 'c1', 'ctx-1', 'sc');
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-1', 'customer', 'c1000000000000000000000000000001', 'ctx-1', '5c000000000000000000000000000001');
 
         $this->assertPixel($this->get(['iss' => 'https://other.example', 'sid' => 'sid-1']));
         $this->assertPixel($this->get(['sid' => 'sid-1']));
@@ -63,18 +63,45 @@ final class FrontChannelLogoutControllerTest extends TestCase
         self::assertSame([], $this->destroyed);
     }
 
-    public function testRateLimitedAddressGetsThePixelButNothingIsProcessed(): void
+    public function testLogoutsThatEndNothingDoNotBlockTheAddress(): void
     {
         $controller = $this->controller();
 
-        for ($i = 0; $i < 10; ++$i) {
-            $controller->logout($this->request(['iss' => self::ISSUER, 'sid' => 'guess-' . $i]));
+        // Normal after RP-initiated or back-channel logout already ended the session (N-M6).
+        for ($i = 0; $i < 15; ++$i) {
+            $controller->logout($this->request(['iss' => self::ISSUER, 'sid' => 'already-gone-' . $i]));
         }
 
-        $this->registry->register('p1', 'user-1', 'sid-1', 'customer', 'c1', 'ctx-1', 'sc');
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-1', 'customer', 'c1000000000000000000000000000001', 'ctx-1', '5c000000000000000000000000000001');
 
         $this->assertPixel($controller->logout($this->request(['iss' => self::ISSUER, 'sid' => 'sid-1'])));
-        self::assertSame([], $this->destroyed);
+        self::assertCount(1, $this->destroyed);
+    }
+
+    public function testMalformedRequestsNeverBlockWellFormedOnes(): void
+    {
+        $controller = $this->controller();
+
+        for ($i = 0; $i < 15; ++$i) {
+            $this->assertPixel($controller->logout($this->request(['iss' => self::ISSUER])));
+        }
+
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-1', 'customer', 'c1000000000000000000000000000001', 'ctx-1', '5c000000000000000000000000000001');
+
+        // Junk from the same office NAT must not drop a real logout (R3-L9).
+        $this->assertPixel($controller->logout($this->request(['iss' => self::ISSUER, 'sid' => 'sid-1'])));
+        self::assertCount(1, $this->destroyed);
+    }
+
+    public function testAdminSessionsAreOnlyEndedWithTheProviderOptIn(): void
+    {
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-1', 'admin', 'e1000000000000000000000000000001', 'jti-1');
+
+        $this->assertPixel($this->controller()->logout($this->request(['iss' => self::ISSUER, 'sid' => 'sid-1'])));
+        self::assertSame([], $this->destroyed, 'front-channel alone never ends admin sessions (N-M5)');
+
+        $this->assertPixel($this->controller(frontchannelAdminLogout: true)->logout($this->request(['iss' => self::ISSUER, 'sid' => 'sid-1'])));
+        self::assertCount(1, $this->destroyed);
     }
 
     private function assertPixel(Response $response): void
@@ -102,10 +129,11 @@ final class FrontChannelLogoutControllerTest extends TestCase
         return Request::create('https://shop.example/sw6oidc/frontchannel-logout', 'GET', $query, [], [], ['REMOTE_ADDR' => '203.0.113.9']);
     }
 
-    private function controller(): FrontChannelLogoutController
+    private function controller(bool $frontchannelAdminLogout = false): FrontChannelLogoutController
     {
         $provider = new Sw6OidcProviderEntity();
-        $provider->setId('p1');
+        $provider->setId('a1000000000000000000000000000001');
+        $provider->setFrontchannelAdminLogout($frontchannelAdminLogout);
 
         $resolver = $this->createStub(ProviderResolver::class);
         $resolver->method('findByIssuer')->willReturnCallback(static fn (string $issuer): array => $issuer === self::ISSUER ? [$provider] : []);
@@ -117,7 +145,7 @@ final class FrontChannelLogoutControllerTest extends TestCase
 
         return new FrontChannelLogoutController(
             $resolver,
-            new Sw6OidcIdpLogoutHandler($this->registry, $destruction, new LogoutContextStore(new InMemoryAtomicCache()), new NullLogger(), $this->createStub(Sw6OidcSessionActivityRecorder::class)),
+            new Sw6OidcIdpLogoutHandler($this->registry, $destruction, new NullLogger(), $this->createStub(Sw6OidcSessionActivityRecorder::class)),
             $this->rateLimiter,
             new NullLogger(),
         );

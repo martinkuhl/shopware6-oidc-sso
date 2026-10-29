@@ -26,6 +26,9 @@ use Symfony\Component\HttpKernel\KernelEvents;
  */
 class Sw6OidcCspSubscriber implements EventSubscriberInterface
 {
+    private const HEADER = 'Content-Security-Policy';
+    private const REPORT_ONLY_HEADER = 'Content-Security-Policy-Report-Only';
+
     private const DIRECTIVES = ['form-action', 'connect-src', 'frame-src', 'img-src'];
 
     private const SCOPES = ['storefront', 'administration'];
@@ -52,9 +55,12 @@ class Sw6OidcCspSubscriber implements EventSubscriberInterface
     public function onResponse(ResponseEvent $event): void
     {
         $response = $event->getResponse();
-        $policy = $response->headers->get('Content-Security-Policy');
+        $headers = array_filter(
+            [self::HEADER, self::REPORT_ONLY_HEADER],
+            $response->headers->has(...),
+        );
 
-        if (!\is_string($policy) || $policy === '') {
+        if ($headers === []) {
             return;
         }
 
@@ -66,8 +72,19 @@ class Sw6OidcCspSubscriber implements EventSubscriberInterface
 
         $hosts = $this->hostCollector->collect(Context::createDefaultContext());
 
-        if ($hosts !== []) {
-            $response->headers->set('Content-Security-Policy', self::appendHosts($policy, $hosts));
+        if ($hosts === []) {
+            return;
+        }
+
+        // Every policy header (several may be set; each one must allow a
+        // request) and the Report-Only variant are extended alike (N-L15).
+        foreach ($headers as $header) {
+            $policies = array_map(
+                static fn (?string $policy): string => self::appendHosts((string) $policy, $hosts),
+                $response->headers->all(strtolower($header)),
+            );
+
+            $response->headers->set($header, array_values(array_filter($policies, static fn (string $policy): bool => $policy !== '')));
         }
     }
 

@@ -14,12 +14,16 @@
  * custom config.xml component and the Settings > Plugins entries could
  * render before their dynamic imports had resolved.)
  */
+import './service/sw6oidc-api.service';
+import './acl';
 import './component/sw6oidc-rp-id-field';
 import './component/sw6oidc-user-provider-info';
+import './component/sw6oidc-connect-sso';
 import './extension/sw-login';
 import './extension/sw-admin-menu';
 import './extension/sw-inactivity-login';
 import './extension/sw-profile';
+import './extension/sw-verify-user-modal';
 import './extension/sw-users-permissions-user-listing';
 import './extension/sw-users-permissions-user-detail';
 import './extension/sw-sso-users-permission-user-detail';

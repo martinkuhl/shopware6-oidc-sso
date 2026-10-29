@@ -13,10 +13,7 @@
         "php": "~8.2.0 || ~8.3.0 || ~8.4.0 || ~8.5.0",
         "shopware/core": ">=6.7.0.0 <6.8.0.0",
         "shopware/storefront": ">=6.7.0.0 <6.8.0.0",
-        "web-token/jwt-framework": "^3.4 || ^4.0",
-        "symfony/psr-http-message-bridge": "^6.4 || ^7.0",
-        "nyholm/psr7": "^1.8",
-        "league/oauth2-server": "*",
+        "web-token/jwt-library": "^4.0",
         "web-auth/webauthn-lib": "^5.3"
     },
     "require-dev": {
@@ -40,6 +37,7 @@
         "test": "phpunit",
         "test-coverage": "phpunit --coverage-html var/coverage/html --coverage-clover var/coverage/clover.xml --coverage-text",
         "phpstan": "phpstan analyse -c phpstan.neon.dist --no-progress",
+        "phpstan-tests": "phpstan analyse -c phpstan.tests.neon.dist --no-progress",
         "psalm": "psalm",
         "rector": "rector process --dry-run",
         "rector-fix": "rector process",
@@ -48,6 +46,7 @@
         "ci": [
             "@cs-check",
             "@phpstan",
+            "@phpstan-tests",
             "@psalm",
             "@rector",
             "@test"
@@ -73,7 +72,7 @@
         },
         "policy": {
             "advisories": {
-                "block": false
+                "block": true
             }
         }
     }

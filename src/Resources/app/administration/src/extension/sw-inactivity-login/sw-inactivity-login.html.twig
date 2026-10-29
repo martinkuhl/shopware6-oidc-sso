@@ -7,6 +7,14 @@
     (rather than {% parent %} + sibling markup, as sw-login-login's override
     does) is the only way to place our passkey button actually inside the
     dialog.
+
+    Re-sync checklist for every Shopware core upgrade (F-M2):
+      1. diff core's module/sw-inactivity-login/page/index/sw-inactivity-login.html.twig
+         against this copy (everything outside the sw6oidc-* markup);
+      2. port changed attributes/events of the password field and buttons;
+      3. check the inactivity component's methods used here still exist
+         (loginService, lastKnownUser, handleLoginSuccess / forwardLogin);
+      4. update the version in the first line of this comment.
 #}
 {% block sw_inactivity_login %}
 <div class="sw-inactivity-login">
@@ -58,14 +66,17 @@
             :is-loading="sw6oidcPasskeyPending"
             @click="sw6oidcStartPasskeyLogin"
         >
-            {{ $t('sw6oidc.login.passkeyButton') }}
+            {{ $t('sw-login.sw6oidc.login.passkeyButton') }}
         </mt-button>
 
         <div
             v-if="sw6oidcPasskeyError"
             class="sw6oidc-inactivity-login__error"
+            role="alert"
         >
-            {{ $t('sw6oidc.login.passkeyError') }}
+            {{ sw6oidcPasskeyError === 'different_user'
+                ? $t('sw-login.sw6oidc.login.passkeyDifferentUser')
+                : $t('sw-login.sw6oidc.login.passkeyError') }}
         </div>
 
         <template #modal-footer>

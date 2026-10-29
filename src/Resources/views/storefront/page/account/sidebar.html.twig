@@ -13,10 +13,12 @@
 {% block page_account_sidebar_link_orders %}
     {{ parent() }}
 
+    {% if sw6oidc_storefront_passkey_enabled(context) %}
     <a href="{{ path('frontend.account.passkey.page') }}"
        title="{{ 'sw6oidc.passkey.pageTitle'|trans|striptags }}"
        class="list-group-item list-group-item-action account-aside-item{% if activeRoute is same as('frontend.account.passkey.page') %} is-active{% endif %}"
        {% if activeRoute is same as('frontend.account.passkey.page') %} aria-current="page"{% endif %}>
         {{ 'sw6oidc.passkey.pageTitle'|trans|sw_sanitize }}
     </a>
+    {% endif %}
 {% endblock %}

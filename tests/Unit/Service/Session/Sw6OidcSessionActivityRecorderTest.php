@@ -34,9 +34,19 @@ final class Sw6OidcSessionActivityRecorderTest extends TestCase
         $row = array_values($this->store->rows)[0];
         self::assertSame('198.51.100.7', $row['ipAddress']);
         self::assertSame('Browser/1.0', $row['userAgent']);
-        self::assertSame(['sub-1', 'sid-1', 'reg-1', 'p1'], [$row['sub'], $row['sid'], $row['registrySessionId'], $row['providerId']]);
+        self::assertSame(['sub-1', 'sha256:' . hash('sha256', 'sid-1'), 'reg-1', 'p1'], [$row['sub'], $row['sid'], $row['registrySessionId'], $row['providerId']]);
         self::assertSame(hash('sha256', 'ctx-token'), $row['sessionKeyHash']);
         self::assertStringNotContainsString('ctx-token', (string) json_encode($row));
+    }
+
+    public function testIpCanBeStoredTruncated(): void
+    {
+        $recorder = new Sw6OidcSessionActivityRecorder($this->store->mock(fn (string $class) => $this->createMock($class)), new NullLogger(), null, true);
+
+        $recorder->recordLogin('customer', 'c1', 'passkey', 'ctx-a', Request::create('/', 'GET', [], [], [], ['REMOTE_ADDR' => '198.51.100.7']));
+        $recorder->recordLogin('customer', 'c1', 'passkey', 'ctx-b', Request::create('/', 'GET', [], [], [], ['REMOTE_ADDR' => '2001:db8:1:2:aaaa::1']));
+
+        self::assertSame(['198.51.100.0', '2001:db8:1:2::'], array_column(array_values($this->store->rows), 'ipAddress'));
     }
 
     public function testLogoutClosesTheMatchingSessionOnly(): void
@@ -59,16 +69,14 @@ final class Sw6OidcSessionActivityRecorderTest extends TestCase
         self::assertSame(['ctx-a' => null, 'ctx-b' => 'backchannel'], $this->reasons());
     }
 
-    public function testUnmatchedLogoutClosesNothingUnlessFallingBackToTheNewest(): void
+    public function testUnmatchedLogoutClosesNothing(): void
     {
         $this->login('ctx-old', null, '-2 minutes');
         $this->login('ctx-new', null, '-1 minute');
 
         $this->recorder->recordLogout('customer', 'c1', 'logout', 'refreshed-jti');
+        // Guessing the newest row would close another device's session (N-M4).
         self::assertSame(['ctx-old' => null, 'ctx-new' => null], $this->reasons());
-
-        $this->recorder->recordLogout('customer', 'c1', 'logout', 'refreshed-jti', null, true);
-        self::assertSame(['ctx-old' => null, 'ctx-new' => 'logout'], $this->reasons());
     }
 
     public function testLogoutOfAllSessionsClosesEveryOpenRowOfTheAccount(): void
@@ -79,6 +87,18 @@ final class Sw6OidcSessionActivityRecorderTest extends TestCase
         $this->recorder->recordLogoutOfAllSessions('customer', 'c1', 'forced');
 
         self::assertSame(['ctx-a' => 'forced', 'ctx-b' => 'forced'], $this->reasons());
+    }
+
+    public function testLogoutOfAllSessionsClosesMoreThanOneBatch(): void
+    {
+        for ($i = 0; $i < 450; ++$i) {
+            $this->store->rows['a' . $i] = ['id' => 'a' . $i, 'userType' => 'customer', 'userId' => 'c1', 'loggedOutAt' => null, 'loggedInAt' => new \DateTimeImmutable('-' . $i . ' minutes')];
+        }
+
+        $this->recorder->recordLogoutOfAllSessions('customer', 'c1', 'forced');
+
+        // Not just the newest 200 (R3-L31).
+        self::assertSame([], array_filter($this->store->rows, static fn (array $row): bool => $row['loggedOutAt'] === null));
     }
 
     public function testRepositoryFailuresNeverEscape(): void

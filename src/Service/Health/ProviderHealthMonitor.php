@@ -3,6 +3,7 @@
 namespace MartinKuhl\Sw6Oidc\Service\Health;
 
 use Doctrine\DBAL\Connection;
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 use Psr\Log\LoggerInterface;
@@ -24,6 +25,9 @@ use Shopware\Core\Framework\Uuid\Uuid;
  */
 class ProviderHealthMonitor
 {
+    /**
+     * @param EntityRepository<Sw6OidcProviderCollection> $providerRepository
+     */
     public function __construct(
         private readonly EntityRepository $providerRepository,
         private readonly ProviderReachabilityChecker $reachabilityChecker,
@@ -138,7 +142,7 @@ class ProviderHealthMonitor
         $providers = [];
 
         foreach ($this->providerRepository->search($criteria, Context::createDefaultContext())->getEntities() as $provider) {
-            if ($provider instanceof Sw6OidcProviderEntity && (string) $provider->getHealthAlertWebhookUrl() !== '') {
+            if ((string) $provider->getHealthAlertWebhookUrl() !== '') {
                 $providers[] = $provider;
             }
         }

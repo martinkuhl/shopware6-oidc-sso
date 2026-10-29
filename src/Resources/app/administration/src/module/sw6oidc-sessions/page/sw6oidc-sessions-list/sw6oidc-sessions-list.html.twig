@@ -2,17 +2,18 @@
 <sw-page class="sw6oidc-sessions-list">
     {% block sw6oidc_sessions_list_smart_bar_actions %}
     <template #smart-bar-actions>
-        <sw-switch-field
-            v-model:value="onlyActive"
-            :label="$tc('sw6oidc.sessions.onlyActive')"
-            style="margin: 0;"
+        <mt-switch
+            v-model="onlyActive"
+            class="sw6oidc-sessions-list__only-active"
+            :label="$t('sw6oidc.sessions.onlyActive')"
         />
-        <sw-button
+        <mt-button
+            variant="secondary"
             :is-loading="isLoading"
             @click="getList"
         >
-            {{ $tc('sw6oidc.sessions.refresh') }}
-        </sw-button>
+            {{ $t('sw6oidc.sessions.refresh') }}
+        </mt-button>
     </template>
     {% endblock %}
 
@@ -20,9 +21,9 @@
     <template #content>
         <mt-banner
             variant="info"
-            style="margin: 16px;"
+            class="sw6oidc-sessions-list__hint"
         >
-            {{ $tc('sw6oidc.sessions.hint') }}
+            {{ $t('sw6oidc.sessions.hint') }}
         </mt-banner>
         <sw-entity-listing
             v-if="activities"
@@ -54,10 +55,16 @@
             </template>
             <template #column-loggedOutAt="{ item }">
                 <mt-badge
-                    v-if="!item.loggedOutAt"
-                    variant="success"
+                    v-if="sessionState(item) === 'active'"
+                    variant="positive"
                 >
-                    {{ $tc('sw6oidc.sessions.active') }}
+                    {{ $t('sw6oidc.sessions.active') }}
+                </mt-badge>
+                <mt-badge
+                    v-else-if="sessionState(item) === 'expired'"
+                    variant="neutral"
+                >
+                    {{ $t('sw6oidc.sessions.expired') }}
                 </mt-badge>
                 <template v-else>
                     {{ formatDate(item.loggedOutAt) }}
@@ -69,13 +76,23 @@
             <template #actions="{ item }">
                 <sw-context-menu-item
                     variant="danger"
-                    :disabled="!canForceLogout || !!item.loggedOutAt || forceLogoutPendingId === item.id"
+                    :disabled="!canForceLogout || sessionState(item) !== 'active' || forceLogoutPendingId === item.id"
                     @click="onForceLogout(item)"
                 >
-                    {{ $tc('sw6oidc.sessions.forceLogout') }}
+                    {{ $t('sw6oidc.sessions.forceLogout') }}
                 </sw-context-menu-item>
             </template>
         </sw-entity-listing>
+
+        <sw-confirm-modal
+            v-if="confirmItem"
+            type="yesno"
+            :title="$t('sw6oidc.sessions.forceLogout')"
+            :text="confirmText"
+            @confirm="onConfirmForceLogout"
+            @cancel="onCancelForceLogout"
+            @close="onCancelForceLogout"
+        />
     </template>
     {% endblock %}
 </sw-page>

@@ -15,6 +15,7 @@ use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Sorting\FieldSorting;
 use Shopware\Core\Framework\Uuid\Uuid;
 
@@ -37,6 +38,8 @@ final class Sw6OidcAccessControlEvaluatorTest extends TestCase
         'roles.Support.orgId' => '42',
         'realm_access.roles.0' => 'shop-admin',
         'active' => '1',
+        'scope' => 'openid email, profile',
+        'mail_alias' => 'eve@example.com.attacker.io',
     ];
 
     /**
@@ -53,22 +56,41 @@ final class Sw6OidcAccessControlEvaluatorTest extends TestCase
         yield 'eq "1" vs "true"' => ['active', 'eq', 'TRUE', true];
         yield 'eq missing claim' => ['missing', 'eq', 'x', false];
         yield 'eq one-element list' => ['single', 'eq', 'only', true];
-        yield 'eq multi-element list never equals' => ['groups', 'eq', 'staff', false];
+        yield 'eq multi-element list: any member equals' => ['groups', 'eq', 'staff', true];
+        yield 'eq multi-element list: no member equals' => ['groups', 'eq', 'sales', false];
         yield 'eq with null value' => ['department', 'eq', null, false];
         yield 'neq scalar' => ['department', 'neq', 'Sales', true];
         yield 'neq scalar equal' => ['department', 'neq', 'ENGINEERING', false];
-        yield 'neq missing claim passes' => ['missing', 'neq', 'x', true];
+        yield 'neq missing claim denies (N-M10)' => ['missing', 'neq', 'x', false];
+        yield 'neq list containing the value denies (N-M10)' => ['groups', 'neq', 'Developers', false];
+        yield 'neq list without the value' => ['groups', 'neq', 'blocked', true];
+        yield 'neq with null value denies' => ['department', 'neq', null, false];
         yield 'contains list member' => ['groups', 'contains', 'staff', true];
         yield 'contains list, no partial member match' => ['groups', 'contains', 'Dev', false];
         yield 'contains nested list' => ['realm_access.roles', 'contains', 'Shop-Admin', true];
         yield 'contains object-key members (Zitadel)' => ['roles', 'contains', 'admins', true];
-        yield 'contains scalar substring' => ['email', 'contains', '@example.com', true];
-        yield 'contains scalar substring mismatch' => ['email', 'contains', '@other.org', false];
+        yield 'contains scalar is no substring match (N-M11)' => ['email', 'contains', '@example.com', false];
+        yield 'contains scalar token' => ['scope', 'contains', 'email', true];
+        yield 'contains scalar comma-separated token' => ['scope', 'contains', 'Profile', true];
+        yield 'contains scalar partial token' => ['scope', 'contains', 'open', false];
         yield 'contains empty value never matches' => ['email', 'contains', '', false];
         yield 'contains missing claim' => ['missing', 'contains', 'x', false];
         yield 'not_contains list member' => ['groups', 'not_contains', 'Staff', false];
         yield 'not_contains absent member' => ['groups', 'not_contains', 'Banned', true];
-        yield 'not_contains missing claim passes' => ['missing', 'not_contains', 'x', true];
+        yield 'not_contains missing claim denies (N-M11)' => ['missing', 'not_contains', 'x', false];
+        yield 'not_contains scalar token present' => ['scope', 'not_contains', 'openid', false];
+        yield 'not_contains scalar token absent' => ['scope', 'not_contains', 'offline_access', true];
+        yield 'ends_with scalar' => ['email', 'ends_with', '@example.com', true];
+        yield 'ends_with lookalike' => ['mail_alias', 'ends_with', '@example.com', false];
+        yield 'ends_with list member' => ['groups', 'ends_with', 'ers', true];
+        yield 'ends_with missing claim' => ['missing', 'ends_with', 'x', false];
+        yield 'ends_with empty value never matches' => ['email', 'ends_with', '', false];
+        yield 'email_domain exact' => ['email', 'email_domain', 'example.com', true];
+        yield 'email_domain with leading @' => ['email', 'email_domain', '@EXAMPLE.com', true];
+        yield 'email_domain lookalike suffix' => ['mail_alias', 'email_domain', 'example.com', false];
+        yield 'email_domain parent domain does not match a subdomain' => ['email', 'email_domain', 'com', false];
+        yield 'email_domain on a non-email' => ['department', 'email_domain', 'engineering', false];
+        yield 'email_domain missing claim' => ['missing', 'email_domain', 'example.com', false];
         yield 'exists scalar' => ['email', 'exists', null, true];
         yield 'exists list parent' => ['groups', 'exists', null, true];
         yield 'exists nested object parent' => ['realm_access', 'exists', null, true];
@@ -136,8 +158,10 @@ final class Sw6OidcAccessControlEvaluatorTest extends TestCase
     {
         $repository = $this->createMock(EntityRepository::class);
         $repository->expects(self::once())->method('search')->willReturnCallback(function (Criteria $criteria, Context $context): EntitySearchResult {
-            self::assertSame('providerId', $criteria->getFilters()[0]->getField());
-            self::assertSame('provider-7', $criteria->getFilters()[0]->getValue());
+            $filter = $criteria->getFilters()[0];
+            self::assertInstanceOf(EqualsFilter::class, $filter);
+            self::assertSame('providerId', $filter->getField());
+            self::assertSame('provider-7', $filter->getValue());
             $sorting = $criteria->getSorting()[0];
             self::assertSame('sortOrder', $sorting->getField());
             self::assertSame(FieldSorting::ASCENDING, $sorting->getDirection());

@@ -1,4 +1,5 @@
 import template from './sw6oidc-sessions-list.html.twig';
+import './sw6oidc-sessions-list.scss';
 
 const { Component, Mixin } = Shopware;
 const { Criteria } = Shopware.Data;
@@ -15,7 +16,7 @@ const { Criteria } = Shopware.Data;
 Component.register('sw6oidc-sessions-list', () => Promise.resolve({
     template,
 
-    inject: ['repositoryFactory', 'acl', 'loginService'],
+    inject: ['repositoryFactory', 'acl', 'sw6oidcApiService'],
 
     mixins: [Mixin.getByName('notification')],
 
@@ -28,6 +29,9 @@ Component.register('sw6oidc-sessions-list', () => Promise.resolve({
             onlyActive: false,
             ownerNames: {},
             forceLogoutPendingId: null,
+            confirmItem: null,
+            sessionLifetimeSeconds: {},
+            requestId: 0,
         };
     },
 
@@ -51,20 +55,33 @@ Component.register('sw6oidc-sessions-list', () => Promise.resolve({
         },
 
         canForceLogout() {
-            return this.acl.can('sw6oidc_session_activity.editor');
+            return this.acl.can('sw6oidc_session_activity.force_logout');
         },
 
         columns() {
             return [
-                { property: 'loggedInAt', label: this.$tc('sw6oidc.sessions.list.columnLoggedInAt') },
-                { property: 'userType', label: this.$tc('sw6oidc.sessions.list.columnUserType') },
-                { property: 'owner', label: this.$tc('sw6oidc.sessions.list.columnOwner') },
-                { property: 'loginMethod', label: this.$tc('sw6oidc.sessions.list.columnLoginMethod') },
-                { property: 'provider', label: this.$tc('sw6oidc.sessions.list.columnProvider') },
-                { property: 'ipAddress', label: this.$tc('sw6oidc.sessions.list.columnIpAddress') },
-                { property: 'loggedOutAt', label: this.$tc('sw6oidc.sessions.list.columnLoggedOutAt') },
-                { property: 'logoutReason', label: this.$tc('sw6oidc.sessions.list.columnLogoutReason') },
+                // Always newest first; the listing can't re-sort (F-N11).
+                { property: 'loggedInAt', label: this.$t('sw6oidc.sessions.list.columnLoggedInAt'), sortable: false },
+                { property: 'userType', label: this.$t('sw6oidc.sessions.list.columnUserType'), sortable: false },
+                { property: 'owner', label: this.$t('sw6oidc.sessions.list.columnOwner'), sortable: false },
+                { property: 'loginMethod', label: this.$t('sw6oidc.sessions.list.columnLoginMethod'), sortable: false },
+                { property: 'provider', label: this.$t('sw6oidc.sessions.list.columnProvider'), sortable: false },
+                { property: 'ipAddress', label: this.$t('sw6oidc.sessions.list.columnIpAddress'), sortable: false },
+                { property: 'loggedOutAt', label: this.$t('sw6oidc.sessions.list.columnLoggedOutAt'), sortable: false },
+                { property: 'logoutReason', label: this.$t('sw6oidc.sessions.list.columnLogoutReason'), sortable: false },
             ];
+        },
+
+        confirmText() {
+            if (!this.confirmItem) {
+                return '';
+            }
+
+            // Only a registered customer OIDC session is ended exactly; passkey
+            // logins and admins lose all their sessions (F-N12).
+            const endsAll = this.confirmItem.userType === 'admin' || this.confirmItem.loginMethod === 'passkey';
+
+            return this.$t(endsAll ? 'sw6oidc.sessions.forceLogoutConfirmAll' : 'sw6oidc.sessions.forceLogoutConfirm');
         },
     },
 
@@ -75,28 +92,97 @@ Component.register('sw6oidc-sessions-list', () => Promise.resolve({
         },
     },
 
-    created() {
+    async created() {
+        // The lifetimes decide which rows "only active" shows, so they come first.
+        await this.loadSettings();
         this.getList();
     },
 
     methods: {
-        getList() {
+        async loadSettings() {
+            try {
+                const { sessionLifetimeSeconds } = await this.sw6oidcApiService.get('_action/sw6oidc/session-activity/settings');
+                this.sessionLifetimeSeconds = sessionLifetimeSeconds ?? {};
+            } catch {
+                this.sessionLifetimeSeconds = {};
+            }
+        },
+
+        async getList() {
+            // Only the newest request may update the list (F-N11).
+            const requestId = ++this.requestId;
             this.isLoading = true;
+
             const criteria = new Criteria(this.page, this.limit);
             criteria.addAssociation('provider');
             criteria.addSorting(Criteria.sort('loggedInAt', 'DESC'));
 
             if (this.onlyActive) {
                 criteria.addFilter(Criteria.equals('loggedOutAt', null));
+                this.addNotExpiredFilter(criteria);
             }
 
-            return this.activityRepository.search(criteria, Shopware.Context.api).then(async (result) => {
-                this.activities = result;
+            try {
+                const result = await this.activityRepository.search(criteria, Shopware.Context.api);
                 await this.loadOwnerNames(result);
-                this.isLoading = false;
-            }).catch(() => {
-                this.isLoading = false;
+
+                if (requestId === this.requestId) {
+                    this.activities = result;
+                }
+            } catch (exception) {
+                if (requestId === this.requestId) {
+                    this.createNotificationError({ message: this.$t('sw6oidc.sessions.loadError') });
+                }
+            } finally {
+                if (requestId === this.requestId) {
+                    this.isLoading = false;
+                }
+            }
+        },
+
+        /**
+         * 'active' | 'expired' (no logout recorded, but older than the
+         * session lifetime) | 'ended' — a missing logout is not proof the
+         * session still exists (F-N3).
+         */
+        sessionState(item) {
+            if (item.loggedOutAt) {
+                return 'ended';
+            }
+
+            const lifetime = this.sessionLifetimeSeconds[item.userType];
+
+            if (!lifetime || !item.loggedInAt) {
+                return 'active';
+            }
+
+            return Date.now() - new Date(item.loggedInAt).getTime() > lifetime * 1000 ? 'expired' : 'active';
+        },
+
+        /**
+         * "Only active" leaves out the rows sessionState() labels expired
+         * (R3-F13): per account type, logged in within its session lifetime.
+         * A type without a known lifetime is not filtered.
+         */
+        addNotExpiredFilter(criteria) {
+            const now = Date.now();
+            const perType = ['admin', 'customer'].map((userType) => {
+                const lifetime = this.sessionLifetimeSeconds[userType];
+
+                if (!lifetime) {
+                    return Criteria.equals('userType', userType);
+                }
+
+                // DAL date format (UTC, "Y-m-d H:i:s").
+                const cutoff = new Date(now - lifetime * 1000).toISOString().slice(0, 19).replace('T', ' ');
+
+                return Criteria.multi('AND', [
+                    Criteria.equals('userType', userType),
+                    Criteria.range('loggedInAt', { gte: cutoff }),
+                ]);
             });
+
+            criteria.addFilter(Criteria.multi('OR', perType));
         },
 
         onPageChange({ page, limit }) {
@@ -143,36 +229,40 @@ Component.register('sw6oidc-sessions-list', () => Promise.resolve({
         },
 
         translated(prefix, value) {
-            return value ? this.$tc(`sw6oidc.sessions.${prefix}.${value}`) : '—';
+            return value ? this.$t(`sw6oidc.sessions.${prefix}.${value}`) : '—';
         },
 
-        async onForceLogout(item) {
-            if (!window.confirm(this.$tc(item.userType === 'admin' ? 'sw6oidc.sessions.forceLogoutConfirmAdmin' : 'sw6oidc.sessions.forceLogoutConfirm'))) {
+        onForceLogout(item) {
+            this.confirmItem = item;
+        },
+
+        onCancelForceLogout() {
+            this.confirmItem = null;
+        },
+
+        async onConfirmForceLogout() {
+            const item = this.confirmItem;
+            this.confirmItem = null;
+
+            if (!item) {
                 return;
             }
 
             this.forceLogoutPendingId = item.id;
 
             try {
-                const response = await fetch(`/api/_action/sw6oidc/session-activity/${encodeURIComponent(item.id)}/force-logout`, {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${this.loginService.getToken()}` },
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Force logout failed with status ${response.status}`);
-                }
-
-                const { endedAllSessions } = await response.json();
+                const { endedAllSessions } = await this.sw6oidcApiService.post(
+                    `_action/sw6oidc/session-activity/${encodeURIComponent(item.id)}/force-logout`,
+                );
 
                 this.createNotificationSuccess({
-                    message: this.$tc(endedAllSessions ? 'sw6oidc.sessions.forceLogoutSuccessAll' : 'sw6oidc.sessions.forceLogoutSuccess'),
+                    message: this.$t(endedAllSessions ? 'sw6oidc.sessions.forceLogoutSuccessAll' : 'sw6oidc.sessions.forceLogoutSuccess'),
                 });
                 await this.getList();
             } catch (exception) {
                 // eslint-disable-next-line no-console
                 console.error('sw6oidc: force logout failed', exception);
-                this.createNotificationError({ message: this.$tc('sw6oidc.sessions.forceLogoutError') });
+                this.createNotificationError({ message: this.$t('sw6oidc.sessions.forceLogoutError') });
             } finally {
                 this.forceLogoutPendingId = null;
             }

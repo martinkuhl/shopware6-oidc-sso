@@ -2,24 +2,28 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Provisioning;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
+use MartinKuhl\Sw6Oidc\Event\CustomerAfterCreateEvent;
+use MartinKuhl\Sw6Oidc\Event\CustomerBeforeCreateEvent;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\AddressProfile;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\CountryResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\CustomerProvisioningService;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\AccountLinkingRequiredException;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\CustomerProvisioningDeniedException;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\ProviderMismatchException;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\ExternalIdentity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\GroupMappingResolver;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\IdentityResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\MappedProfile;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\MockObject\MockObject;
-use MartinKuhl\Sw6Oidc\Event\CustomerAfterCreateEvent;
-use MartinKuhl\Sw6Oidc\Event\CustomerBeforeCreateEvent;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Psr\Log\NullLogger;
 use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupEntity;
 use Shopware\Core\Checkout\Customer\CustomerCollection;
@@ -37,10 +41,16 @@ use Shopware\Core\Framework\Uuid\Uuid;
 use Shopware\Core\System\NumberRange\ValueGenerator\NumberRangeValueGeneratorInterface;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Shopware\Core\System\SalesChannel\SalesChannelEntity;
+use Shopware\Core\System\SystemConfig\SystemConfigService;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(CustomerProvisioningService::class)]
 final class CustomerProvisioningServiceTest extends TestCase
 {
+    private bool $bindCustomersToSalesChannel = false;
+
+    private bool $boundAccountWithEmailExists = false;
+
     private ?EventDispatcher $eventDispatcher = null;
 
     private const CUSTOMER_NUMBER = '10042';
@@ -77,6 +87,13 @@ final class CustomerProvisioningServiceTest extends TestCase
     private array $existingCustomers = [];
 
     private ?string $boundProviderId = null;
+
+
+    private string $providerId = '';
+
+    private string $subject = 'idp-subject-1';
+
+    private bool $emailVerified = true;
 
     /** @var list<array<string, mixed>> */
     private array $bindingPayloads = [];
@@ -117,13 +134,24 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->userProviderRepository->method('search')->willReturnCallback(
             function (Criteria $criteria, Context $context): EntitySearchResult {
                 $entities = [];
+                $filters = [];
 
-                if ($this->boundProviderId !== null) {
+                foreach ($criteria->getFilters() as $filter) {
+                    if ($filter instanceof EqualsFilter) {
+                        $filters[$filter->getField()] = $filter->getValue();
+                    }
+                }
+
+                // The double holds legacy (subject-less) bindings only: a lookup by subject finds none.
+                if ($this->boundProviderId !== null && !\array_key_exists('sub', $filters)) {
                     $binding = new Sw6OidcUserProviderEntity();
                     $binding->setId(Uuid::randomHex());
                     $binding->setUserType(Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER);
-                    $binding->setUserId(Uuid::randomHex());
+                    $userId = $filters['userId'] ?? $this->existingCustomers[0]->getId();
+                    \assert(\is_string($userId));
+                    $binding->setUserId($userId);
                     $binding->setProviderId($this->boundProviderId);
+                    $binding->setSub(null);
                     $entities[] = $binding;
                 }
 
@@ -162,7 +190,7 @@ final class CustomerProvisioningServiceTest extends TestCase
 
         $this->expectException(ProviderMismatchException::class);
 
-        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
     }
 
     public function testExistingCustomerBoundToSameProviderIsReturnedWithoutRebinding(): void
@@ -175,9 +203,24 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->userProviderRepository->expects(self::never())->method('create');
         $this->customerRepository->expects(self::never())->method('create');
 
-        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->salesChannelContext());
+        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
 
         self::assertSame($existing, $result);
+    }
+
+    public function testAnActiveEmailMatchWinsOverAnInactiveOne(): void
+    {
+        $provider = $this->provider();
+        $inactive = $this->customer(Uuid::randomHex(), 'user@example.com');
+        $inactive->setActive(false);
+        $active = $this->customer(Uuid::randomHex(), 'user@example.com');
+        $this->existingCustomers = [$inactive, $active];
+        $this->boundProviderId = $provider->getId();
+
+        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
+
+        // R3-L26; an inactive-only match is still returned (and then can't log in), never skipped.
+        self::assertSame($active, $result);
     }
 
     public function testExistingUnboundCustomerGetsBoundToProvider(): void
@@ -188,13 +231,50 @@ final class CustomerProvisioningServiceTest extends TestCase
 
         $this->customerRepository->expects(self::never())->method('create');
 
-        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->salesChannelContext());
+        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
 
         self::assertSame($existing, $result);
         self::assertCount(1, $this->bindingPayloads);
         self::assertSame(Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER, $this->bindingPayloads[0]['userType']);
         self::assertSame($existing->getId(), $this->bindingPayloads[0]['userId']);
         self::assertSame($provider->getId(), $this->bindingPayloads[0]['providerId']);
+    }
+
+    public function testExistingCustomerIsNotLinkedByEmailUnlessTheProviderAllowsIt(): void
+    {
+        $provider = $this->provider();
+        $provider->setLinkExistingAccounts(false);
+        $this->existingCustomers = [$this->customer(Uuid::randomHex(), 'user@example.com')];
+
+        $this->userProviderRepository->expects(self::never())->method('create');
+        $this->customerRepository->expects(self::never())->method('create');
+
+        $this->expectException(AccountLinkingRequiredException::class);
+
+        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
+    }
+
+    public function testLegacyBindingIsBackfilledWithTheSubject(): void
+    {
+        $provider = $this->provider();
+        $existing = $this->customer(Uuid::randomHex(), 'user@example.com');
+        $this->existingCustomers = [$existing];
+        $this->boundProviderId = $provider->getId();
+
+        $updates = [];
+        $this->userProviderRepository->method('update')->willReturnCallback(
+            function (array $payloads) use (&$updates): EntityWrittenContainerEvent {
+                array_push($updates, ...$payloads);
+
+                return EntityWrittenContainerEvent::createWithWrittenEvents([], $this->context, []);
+            },
+        );
+
+        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
+
+        self::assertSame($existing, $result);
+        self::assertCount(1, $updates);
+        self::assertSame($this->subject, $updates[0]['sub']);
     }
 
     public function testLooksUpNonGuestCustomerByEmail(): void
@@ -212,7 +292,7 @@ final class CustomerProvisioningServiceTest extends TestCase
             },
         );
 
-        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
 
         self::assertInstanceOf(Criteria::class, $captured);
         $filters = [];
@@ -236,7 +316,7 @@ final class CustomerProvisioningServiceTest extends TestCase
 
         $this->expectException(CustomerProvisioningDeniedException::class);
 
-        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
     }
 
     public function testExistingCustomerBoundToCurrentSalesChannelIsFound(): void
@@ -248,7 +328,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $own->setBoundSalesChannelId($this->salesChannelId);
         $this->existingCustomers = [$own];
 
-        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->salesChannelContext());
+        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
 
         self::assertSame($own, $result);
     }
@@ -261,7 +341,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->groupMappingResolver->expects(self::never())->method('resolveCustomerGroupId');
         $this->customerRepository->expects(self::never())->method('update');
 
-        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->identity(), $this->salesChannelContext());
     }
 
     public function testProfileSyncAppliesOnlyProfileFields(): void
@@ -274,7 +354,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->groupMappingResolver->expects(self::never())->method('resolveCustomerGroupId');
         $payload = $this->captureUpdatePayload();
 
-        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->identity(), $this->salesChannelContext());
 
         self::assertNotNull($payload->value);
         self::assertSame($existing->getId(), $payload->value['id']);
@@ -299,10 +379,27 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->createService()->findOrCreateCustomer(
             $provider,
             new MappedProfile('user@example.com', lastName: 'Only-Last'),
-            $this->salesChannelContext(),
+            $this->identity(), $this->salesChannelContext(),
         );
 
         self::assertSame(['id' => $existing->getId(), 'lastName' => 'Only-Last'], $payload->value);
+    }
+
+    public function testProfileSyncSkipsTheWriteWhenNothingChanged(): void
+    {
+        $provider = $this->provider();
+        $provider->setSyncCustomerProfileOnSso(true);
+        $existing = $this->customer(Uuid::randomHex(), 'user@example.com');
+        $existing->setFirstName('Jane');
+        $existing->setLastName('Changed');
+        $this->existingCustomers = [$existing];
+
+        $payload = $this->captureUpdatePayload();
+
+        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com', firstName: 'Jane', lastName: 'Doe'), $this->identity(), $this->salesChannelContext());
+
+        // Only the changed field; an unchanged login wouldn't write at all (R3-L29).
+        self::assertSame(['id' => $existing->getId(), 'lastName' => 'Doe'], $payload->value);
     }
 
     public function testProfileSyncWithNothingMappedDoesNotUpdate(): void
@@ -314,7 +411,7 @@ final class CustomerProvisioningServiceTest extends TestCase
 
         $this->customerRepository->expects(self::never())->method('update');
 
-        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
     }
 
     public function testProfileSyncSkipsSalutationWhenNoneResolves(): void
@@ -329,7 +426,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->createService(salutationsAvailable: false)->findOrCreateCustomer(
             $provider,
             new MappedProfile('user@example.com', firstName: 'Jane', salutationTechnicalName: 'mr'),
-            $this->salesChannelContext(),
+            $this->identity(), $this->salesChannelContext(),
         );
 
         self::assertSame(['id' => $existing->getId(), 'firstName' => 'Jane'], $payload->value);
@@ -349,7 +446,7 @@ final class CustomerProvisioningServiceTest extends TestCase
             ->willReturn($groupId);
         $payload = $this->captureUpdatePayload();
 
-        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->identity(), $this->salesChannelContext());
 
         self::assertSame(['id' => $existing->getId(), 'groupId' => $groupId], $payload->value);
     }
@@ -363,7 +460,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->groupMappingResolver->method('resolveCustomerGroupId')->willReturn(null);
         $this->customerRepository->expects(self::never())->method('update');
 
-        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->identity(), $this->salesChannelContext());
     }
 
     public function testAddressSyncUpdatesExistingDefaultBillingAddressInPlace(): void
@@ -377,7 +474,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->groupMappingResolver->expects(self::never())->method('resolveCustomerGroupId');
         $payload = $this->captureUpdatePayload();
 
-        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->identity(), $this->salesChannelContext());
 
         // Shipping shares the billing row, so only the billing claims are
         // synced (into that one row) and no new address is created.
@@ -406,7 +503,7 @@ final class CustomerProvisioningServiceTest extends TestCase
 
         $payload = $this->captureUpdatePayload();
 
-        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->identity(), $this->salesChannelContext());
 
         self::assertNotNull($payload->value);
         self::assertIsArray($payload->value['addresses']);
@@ -434,7 +531,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->createService()->findOrCreateCustomer(
             $provider,
             new MappedProfile('user@example.com', billingAddress: new AddressProfile(city: 'Berlin', state: 'Bavaria', country: 'Atlantis')),
-            $this->salesChannelContext(),
+            $this->identity(), $this->salesChannelContext(),
         );
 
         self::assertSame([
@@ -456,7 +553,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->groupMappingResolver->method('resolveCustomerGroupId')->willReturn($groupId);
         $payload = $this->captureUpdatePayload();
 
-        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, $this->fullProfile(), $this->identity(), $this->salesChannelContext());
 
         self::assertNotNull($payload->value);
         self::assertSame('Jane', $payload->value['firstName']);
@@ -474,7 +571,7 @@ final class CustomerProvisioningServiceTest extends TestCase
 
         $this->expectException(CustomerProvisioningDeniedException::class);
 
-        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('new@example.com'), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('new@example.com'), $this->identity(), $this->salesChannelContext());
     }
 
     public function testAutoCreateBuildsFullCustomerPayloadAndBindsProvider(): void
@@ -500,7 +597,7 @@ final class CustomerProvisioningServiceTest extends TestCase
                 billingAddress: new AddressProfile('Hauptstr. 1', '80331', 'Munich', 'Bavaria', 'DE', '+49 89 1234'),
                 groups: ['vip'],
             ),
-            $this->salesChannelContext(),
+            $this->identity(), $this->salesChannelContext(),
         );
 
         $customer = $payload->value;
@@ -511,7 +608,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         self::assertSame($this->salesChannelId, $customer['salesChannelId']);
         self::assertSame($this->languageId, $customer['languageId']);
         self::assertSame($groupId, $customer['groupId']);
-        self::assertSame($this->paymentMethodId, $customer['defaultPaymentMethodId']);
+        self::assertArrayNotHasKey('defaultPaymentMethodId', $customer, 'not a 6.7 customer field (M16)');
         self::assertSame($this->mrSalutationId, $customer['salutationId']);
         self::assertSame(self::CUSTOMER_NUMBER, $customer['customerNumber']);
         self::assertSame('Jane', $customer['firstName']);
@@ -533,6 +630,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         self::assertSame('80331', $address['zipcode']);
         self::assertSame('Munich', $address['city']);
         self::assertSame('+49 89 1234', $address['phoneNumber']);
+        self::assertArrayNotHasKey('customFields', $address, 'a real address is not flagged');
         self::assertSame($this->germanyId, $address['countryId']);
         self::assertSame($this->bavariaId, $address['countryStateId']);
 
@@ -540,6 +638,84 @@ final class CustomerProvisioningServiceTest extends TestCase
         self::assertSame($customer['id'], $this->bindingPayloads[0]['userId']);
         self::assertSame($provider->getId(), $this->bindingPayloads[0]['providerId']);
         self::assertSame(Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER, $this->bindingPayloads[0]['userType']);
+    }
+
+    public function testJitCustomerIsGlobalUnlessTheShopBindsCustomers(): void
+    {
+        $payload = $this->captureCreatePayload();
+
+        $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('jane@example.com'), $this->identity(), $this->salesChannelContext());
+
+        self::assertNull($payload->value['boundSalesChannelId'] ?? null);
+        self::assertSame(Sw6OidcUserProviderEntity::GLOBAL_SCOPE, $this->bindingPayloads[0]['bindingScope']);
+    }
+
+    /**
+     * R3-M13/R3-M14: core's registration rule for the bound sales channel,
+     * and the binding lives in that channel's scope.
+     */
+    public function testJitCustomerIsBoundToTheChannelWhenTheShopBindsCustomers(): void
+    {
+        $this->bindCustomersToSalesChannel = true;
+
+        $this->assertBoundToTheCurrentChannel();
+    }
+
+    /**
+     * R3-M13: an unbound duplicate would make the bound account's password
+     * login find the new one.
+     */
+    public function testJitCustomerIsBoundWhenABoundAccountWithTheEmailExists(): void
+    {
+        $this->boundAccountWithEmailExists = true;
+
+        $this->assertBoundToTheCurrentChannel();
+    }
+
+    private function assertBoundToTheCurrentChannel(): void
+    {
+        $payload = $this->captureCreatePayload();
+
+        $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('jane@example.com'), $this->identity(), $this->salesChannelContext());
+
+        self::assertSame($this->salesChannelId, $payload->value['boundSalesChannelId'] ?? null);
+        self::assertSame($this->salesChannelId, $this->bindingPayloads[0]['bindingScope']);
+    }
+
+    /**
+     * R3-M12: two first logins at once — the loser's customer is rolled back
+     * and it logs into the winner's account instead of failing.
+     */
+    public function testConcurrentFirstLoginUsesTheWinnersAccount(): void
+    {
+        $winner = $this->customer(Uuid::randomHex(), 'jane@example.com');
+        $this->captureCreatePayload();
+        $this->userProviderRepository = $this->createMock(EntityRepository::class);
+        $this->userProviderRepository->method('create')->willReturnCallback(function () use ($winner): never {
+            // The other login committed its customer and binding first.
+            $this->existingCustomers = [$winner];
+
+            throw $this->createStub(UniqueConstraintViolationException::class);
+        });
+        $this->userProviderRepository->method('search')->willReturnCallback(function (Criteria $criteria, Context $context) use ($winner): EntitySearchResult {
+            $byUser = array_filter($criteria->getFilters(), static fn ($filter): bool => $filter instanceof EqualsFilter && $filter->getField() === 'userId') !== [];
+            $entities = [];
+
+            if ($this->existingCustomers !== [] && !$byUser) {
+                $binding = new Sw6OidcUserProviderEntity();
+                $binding->setId(Uuid::randomHex());
+                $binding->setUserType(Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER);
+                $binding->setUserId($winner->getId());
+                $binding->setProviderId($this->providerId);
+                $entities[] = $binding;
+            }
+
+            return new EntitySearchResult(Sw6OidcUserProviderDefinition::ENTITY_NAME, \count($entities), new Sw6OidcUserProviderCollection($entities), null, $criteria, $context);
+        });
+
+        $result = $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('jane@example.com'), $this->identity(), $this->salesChannelContext());
+
+        self::assertSame($winner->getId(), $result->getId());
     }
 
     public function testCreateDispatchesBeforeAndAfterEventsAndHonorsPayloadChanges(): void
@@ -555,7 +731,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         });
         $payload = $this->captureCreatePayload();
 
-        $result = $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('new@example.com'), $this->salesChannelContext());
+        $result = $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('new@example.com'), $this->identity(), $this->salesChannelContext());
 
         self::assertNotNull($payload->value);
         self::assertSame(['source' => 'oidc'], $payload->value['customFields']);
@@ -569,7 +745,7 @@ final class CustomerProvisioningServiceTest extends TestCase
 
         for ($i = 0; $i < 2; ++$i) {
             $payload = $this->captureCreatePayload();
-            $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('new@example.com'), $this->salesChannelContext());
+            $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('new@example.com'), $this->identity(), $this->salesChannelContext());
 
             self::assertNotNull($payload->value);
             self::assertIsString($payload->value['password']);
@@ -585,7 +761,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->groupMappingResolver->method('resolveCustomerGroupId')->willReturn(null);
         $payload = $this->captureCreatePayload();
 
-        $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('new@example.com'), $this->salesChannelContext());
+        $this->createService()->findOrCreateCustomer($this->provider(), new MappedProfile('new@example.com'), $this->identity(), $this->salesChannelContext());
 
         self::assertNotNull($payload->value);
         self::assertSame($this->currentCustomerGroupId, $payload->value['groupId']);
@@ -600,7 +776,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $realResolver = new GroupMappingResolver($this->createStub(EntityRepository::class));
         $payload = $this->captureCreatePayload();
 
-        $this->createService(groupMappingResolver: $realResolver)->findOrCreateCustomer($provider, new MappedProfile('new@example.com'), $this->salesChannelContext());
+        $this->createService(groupMappingResolver: $realResolver)->findOrCreateCustomer($provider, new MappedProfile('new@example.com'), $this->identity(), $this->salesChannelContext());
 
         self::assertNotNull($payload->value);
         self::assertSame($defaultGroupId, $payload->value['groupId']);
@@ -613,12 +789,12 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->createService()->findOrCreateCustomer(
             $this->provider(),
             new MappedProfile('new@example.com', phone: '+49 000'),
-            $this->salesChannelContext(),
+            $this->identity(), $this->salesChannelContext(),
         );
 
         $customer = $payload->value;
         self::assertNotNull($customer);
-        self::assertSame('new@example.com', $customer['firstName']);
+        self::assertSame('new', $customer['firstName'], 'never the email address as a name (L9)');
         self::assertSame('-', $customer['lastName']);
         self::assertNull($customer['birthday']);
         self::assertSame($this->notSpecifiedSalutationId, $customer['salutationId']);
@@ -626,15 +802,62 @@ final class CustomerProvisioningServiceTest extends TestCase
         self::assertIsArray($customer['addresses']);
         self::assertCount(1, $customer['addresses']);
         $address = $customer['addresses'][0];
-        self::assertSame('new@example.com', $address['firstName']);
+        self::assertSame('new', $address['firstName']);
         self::assertSame('-', $address['lastName']);
         self::assertSame('-', $address['street']);
-        self::assertSame('-', $address['zipcode']);
+        self::assertNull($address['zipcode'], 'optional in 6.7, no placeholder');
         self::assertSame('-', $address['city']);
+        self::assertSame([CustomerProvisioningService::PLACEHOLDER_ADDRESS_FIELD => true], $address['customFields']);
         self::assertSame('+49 000', $address['phoneNumber']);
         self::assertSame($this->salesChannelCountryId, $address['countryId']);
         self::assertNull($address['countryStateId']);
         self::assertSame($address['id'], $customer['defaultShippingAddressId']);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function invalidBirthdays(): iterable
+    {
+        yield 'not a date' => ['yesterday'];
+        yield 'partial OIDC date' => ['0000-05-17'];
+        yield 'before 1900' => ['1899-12-31'];
+        yield 'overflowing day' => ['1990-02-31'];
+        yield 'in the future' => [(new \DateTimeImmutable('+1 year'))->format('Y-m-d')];
+        yield 'with time' => ['1990-05-17T10:00:00Z'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidBirthdays')]
+    public function testInvalidBirthdaysAreSkippedNotFatal(string $birthday): void
+    {
+        $payload = $this->captureCreatePayload();
+
+        $this->createService()->findOrCreateCustomer(
+            $this->provider(),
+            new MappedProfile('new@example.com', birthday: $birthday),
+            $this->identity(), $this->salesChannelContext(),
+        );
+
+        self::assertNotNull($payload->value);
+        self::assertNull($payload->value['birthday']);
+    }
+
+    public function testAutoCreateDispatchesCoresRegisterEvent(): void
+    {
+        $this->captureCreatePayload();
+        $dispatched = [];
+        $this->eventDispatcher = new EventDispatcher();
+        $this->eventDispatcher->addListener(\Shopware\Core\Checkout\Customer\Event\CustomerRegisterEvent::class, static function (\Shopware\Core\Checkout\Customer\Event\CustomerRegisterEvent $event) use (&$dispatched): void {
+            $dispatched[] = $event->getCustomerId();
+        });
+
+        $result = $this->createService()->findOrCreateCustomer(
+            $this->provider(),
+            new MappedProfile('new@example.com'),
+            $this->identity(), $this->salesChannelContext(),
+        );
+
+        self::assertSame([$result->getId()], $dispatched);
     }
 
     public function testAutoCreateFallsBackToNotSpecifiedSalutationForUnknownKey(): void
@@ -644,7 +867,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->createService()->findOrCreateCustomer(
             $this->provider(),
             new MappedProfile('new@example.com', salutationTechnicalName: 'unknown'),
-            $this->salesChannelContext(),
+            $this->identity(), $this->salesChannelContext(),
         );
 
         self::assertNotNull($payload->value);
@@ -663,7 +886,7 @@ final class CustomerProvisioningServiceTest extends TestCase
                 billingAddress: new AddressProfile('Hauptstr. 1', '80331', 'Munich', null, 'DE'),
                 shippingAddress: new AddressProfile(city: 'Paris', country: 'FR', phone: '+33 1'),
             ),
-            $this->salesChannelContext(),
+            $this->identity(), $this->salesChannelContext(),
         );
 
         $customer = $payload->value;
@@ -680,7 +903,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         self::assertSame('Jane', $shipping['firstName']);
         self::assertSame('-', $shipping['lastName']);
         self::assertSame('-', $shipping['street']);
-        self::assertSame('-', $shipping['zipcode']);
+        self::assertNull($shipping['zipcode']);
         self::assertSame('Paris', $shipping['city']);
         self::assertSame('+33 1', $shipping['phoneNumber']);
         self::assertSame($this->franceId, $shipping['countryId']);
@@ -694,7 +917,7 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->createService()->findOrCreateCustomer(
             $this->provider(),
             new MappedProfile('new@example.com', shippingAddress: new AddressProfile()),
-            $this->salesChannelContext(),
+            $this->identity(), $this->salesChannelContext(),
         );
 
         self::assertNotNull($payload->value);
@@ -707,24 +930,64 @@ final class CustomerProvisioningServiceTest extends TestCase
         bool $salutationsAvailable = true,
         ?GroupMappingResolver $groupMappingResolver = null,
     ): CustomerProvisioningService {
+        $bindingService = new UserProviderBindingService($this->userProviderRepository);
+
         return new CustomerProvisioningService(
             $this->customerRepository,
             $this->salutationRepository($salutationsAvailable),
             $this->countryResolver(),
             $groupMappingResolver ?? $this->groupMappingResolver,
-            new UserProviderBindingService($this->userProviderRepository),
+            $bindingService,
+            new IdentityResolver($bindingService, new NullLogger()),
             $this->numberRangeValueGenerator(),
             new NullLogger(),
             $this->eventDispatcher ??= new EventDispatcher(),
+            $this->connection(),
+            $this->systemConfig(),
         );
     }
 
+    private function connection(): Connection
+    {
+        $connection = $this->createStub(Connection::class);
+        $connection->method('transactional')->willReturnCallback(static fn (\Closure $callback): mixed => $callback($connection));
+        // No bound account with this email (core's RegisterRoute rule, R3-M13).
+        $connection->method('fetchOne')->willReturnCallback(fn (): string|false => $this->boundAccountWithEmailExists ? '1' : false);
+
+        return $connection;
+    }
+
+    private function systemConfig(): SystemConfigService
+    {
+        $systemConfig = $this->createStub(SystemConfigService::class);
+        $systemConfig->method('get')->willReturnCallback(
+            fn (string $key): bool => $key === 'core.systemWideLoginRegistration.isCustomerBoundToSalesChannel' && $this->bindCustomersToSalesChannel,
+        );
+
+        return $systemConfig;
+    }
+
+    /**
+     * Linking by verified email is opted into so these tests keep exercising
+     * find/create/sync; the linking policy itself is covered by
+     * IdentityResolverTest and the identity tests in this class.
+     */
     private function provider(): Sw6OidcProviderEntity
     {
         $provider = new Sw6OidcProviderEntity();
         $provider->setId(Uuid::randomHex());
+        $provider->setLinkExistingAccounts(true);
+        $this->providerId = $provider->getId();
 
         return $provider;
+    }
+
+    /**
+     * The identity of the provider most recently built by provider().
+     */
+    private function identity(): ExternalIdentity
+    {
+        return new ExternalIdentity($this->providerId, 'https://idp.example.com', $this->subject, 'user@example.com', $this->emailVerified);
     }
 
     private function customer(string $id, string $email, ?string $billingAddressId = null, ?string $shippingAddressId = null): CustomerEntity
@@ -735,6 +998,8 @@ final class CustomerProvisioningServiceTest extends TestCase
         $customer->setId($id);
         $customer->setEmail($email);
         $customer->setBoundSalesChannelId(null);
+        $customer->setGuest(false);
+        $customer->setActive(true);
         $customer->setDefaultBillingAddressId($billingAddressId);
         $customer->setDefaultShippingAddressId($shippingAddressId ?? $billingAddressId);
 

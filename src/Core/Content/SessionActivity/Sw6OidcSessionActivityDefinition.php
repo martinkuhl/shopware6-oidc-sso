@@ -3,6 +3,7 @@
 namespace MartinKuhl\Sw6Oidc\Core\Content\SessionActivity;
 
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
+use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityDefinition;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\CreatedAtField;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\DateTimeField;
@@ -10,6 +11,7 @@ use Shopware\Core\Framework\DataAbstractionLayer\Field\FkField;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\ApiAware;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\PrimaryKey;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\Required;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\WriteProtected;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\IdField;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\ManyToOneAssociationField;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\StringField;
@@ -55,21 +57,27 @@ class Sw6OidcSessionActivityDefinition extends EntityDefinition
 
     protected function defineFields(): FieldCollection
     {
+        // Audit log: written only by Sw6OidcSessionActivityRecorder in system
+        // scope, never through the Admin API (N-M8; deletes: SessionActivityWriteGuardSubscriber).
+        $systemOnly = new WriteProtected(Context::SYSTEM_SCOPE);
+
         return new FieldCollection([
-            (new IdField('id', 'id'))->addFlags(new ApiAware(), new PrimaryKey(), new Required()),
-            (new FkField('provider_id', 'providerId', Sw6OidcProviderDefinition::class))->addFlags(new ApiAware()),
-            (new StringField('user_type', 'userType', 16))->addFlags(new ApiAware(), new Required()),
-            (new IdField('user_id', 'userId'))->addFlags(new ApiAware(), new Required()),
-            (new StringField('sub', 'sub'))->addFlags(new ApiAware()),
-            (new StringField('sid', 'sid'))->addFlags(new ApiAware()),
-            (new StringField('login_method', 'loginMethod', 16))->addFlags(new ApiAware(), new Required()),
-            new StringField('session_key_hash', 'sessionKeyHash', 64),
-            new StringField('registry_session_id', 'registrySessionId', 64),
-            (new StringField('ip_address', 'ipAddress', 45))->addFlags(new ApiAware()),
-            (new StringField('user_agent', 'userAgent', 512))->addFlags(new ApiAware()),
-            (new DateTimeField('logged_in_at', 'loggedInAt'))->addFlags(new ApiAware(), new Required()),
-            (new DateTimeField('logged_out_at', 'loggedOutAt'))->addFlags(new ApiAware()),
-            (new StringField('logout_reason', 'logoutReason', 32))->addFlags(new ApiAware()),
+            (new IdField('id', 'id'))->addFlags(new ApiAware(), new PrimaryKey(), new Required(), $systemOnly),
+            (new FkField('provider_id', 'providerId', Sw6OidcProviderDefinition::class))->addFlags(new ApiAware(), $systemOnly),
+            (new StringField('user_type', 'userType', 16))->addFlags(new ApiAware(), new Required(), $systemOnly),
+            (new IdField('user_id', 'userId'))->addFlags(new ApiAware(), new Required(), $systemOnly),
+            // Internal, and only as `sha256:<hex>`: a `sid` ends sessions via front-channel logout, so it's a bearer capability (N-M5, R3-L40).
+            (new StringField('sub', 'sub'))->addFlags($systemOnly),
+            (new StringField('sid', 'sid'))->addFlags($systemOnly),
+            (new StringField('login_method', 'loginMethod', 16))->addFlags(new ApiAware(), new Required(), $systemOnly),
+            (new StringField('session_key_hash', 'sessionKeyHash', 64))->addFlags($systemOnly),
+            (new StringField('registry_session_id', 'registrySessionId', 64))->addFlags($systemOnly),
+            (new StringField('passkey_credential_hash', 'passkeyCredentialHash', 64))->addFlags($systemOnly),
+            (new StringField('ip_address', 'ipAddress', 45))->addFlags(new ApiAware(), $systemOnly),
+            (new StringField('user_agent', 'userAgent', 512))->addFlags(new ApiAware(), $systemOnly),
+            (new DateTimeField('logged_in_at', 'loggedInAt'))->addFlags(new ApiAware(), new Required(), $systemOnly),
+            (new DateTimeField('logged_out_at', 'loggedOutAt'))->addFlags(new ApiAware(), $systemOnly),
+            (new StringField('logout_reason', 'logoutReason', 32))->addFlags(new ApiAware(), $systemOnly),
             new CreatedAtField(),
             new UpdatedAtField(),
 

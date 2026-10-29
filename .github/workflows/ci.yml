@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Every job only reads the repository (R3-L51).
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -18,9 +22,9 @@ jobs:
     name: Lint & coding standard (PHPCS)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.3'
           extensions: ${{ env.PHP_EXTENSIONS }}
@@ -28,7 +32,7 @@ jobs:
           tools: composer:v2
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: vendor
           key: composer-8.3-${{ hashFiles('composer.json') }}
@@ -39,30 +43,44 @@ jobs:
       - name: PHPCS
         run: composer cs-check
 
-  static-analysis:
-    name: Static analysis (PHPStan + Psalm)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      # Meteor components and $t only: the deprecated sw-* form/card/button
+      # components and $tc are gone from the Administration code and must not
+      # come back (removed in Shopware 6.8).
+      - name: No deprecated Administration components
+        run: |
+          ! grep -rnE '<sw-(text-field|switch-field|number-field|password-field|textarea-field|checkbox-field|card|button|button-process|label)[ >/]|\$tc\(' src/Resources/app/administration/src
 
-      - uses: shivammathur/setup-php@v2
+  static-analysis:
+    name: Static analysis (PHPStan + Psalm, PHP ${{ matrix.php-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.2', '8.5']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
-          php-version: '8.3'
+          php-version: ${{ matrix.php-version }}
           extensions: ${{ env.PHP_EXTENSIONS }}
           coverage: none
           tools: composer:v2
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: vendor
-          key: composer-8.3-${{ hashFiles('composer.json') }}
-          restore-keys: composer-8.3-
+          key: composer-${{ matrix.php-version }}-${{ hashFiles('composer.json') }}
+          restore-keys: composer-${{ matrix.php-version }}-
 
       - run: composer install --no-interaction --no-progress --prefer-dist
 
-      - name: PHPStan
+      - name: PHPStan (src, level 8)
         run: composer phpstan
+
+      - name: PHPStan (tests, level 5)
+        run: composer phpstan-tests
 
       - name: Psalm
         run: composer psalm
@@ -71,9 +89,9 @@ jobs:
     name: Rector (dry-run)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.3'
           extensions: ${{ env.PHP_EXTENSIONS }}
@@ -81,7 +99,7 @@ jobs:
           tools: composer:v2
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: vendor
           key: composer-8.3-${{ hashFiles('composer.json') }}
@@ -103,9 +121,9 @@ jobs:
       matrix:
         php-version: ['8.2', '8.3', '8.4', '8.5']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: ${{ matrix.php-version }}
           extensions: ${{ env.PHP_EXTENSIONS }}
@@ -113,7 +131,7 @@ jobs:
           tools: composer:v2
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: vendor
           key: composer-${{ matrix.php-version }}-${{ hashFiles('composer.json') }}
@@ -125,7 +143,7 @@ jobs:
         run: composer test-coverage
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-report-php${{ matrix.php-version }}
           path: var/coverage
@@ -154,11 +172,11 @@ jobs:
       APP_URL: http://localhost:8000
       DATABASE_URL: mysql://root:root@127.0.0.1:3306/shopware
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: plugin
 
-      - uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.3'
           extensions: ${{ env.PHP_EXTENSIONS }}
@@ -189,3 +207,121 @@ jobs:
       - name: Integration suite
         working-directory: plugin
         run: composer test-integration
+
+  assets:
+    # F-H1: both built bundles are committed (storefront dist/ and
+    # public/administration), so they must match the sources. Blocking: a
+    # stale bundle ships old code (R3-L51).
+    name: Asset build (Administration + Storefront)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      APP_URL: http://localhost:8000
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/shopware
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: plugin
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.3'
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+          tools: composer:v2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Install Shopware with the plugin
+        run: |
+          composer create-project shopware/production:~6.7.0 shop --no-interaction --no-progress --no-scripts
+          cd shop
+          composer config repositories.sw6oidc '{"type": "path", "url": "../plugin", "options": {"symlink": true}}'
+          composer require 'martinkuhl/shopware6-oidc-sso:*' --no-interaction --no-progress --no-scripts
+          {
+            echo "APP_ENV=prod"
+            echo "APP_URL=${APP_URL}"
+            echo "DATABASE_URL=${DATABASE_URL}"
+            echo "APP_SECRET=$(openssl rand -hex 32)"
+          } > .env.local
+          bin/console system:install --basic-setup --create-database --force --no-interaction
+          bin/console plugin:refresh
+          bin/console plugin:install --activate Sw6Oidc
+
+      # Every service argument fits its type declaration: a decorated core
+      # service behind a concrete type hint only failed at runtime (R7-H1).
+      - name: Lint the container
+        working-directory: shop
+        run: bin/console lint:container
+
+      - name: Build Administration
+        working-directory: shop
+        env:
+          SHOPWARE_ADMIN_BUILD_ONLY_EXTENSIONS: '1'
+        run: ./bin/build-administration.sh
+
+      - name: Build Storefront
+        working-directory: shop
+        env:
+          SHOPWARE_SKIP_THEME_COMPILE: 'true'
+        run: ./bin/build-storefront.sh
+
+      - name: Committed bundles are up to date
+        working-directory: plugin
+        run: |
+          git status --porcelain -- src/Resources/app/storefront/dist src/Resources/public/administration
+          test -z "$(git status --porcelain -- src/Resources/app/storefront/dist src/Resources/public/administration)"
+
+  e2e:
+    # Browser E2E (tests/E2E/README.md). Blocking: it is the only test that
+    # runs the Administration in a browser (R3-L51, R4-L7).
+    name: Browser E2E (Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tests/E2E
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Resolve Dex like the shop does
+        run: echo "127.0.0.1 dex" | sudo tee -a /etc/hosts
+
+      - name: Install Playwright
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Start shop and Dex
+        run: docker compose up -d --wait
+
+      - name: Run the suite
+        run: npx playwright test
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-report
+          path: tests/E2E/playwright-report
+          retention-days: 7
+
+      - name: Shop log on failure
+        if: failure()
+        run: docker compose logs shop | tail -n 300

@@ -2,27 +2,34 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Provisioning;
 
+use Doctrine\DBAL\Connection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
+use MartinKuhl\Sw6Oidc\Event\AdminAfterCreateEvent;
+use MartinKuhl\Sw6Oidc\Event\AdminBeforeCreateEvent;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\AdminProvisioningService;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\AdminRoleStore;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\AvatarFetcher;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\AccountLinkingRequiredException;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\AdminProvisioningDeniedException;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\EmailNotVerifiedException;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\ProviderMismatchException;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\ExternalIdentity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\GroupMappingResolver;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\IdentityResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\MappedProfile;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\TimeZoneValidator;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\MockObject\MockObject;
-use MartinKuhl\Sw6Oidc\Event\AdminAfterCreateEvent;
-use MartinKuhl\Sw6Oidc\Event\AdminBeforeCreateEvent;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Psr\Log\LoggerInterface;
-use Shopware\Core\Content\Media\File\FileFetcher;
 use Shopware\Core\Content\Media\File\MediaFile;
 use Shopware\Core\Content\Media\MediaService;
+use Shopware\Core\Framework\Api\Acl\Role\AclRoleCollection;
+use Shopware\Core\Framework\Api\Acl\Role\AclRoleEntity;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenContainerEvent;
@@ -35,6 +42,7 @@ use Shopware\Core\Framework\Uuid\Uuid;
 use Shopware\Core\System\User\UserCollection;
 use Shopware\Core\System\User\UserDefinition;
 use Shopware\Core\System\User\UserEntity;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(AdminProvisioningService::class)]
 final class AdminProvisioningServiceTest extends TestCase
@@ -46,6 +54,23 @@ final class AdminProvisioningServiceTest extends TestCase
     private ?UserEntity $existingUser = null;
 
     private ?string $boundProviderId = null;
+
+    private ?string $boundSub = null;
+
+    /** @var list<array{userId: string, aclRoleId: string}> */
+    private array $roleDeletes = [];
+
+    private bool $otherActiveSuperadmin = true;
+
+    /** @var list<string> roles role sync granted earlier (sw6oidc_managed_acl_role) */
+    private array $managedRoles = [];
+
+    /** @var list<string> */
+    private array $rememberedRoles = [];
+
+    private string $subject = 'idp-subject-1';
+
+    private bool $emailVerified = true;
 
     /** @var string[] */
     private array $takenUsernames = [];
@@ -73,7 +98,7 @@ final class AdminProvisioningServiceTest extends TestCase
 
     private GroupMappingResolver&MockObject $groupMappingResolver;
 
-    private FileFetcher&MockObject $fileFetcher;
+    private AvatarFetcher&MockObject $avatarFetcher;
 
     private MediaService&MockObject $mediaService;
 
@@ -85,10 +110,10 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->groupMappingResolver = $this->createMock(GroupMappingResolver::class);
         $this->groupMappingResolver->method('matchesSuperadminGroup')
             ->willReturnCallback(fn (): bool => $this->superadminMatch);
-        $this->groupMappingResolver->method('resolveAclRoleId')
-            ->willReturnCallback(fn (): ?string => $this->resolvedAclRoleId);
+        $this->groupMappingResolver->method('resolveAclRoleIds')
+            ->willReturnCallback(fn (): array => $this->resolvedAclRoleId !== null ? [$this->resolvedAclRoleId] : []);
 
-        $this->fileFetcher = $this->createMock(FileFetcher::class);
+        $this->avatarFetcher = $this->createMock(AvatarFetcher::class);
         $this->mediaService = $this->createMock(MediaService::class);
     }
 
@@ -102,7 +127,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $provider->setSyncAdminProfileOnSso(true);
 
         try {
-            $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', firstName: 'Jane'), $this->context);
+            $this->findOrCreate($provider, new MappedProfile('jane@example.com', firstName: 'Jane'), $this->context);
             self::fail('Expected ProviderMismatchException');
         } catch (ProviderMismatchException) {
         }
@@ -112,32 +137,137 @@ final class AdminProvisioningServiceTest extends TestCase
         self::assertSame([], $this->userCreates);
     }
 
-    public function testExistingUnboundAdminGetsBoundAndReturnedWithoutSync(): void
+    public function testExistingAdminIsNotLinkedByEmailUnlessTheProviderAllowsIt(): void
     {
         $this->existingUser = $this->user('jane');
         $provider = $this->provider();
+        $provider->setLinkExistingAccounts(false);
 
-        $result = $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', firstName: 'Jane', groups: ['admins']), $this->context);
+        $this->expectException(AccountLinkingRequiredException::class);
 
-        self::assertSame($this->existingUser, $result);
-        self::assertCount(1, $this->bindingCreates);
-        self::assertSame(Sw6OidcUserProviderEntity::USER_TYPE_ADMIN, $this->bindingCreates[0]['userType']);
-        self::assertSame($this->existingUser->getId(), $this->bindingCreates[0]['userId']);
-        self::assertSame($provider->getId(), $this->bindingCreates[0]['providerId']);
-        self::assertSame([], $this->userUpdates);
+        try {
+            $this->findOrCreate($provider, new MappedProfile('jane@example.com'), $this->context);
+        } finally {
+            self::assertSame([], $this->bindingCreates);
+            self::assertSame([], $this->userCreates);
+        }
+    }
+
+    public function testExistingSuperadminIsNeverLinkedByEmail(): void
+    {
+        $this->existingUser = $this->user('root');
+        $this->existingUser->setAdmin(true);
+
+        $this->expectException(AccountLinkingRequiredException::class);
+
+        $this->findOrCreate($this->provider(), new MappedProfile('root@example.com'), $this->context);
+    }
+
+    public function testUnverifiedEmailIsRefusedWhenTheProviderRequiresVerification(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $this->emailVerified = false;
+
+        $this->expectException(EmailNotVerifiedException::class);
+
+        $this->findOrCreate($this->provider(), new MappedProfile('jane@example.com'), $this->context);
+    }
+
+    public function testBoundSubjectResolvesTheAccountWhateverTheEmailClaimSays(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $provider = $this->provider();
+        $provider->setLinkExistingAccounts(false);
+        $this->boundProviderId = $provider->getId();
+        $this->boundSub = $this->subject;
+
+        $result = $this->findOrCreate($provider, new MappedProfile('renamed@example.com'), $this->context);
+
+        self::assertSame($this->existingUser->getId(), $result->getId());
         self::assertSame([], $this->userCreates);
     }
 
-    public function testExistingAdminAlreadyBoundToSameProviderIsNotRebound(): void
+    public function testAnInactiveBoundAdminIsRefusedBeforeAnySync(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $this->existingUser->setActive(false);
+        $provider = $this->provider();
+        $provider->setSyncAdminProfileOnSso(true);
+        $this->boundProviderId = $provider->getId();
+        $this->boundSub = $this->subject;
+
+        try {
+            $this->findOrCreate($provider, new MappedProfile('jane@example.com', firstName: 'Changed'), $this->context);
+            self::fail('Expected AdminProvisioningDeniedException');
+        } catch (AdminProvisioningDeniedException $exception) {
+            // R3-L28: no sync (or anything else) for an account that can't log in.
+            self::assertSame(AdminProvisioningDeniedException::REASON_ACCOUNT_INACTIVE, $exception->reason);
+            self::assertSame([], $this->userUpdates);
+        }
+    }
+
+    public function testNewAdminIsBoundToTheSubject(): void
+    {
+        $provider = $this->provider();
+        $provider->setAutoCreateAdmin(true);
+        $this->resolvedAclRoleId = Uuid::randomHex();
+
+        $this->findOrCreate($provider, new MappedProfile('new@example.com'), $this->context);
+
+        self::assertCount(1, $this->bindingCreates);
+        self::assertSame($this->subject, $this->bindingCreates[0]['sub']);
+        self::assertSame('https://idp.example.com', $this->bindingCreates[0]['issuer']);
+    }
+
+    public function testListenerCannotChangeTheVerifiedEmail(): void
+    {
+        $provider = $this->provider();
+        $provider->setAutoCreateAdmin(true);
+        $this->resolvedAclRoleId = Uuid::randomHex();
+
+        $this->eventDispatcher = new EventDispatcher();
+        $this->eventDispatcher->addListener(AdminBeforeCreateEvent::class, static function (AdminBeforeCreateEvent $event): void {
+            $event->setPayload([...$event->getPayload(), 'email' => 'attacker@example.com']);
+        });
+
+        $this->findOrCreate($provider, new MappedProfile('new@example.com'), $this->context);
+
+        self::assertSame('new@example.com', $this->userCreates[0]['email']);
+    }
+
+    /**
+     * Every admin is privileged (R3-L23): even with linking by email on, an
+     * existing admin account is only ever connected explicitly.
+     */
+    public function testExistingAdminIsNeverLinkedByEmail(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $provider = $this->provider();
+        $provider->setLinkExistingAccounts(true);
+
+        try {
+            $this->findOrCreate($provider, new MappedProfile('jane@example.com', firstName: 'Jane', groups: ['admins']), $this->context);
+            self::fail('Expected AccountLinkingRequiredException');
+        } catch (AccountLinkingRequiredException) {
+        }
+
+        self::assertSame([], $this->bindingCreates);
+        self::assertSame([], $this->userUpdates);
+    }
+
+    /**
+     * R3-M10: whoever holds the email at the IdP today must not inherit an
+     * admin account through its legacy (pre-subject) binding.
+     */
+    public function testLegacyBindingOfAnAdminIsNotUpgradedAutomatically(): void
     {
         $this->existingUser = $this->user('jane');
         $provider = $this->provider();
         $this->boundProviderId = $provider->getId();
 
-        $result = $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com'), $this->context);
+        $this->expectException(AccountLinkingRequiredException::class);
 
-        self::assertSame($this->existingUser, $result);
-        self::assertSame([], $this->bindingCreates);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com'), $this->context);
     }
 
     public function testSyncRoleGrantsSuperadminWhenAllowedAndGroupMatches(): void
@@ -147,12 +277,14 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->resolvedAclRoleId = Uuid::randomHex();
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setSyncAdminRoleOnSso(true);
         $provider->setAllowSuperadminGroupMapping(true);
 
-        $this->groupMappingResolver->expects(self::never())->method('resolveAclRoleId');
+        $this->groupMappingResolver->expects(self::never())->method('resolveAclRoleIds');
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', groups: ['root']), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', groups: ['root']), $this->context);
 
         self::assertSame([['id' => $this->existingUser->getId(), 'admin' => true]], $this->userUpdates);
     }
@@ -165,10 +297,12 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->resolvedAclRoleId = $roleId;
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setSyncAdminRoleOnSso(true);
         $provider->setAllowSuperadminGroupMapping(false);
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', groups: ['root']), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', groups: ['root']), $this->context);
 
         self::assertSame([['id' => $this->existingUser->getId(), 'aclRoles' => [['id' => $roleId]]]], $this->userUpdates);
         foreach ($this->userUpdates as $update) {
@@ -183,12 +317,123 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->resolvedAclRoleId = $roleId;
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setSyncAdminRoleOnSso(true);
         $provider->setAllowSuperadminGroupMapping(true);
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', groups: ['editors']), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', groups: ['editors']), $this->context);
 
         self::assertSame([['id' => $this->existingUser->getId(), 'aclRoles' => [['id' => $roleId]]]], $this->userUpdates);
+    }
+
+    /**
+     * R3-M11: only roles role sync granted itself are taken away; a role
+     * granted by hand in Shopware stays.
+     */
+    public function testSyncRoleRemovesOnlyManagedRolesTheIdpNoLongerGrants(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $keptRole = Uuid::randomHex();
+        $revokedRole = Uuid::randomHex();
+        $manualRole = Uuid::randomHex();
+        $this->existingUser->setAclRoles(new AclRoleCollection([$this->role($keptRole), $this->role($revokedRole), $this->role($manualRole)]));
+        $this->managedRoles = [$keptRole, $revokedRole];
+        $this->resolvedAclRoleId = $keptRole;
+
+        $provider = $this->provider();
+
+        $this->bindTo($provider);
+        $provider->setSyncAdminRoleOnSso(true);
+
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', groups: ['editors']), $this->context);
+
+        self::assertSame([['userId' => $this->existingUser->getId(), 'aclRoleId' => $revokedRole]], $this->roleDeletes);
+        self::assertSame([], $this->userUpdates, 'the kept role needs no write');
+    }
+
+    public function testSyncRoleAddsEveryMappedRoleAndRemembersIt(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $first = Uuid::randomHex();
+        $second = Uuid::randomHex();
+        $this->groupMappingResolver = $this->createMock(GroupMappingResolver::class);
+        $this->groupMappingResolver->method('resolveAclRoleIds')->willReturn([$first, $second]);
+
+        $provider = $this->provider();
+
+        $this->bindTo($provider);
+        $provider->setSyncAdminRoleOnSso(true);
+
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', groups: ['editors', 'support']), $this->context);
+
+        self::assertSame([['id' => $this->existingUser->getId(), 'aclRoles' => [['id' => $first], ['id' => $second]]]], $this->userUpdates);
+        self::assertSame([$first, $second], $this->rememberedRoles);
+    }
+
+    /**
+     * R3-M11: removed from every IdP group, a superadmin loses the flag with
+     * the opt-in, even though no role resolves.
+     */
+    public function testSuperadminIsRevokedWhenNoGroupResolves(): void
+    {
+        $this->existingUser = $this->user('root');
+        $this->existingUser->setAdmin(true);
+
+        $provider = $this->provider();
+        $provider->setSyncAdminRoleOnSso(true);
+        $provider->setRevokeSuperadminOnSso(true);
+        $this->boundProviderId = $provider->getId();
+        $this->boundSub = $this->subject;
+
+        $this->findOrCreate($provider, new MappedProfile('root@example.com', groups: []), $this->context);
+
+        self::assertContains(['id' => $this->existingUser->getId(), 'admin' => false], $this->userUpdates);
+    }
+
+    public function testSuperadminIsOnlyRevokedWithTheOptIn(): void
+    {
+        $this->existingUser = $this->user('root');
+        $this->existingUser->setAdmin(true);
+        $this->resolvedAclRoleId = Uuid::randomHex();
+
+        $provider = $this->provider();
+        $provider->setSyncAdminRoleOnSso(true);
+        $this->boundProviderId = $provider->getId();
+        $this->boundSub = $this->subject;
+
+        $this->findOrCreate($provider, new MappedProfile('root@example.com', groups: ['editors']), $this->context);
+        self::assertNotContains(['id' => $this->existingUser->getId(), 'admin' => false], $this->userUpdates);
+
+        $provider->setRevokeSuperadminOnSso(true);
+        $this->findOrCreate($provider, new MappedProfile('root@example.com', groups: ['editors']), $this->context);
+        self::assertContains(['id' => $this->existingUser->getId(), 'admin' => false], $this->userUpdates);
+    }
+
+    public function testTheLastSuperadminIsNeverRevoked(): void
+    {
+        $this->existingUser = $this->user('root');
+        $this->existingUser->setAdmin(true);
+        $this->resolvedAclRoleId = Uuid::randomHex();
+        $this->otherActiveSuperadmin = false;
+
+        $provider = $this->provider();
+        $provider->setSyncAdminRoleOnSso(true);
+        $provider->setRevokeSuperadminOnSso(true);
+        $this->boundProviderId = $provider->getId();
+        $this->boundSub = $this->subject;
+
+        $this->findOrCreate($provider, new MappedProfile('root@example.com', groups: ['editors']), $this->context);
+
+        self::assertNotContains(['id' => $this->existingUser->getId(), 'admin' => false], $this->userUpdates);
+    }
+
+    private function role(string $id): AclRoleEntity
+    {
+        $role = new AclRoleEntity();
+        $role->setId($id);
+
+        return $role;
     }
 
     public function testSyncRoleNeverRevokesWhenNothingMatches(): void
@@ -197,10 +442,12 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->existingUser->setAdmin(true);
 
         $provider = $this->provider();
+        $this->boundProviderId = $provider->getId();
+        $this->boundSub = $this->subject;
         $provider->setSyncAdminRoleOnSso(true);
         $provider->setAllowSuperadminGroupMapping(true);
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', groups: []), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', groups: []), $this->context);
 
         self::assertSame([], $this->userUpdates);
     }
@@ -212,12 +459,14 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->resolvedAclRoleId = Uuid::randomHex();
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setAllowSuperadminGroupMapping(true);
 
         $this->groupMappingResolver->expects(self::never())->method('matchesSuperadminGroup');
-        $this->groupMappingResolver->expects(self::never())->method('resolveAclRoleId');
+        $this->groupMappingResolver->expects(self::never())->method('resolveAclRoleIds');
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', groups: ['root']), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', groups: ['root']), $this->context);
 
         self::assertSame([], $this->userUpdates);
     }
@@ -227,9 +476,11 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->existingUser = $this->user('jane');
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setSyncAdminProfileOnSso(true);
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', firstName: 'Janet'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', firstName: 'Janet'), $this->context);
 
         self::assertSame([['id' => $this->existingUser->getId(), 'firstName' => 'Janet']], $this->userUpdates);
     }
@@ -241,9 +492,11 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->localeIds['de-DE'] = $deLocaleId;
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setSyncAdminProfileOnSso(true);
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile(
+        $this->findOrCreate($provider, new MappedProfile(
             'jane@example.com',
             firstName: 'Janet',
             lastName: 'Doe',
@@ -265,9 +518,11 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->existingUser = $this->user('jane');
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setSyncAdminProfileOnSso(true);
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', zoneinfo: 'Not/AZone'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', zoneinfo: 'Not/AZone'), $this->context);
 
         self::assertSame([], $this->userUpdates);
     }
@@ -279,14 +534,39 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->existingUser->setAvatarId($existingAvatarId);
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setSyncAdminProfileOnSso(true);
 
         $this->expectAvatarImport('https://idp.example.com/a.png', $existingAvatarId, $existingAvatarId);
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', picture: 'https://idp.example.com/a.png'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', picture: 'https://idp.example.com/a.png'), $this->context);
 
-        self::assertSame([['id' => $this->existingUser->getId(), 'avatarId' => $existingAvatarId]], $this->userUpdates);
+        self::assertSame([[
+            'id' => $this->existingUser->getId(),
+            'avatarId' => $existingAvatarId,
+            'customFields' => [AdminProvisioningService::AVATAR_URL_HASH_FIELD => hash('sha256', 'https://idp.example.com/a.png')],
+        ]], $this->userUpdates);
         self::assertSame([['id' => $existingAvatarId, 'private' => false]], $this->mediaUpdates);
+    }
+
+    public function testSyncProfileSkipsUnchangedAvatar(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $this->existingUser->setAvatarId(Uuid::randomHex());
+        $this->existingUser->setCustomFields([AdminProvisioningService::AVATAR_URL_HASH_FIELD => hash('sha256', 'https://idp.example.com/a.png')]);
+
+        $provider = $this->provider();
+
+        $this->bindTo($provider);
+        $provider->setSyncAdminProfileOnSso(true);
+
+        $this->avatarFetcher->expects(self::never())->method('fetch');
+        $this->mediaService->expects(self::never())->method('saveMediaFile');
+
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', picture: 'https://idp.example.com/a.png'), $this->context);
+
+        self::assertSame([], $this->userUpdates);
     }
 
     public function testSyncProfileSwallowsAvatarFetchFailure(): void
@@ -294,12 +574,14 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->existingUser = $this->user('jane');
 
         $provider = $this->provider();
+
+        $this->bindTo($provider);
         $provider->setSyncAdminProfileOnSso(true);
 
-        $this->fileFetcher->method('fetchFromURL')->willThrowException(new \RuntimeException('unreachable'));
+        $this->avatarFetcher->method('fetch')->willThrowException(new \RuntimeException('unreachable'));
         $this->mediaService->expects(self::never())->method('saveMediaFile');
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', firstName: 'Jane', picture: 'https://idp.example.com/a.png'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', firstName: 'Jane', picture: 'https://idp.example.com/a.png'), $this->context);
 
         self::assertSame([['id' => $this->existingUser->getId(), 'firstName' => 'Jane']], $this->userUpdates);
         self::assertSame([], $this->mediaUpdates);
@@ -312,11 +594,11 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->resolvedAclRoleId = Uuid::randomHex();
 
         try {
-            $this->createService()->findOrCreateAdmin($provider, new MappedProfile('new@example.com'), $this->context);
+            $this->findOrCreate($provider, new MappedProfile('new@example.com'), $this->context);
             self::fail('Expected AdminProvisioningDeniedException');
         } catch (AdminProvisioningDeniedException $e) {
             self::assertSame(AdminProvisioningDeniedException::REASON_AUTO_CREATE_DISABLED, $e->reason);
-            self::assertStringContainsString('new@example.com', $e->getMessage());
+            self::assertStringNotContainsString('new@example.com', $e->getMessage(), 'no email in log messages (R3-L24)');
         }
 
         self::assertSame([], $this->userCreates);
@@ -330,7 +612,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $provider->setAllowSuperadminGroupMapping(true);
 
         try {
-            $this->createService()->findOrCreateAdmin($provider, new MappedProfile('new@example.com', groups: ['nobody']), $this->context);
+            $this->findOrCreate($provider, new MappedProfile('new@example.com', groups: ['nobody']), $this->context);
             self::fail('Expected AdminProvisioningDeniedException');
         } catch (AdminProvisioningDeniedException $e) {
             self::assertSame(AdminProvisioningDeniedException::REASON_NO_ROLE, $e->reason);
@@ -348,7 +630,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->superadminMatch = true;
 
         try {
-            $this->createService()->findOrCreateAdmin($provider, new MappedProfile('new@example.com', groups: ['root']), $this->context);
+            $this->findOrCreate($provider, new MappedProfile('new@example.com', groups: ['root']), $this->context);
             self::fail('Expected AdminProvisioningDeniedException');
         } catch (AdminProvisioningDeniedException $e) {
             self::assertSame(AdminProvisioningDeniedException::REASON_NO_ROLE, $e->reason);
@@ -366,7 +648,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $roleId = Uuid::randomHex();
         $this->resolvedAclRoleId = $roleId;
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('new@example.com', groups: ['root']), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('new@example.com', groups: ['root']), $this->context);
 
         self::assertCount(1, $this->userCreates);
         self::assertFalse($this->userCreates[0]['admin']);
@@ -388,7 +670,7 @@ final class AdminProvisioningServiceTest extends TestCase
             $dispatched[] = 'after:' . $event->getUser()->getId();
         });
 
-        $result = $this->createService()->findOrCreateAdmin($provider, new MappedProfile('new@example.com'), $this->context);
+        $result = $this->findOrCreate($provider, new MappedProfile('new@example.com'), $this->context);
 
         self::assertCount(1, $this->userCreates);
         self::assertSame('SSO user', $this->userCreates[0]['title']);
@@ -403,7 +685,11 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->eventDispatcher->addListener(AdminAfterCreateEvent::class, static fn () => self::fail('unexpected after-create event'));
         $this->existingUser = $this->user('existing');
 
-        $this->createService()->findOrCreateAdmin($this->provider(), new MappedProfile('existing@example.com'), $this->context);
+        $provider = $this->provider();
+
+        $this->bindTo($provider);
+
+        $this->findOrCreate($provider, new MappedProfile('existing@example.com'), $this->context);
 
         self::assertSame([], $this->userCreates);
     }
@@ -415,9 +701,9 @@ final class AdminProvisioningServiceTest extends TestCase
         $provider->setAllowSuperadminGroupMapping(true);
         $this->superadminMatch = true;
 
-        $this->groupMappingResolver->expects(self::never())->method('resolveAclRoleId');
+        $this->groupMappingResolver->expects(self::never())->method('resolveAclRoleIds');
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('root@example.com', groups: ['root']), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('root@example.com', groups: ['root']), $this->context);
 
         self::assertCount(1, $this->userCreates);
         self::assertTrue($this->userCreates[0]['admin']);
@@ -433,7 +719,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $deLocaleId = Uuid::randomHex();
         $this->localeIds['de-DE'] = $deLocaleId;
 
-        $result = $this->createService()->findOrCreateAdmin($provider, new MappedProfile(
+        $result = $this->findOrCreate($provider, new MappedProfile(
             'jane.doe@example.com',
             username: 'jdoe',
             firstName: 'Jane',
@@ -479,7 +765,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $enLocaleId = Uuid::randomHex();
         $this->localeIds['en-GB'] = $enLocaleId;
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile(
+        $this->findOrCreate($provider, new MappedProfile(
             'jane@example.com',
             locale: 'xx-XX',
             zoneinfo: 'Mars/Olympus',
@@ -487,7 +773,7 @@ final class AdminProvisioningServiceTest extends TestCase
 
         $payload = $this->userCreates[0];
         self::assertSame('jane', $payload['username']);
-        self::assertSame('jane@example.com', $payload['firstName']);
+        self::assertSame('jane', $payload['firstName'], 'never the email address as a name (L9)');
         self::assertSame('-', $payload['lastName']);
         self::assertSame($enLocaleId, $payload['localeId']);
         self::assertArrayNotHasKey('timeZone', $payload);
@@ -499,7 +785,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $provider->setAutoCreateAdmin(true);
         $this->resolvedAclRoleId = Uuid::randomHex();
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com'), $this->context);
 
         self::assertSame($this->fallbackLocaleId, $this->userCreates[0]['localeId']);
     }
@@ -511,7 +797,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->resolvedAclRoleId = Uuid::randomHex();
         $this->takenUsernames = ['jane.doe', 'jane.doe1'];
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane.doe+test@example.com'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane.doe+test@example.com'), $this->context);
 
         // "+" is stripped by the sanitizer: "jane.doe+test" -> "jane.doetest"
         self::assertSame('jane.doetest', $this->userCreates[0]['username']);
@@ -524,9 +810,22 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->resolvedAclRoleId = Uuid::randomHex();
         $this->takenUsernames = ['jane', 'jane1', 'jane2'];
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('someone@example.com', username: 'jane'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('someone@example.com', username: 'jane'), $this->context);
 
         self::assertSame('jane3', $this->userCreates[0]['username']);
+    }
+
+    public function testUsernameProbeIsBoundedAndEndsInARandomSuffix(): void
+    {
+        $provider = $this->provider();
+        $provider->setAutoCreateAdmin(true);
+        $this->resolvedAclRoleId = Uuid::randomHex();
+        $this->takenUsernames = ['jane', 'jane1', 'jane2', 'jane3', 'jane4'];
+
+        $this->findOrCreate($provider, new MappedProfile('someone@example.com', username: 'jane'), $this->context);
+
+        // Not "jane5" after an ever longer loop of queries (R3-L25).
+        self::assertMatchesRegularExpression('/^jane-[0-9a-f]{4}$/', $this->userCreates[0]['username']);
     }
 
     public function testCreateUsesFallbackUsernameWhenSanitizedBaseIsEmpty(): void
@@ -536,7 +835,7 @@ final class AdminProvisioningServiceTest extends TestCase
         $this->resolvedAclRoleId = Uuid::randomHex();
         $this->takenUsernames = ['user'];
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('x@example.com', username: '!!!'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('x@example.com', username: '!!!'), $this->context);
 
         self::assertSame('user1', $this->userCreates[0]['username']);
     }
@@ -550,11 +849,15 @@ final class AdminProvisioningServiceTest extends TestCase
 
         $this->expectAvatarImport('https://idp.example.com/a.png', null, $newAvatarId);
 
-        $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', picture: 'https://idp.example.com/a.png'), $this->context);
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', picture: 'https://idp.example.com/a.png'), $this->context);
 
         $userId = $this->userCreates[0]['id'];
         self::assertArrayNotHasKey('avatarId', $this->userCreates[0]);
-        self::assertSame([['id' => $userId, 'avatarId' => $newAvatarId]], $this->userUpdates);
+        self::assertSame([[
+            'id' => $userId,
+            'avatarId' => $newAvatarId,
+            'customFields' => [AdminProvisioningService::AVATAR_URL_HASH_FIELD => hash('sha256', 'https://idp.example.com/a.png')],
+        ]], $this->userUpdates);
         self::assertSame([['id' => $newAvatarId, 'private' => false]], $this->mediaUpdates);
     }
 
@@ -564,46 +867,152 @@ final class AdminProvisioningServiceTest extends TestCase
         $provider->setAutoCreateAdmin(true);
         $this->resolvedAclRoleId = Uuid::randomHex();
 
-        $this->fileFetcher->method('fetchFromURL')->willThrowException(new \RuntimeException('blocked'));
+        $this->avatarFetcher->method('fetch')->willThrowException(new \RuntimeException('blocked'));
 
-        $result = $this->createService()->findOrCreateAdmin($provider, new MappedProfile('jane@example.com', picture: 'https://10.0.0.1/a.png'), $this->context);
+        $result = $this->findOrCreate($provider, new MappedProfile('jane@example.com', picture: 'https://10.0.0.1/a.png'), $this->context);
 
         self::assertCount(1, $this->userCreates);
         self::assertSame([], $this->userUpdates);
         self::assertSame($this->userCreates[0]['id'], $result->getId());
     }
 
+    private function findOrCreate(Sw6OidcProviderEntity $provider, MappedProfile $profile, Context $context, ?ExternalIdentity $identity = null): UserEntity
+    {
+        return $this->createService()->findOrCreateAdmin(
+            $provider,
+            $profile,
+            $identity ?? new ExternalIdentity($provider->getId(), 'https://idp.example.com', $this->subject, $profile->email, $this->emailVerified),
+            $context,
+        );
+    }
+
     private function createService(): AdminProvisioningService
     {
+        $bindingService = new UserProviderBindingService($this->userProviderRepository());
+
         return new AdminProvisioningService(
             $this->userRepository(),
             $this->localeRepository(),
             $this->mediaRepository(),
             $this->groupMappingResolver,
-            new UserProviderBindingService($this->userProviderRepository()),
+            $bindingService,
+            new IdentityResolver($bindingService, $this->createStub(LoggerInterface::class)),
             $this->mediaService,
-            $this->fileFetcher,
+            $this->avatarFetcher,
             new TimeZoneValidator(),
             $this->createStub(LoggerInterface::class),
             $this->eventDispatcher ??= new EventDispatcher(),
+            $this->aclUserRoleRepository(),
+            $this->connection(),
+            $this->roleStore(),
         );
+    }
+
+    private function bindTo(Sw6OidcProviderEntity $provider): void
+    {
+        $this->boundProviderId = $provider->getId();
+        $this->boundSub = $this->subject;
+    }
+
+    private function connection(): Connection
+    {
+        $connection = $this->createStub(Connection::class);
+        $connection->method('transactional')->willReturnCallback(static fn (\Closure $callback): mixed => $callback($connection));
+
+        return $connection;
+    }
+
+    private function roleStore(): AdminRoleStore
+    {
+        $test = $this;
+
+        return new class($this->createStub(Connection::class), $test) extends AdminRoleStore {
+            public function __construct(Connection $connection, private readonly AdminProvisioningServiceTest $test)
+            {
+                parent::__construct($connection);
+            }
+
+            public function roleIds(string $userId): array
+            {
+                return $this->test->currentRoleIds();
+            }
+
+            public function managedRoleIds(string $userId): array
+            {
+                return $this->test->managedRoleIds();
+            }
+
+            public function rememberManaged(string $userId, array $roleIds, string $providerId): void
+            {
+                $this->test->rememberRoles($roleIds);
+            }
+
+            public function forgetManaged(string $userId, array $roleIds): void
+            {
+            }
+
+            public function revokeSuperadminUnlessLast(string $userId, callable $revoke): bool
+            {
+                if (!$this->test->hasOtherActiveSuperadmin()) {
+                    return false;
+                }
+
+                $revoke();
+
+                return true;
+            }
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function currentRoleIds(): array
+    {
+        return array_values(array_map(static fn (AclRoleEntity $role): string => $role->getId(), $this->existingUser?->getAclRoles()?->getElements() ?? []));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function managedRoleIds(): array
+    {
+        return $this->managedRoles;
+    }
+
+    /**
+     * @param list<string> $roleIds
+     */
+    public function rememberRoles(array $roleIds): void
+    {
+        array_push($this->rememberedRoles, ...$roleIds);
+    }
+
+    public function hasOtherActiveSuperadmin(): bool
+    {
+        return $this->otherActiveSuperadmin;
+    }
+
+    private function aclUserRoleRepository(): EntityRepository
+    {
+        $repository = $this->createStub(EntityRepository::class);
+        $repository->method('delete')->willReturnCallback(function (array $ids, Context $context): EntityWrittenContainerEvent {
+            array_push($this->roleDeletes, ...$ids);
+
+            return $this->writtenEvent($context);
+        });
+
+        return $repository;
     }
 
     private function expectAvatarImport(string $url, ?string $expectedExistingMediaId, string $returnedMediaId): void
     {
-        $this->fileFetcher->expects(self::once())
-            ->method('fetchFromURL')
+        $this->avatarFetcher->expects(self::once())
+            ->method('fetch')
             ->willReturnCallback(static function (string $pictureUrl, string $tempFile) use ($url): MediaFile {
                 self::assertSame($url, $pictureUrl);
 
                 return new MediaFile($tempFile, 'image/png', 'png', 123);
-            });
-        $this->fileFetcher->expects(self::once())
-            ->method('cleanUpTempFile')
-            ->willReturnCallback(static function (MediaFile $file): void {
-                if (is_file($file->getFileName())) {
-                    unlink($file->getFileName());
-                }
             });
         $this->mediaService->expects(self::once())
             ->method('saveMediaFile')
@@ -627,10 +1036,16 @@ final class AdminProvisioningServiceTest extends TestCase
             });
     }
 
+    /**
+     * Linking by verified email is opted into here so the pre-subject tests
+     * keep exercising find/create/sync; the linking policy itself is covered
+     * by IdentityResolverTest and the tests at the top of this class.
+     */
     private function provider(): Sw6OidcProviderEntity
     {
         $provider = new Sw6OidcProviderEntity();
         $provider->setId(Uuid::randomHex());
+        $provider->setLinkExistingAccounts(true);
 
         return $provider;
     }
@@ -641,6 +1056,8 @@ final class AdminProvisioningServiceTest extends TestCase
         $user->setId(Uuid::randomHex());
         $user->setUsername($username);
         $user->setEmail($username . '@example.com');
+        $user->setAdmin(false);
+        $user->setActive(true);
 
         return $user;
     }
@@ -662,6 +1079,7 @@ final class AdminProvisioningServiceTest extends TestCase
                 \assert(\is_string($id));
                 $user = new UserEntity();
                 $user->setId($id);
+                $user->setActive(true);
                 $users = [$user];
             }
 
@@ -669,6 +1087,12 @@ final class AdminProvisioningServiceTest extends TestCase
         });
 
         $repository->method('searchIds')->willReturnCallback(function (Criteria $criteria, Context $context): IdSearchResult {
+            foreach ($criteria->getFilters() as $filter) {
+                if ($filter instanceof EqualsFilter && $filter->getField() === 'admin') {
+                    return $this->idSearchResult($this->otherActiveSuperadmin ? [Uuid::randomHex()] : [], $criteria, $context);
+                }
+            }
+
             $username = $this->filterValue($criteria, 'username');
             $ids = \in_array($username, $this->takenUsernames, true) ? [Uuid::randomHex()] : [];
 
@@ -726,14 +1150,18 @@ final class AdminProvisioningServiceTest extends TestCase
         $repository->method('search')->willReturnCallback(function (Criteria $criteria, Context $context): EntitySearchResult {
             $bindings = [];
             $userId = $this->filterValue($criteria, 'userId');
+            $sub = $this->filterValue($criteria, 'sub');
 
-            if ($this->boundProviderId !== null && $userId !== null) {
-                $binding = new Sw6OidcUserProviderEntity();
-                $binding->setId(Uuid::randomHex());
-                $binding->setUserType(Sw6OidcUserProviderEntity::USER_TYPE_ADMIN);
-                $binding->setUserId($userId);
-                $binding->setProviderId($this->boundProviderId);
-                $bindings[] = $binding;
+            if ($sub !== null) {
+                // findUserIdBySubject()
+                if ($this->boundProviderId !== null
+                    && $this->boundSub === $sub
+                    && $this->filterValue($criteria, 'providerId') === $this->boundProviderId
+                    && $this->existingUser !== null) {
+                    $bindings[] = $this->binding($this->existingUser->getId());
+                }
+            } elseif ($this->boundProviderId !== null && $userId !== null) {
+                $bindings[] = $this->binding($userId);
             }
 
             return new EntitySearchResult(
@@ -752,6 +1180,20 @@ final class AdminProvisioningServiceTest extends TestCase
         });
 
         return $repository;
+    }
+
+    private function binding(string $userId): Sw6OidcUserProviderEntity
+    {
+        \assert($this->boundProviderId !== null);
+
+        $binding = new Sw6OidcUserProviderEntity();
+        $binding->setId(Uuid::randomHex());
+        $binding->setUserType(Sw6OidcUserProviderEntity::USER_TYPE_ADMIN);
+        $binding->setUserId($userId);
+        $binding->setProviderId($this->boundProviderId);
+        $binding->setSub($this->boundSub);
+
+        return $binding;
     }
 
     private function writtenEvent(Context $context): EntityWrittenContainerEvent

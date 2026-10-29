@@ -2,8 +2,10 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Oidc;
 
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
+use MartinKuhl\Sw6Oidc\Service\Oidc\ClientAuthentication;
 use MartinKuhl\Sw6Oidc\Service\Oidc\TokenExchangeService;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\ClientSecretUnavailableException;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
@@ -20,6 +22,7 @@ use PHPUnit\Framework\TestCase;
  * via client_id in the body instead, with no Authorization header.
  */
 #[CoversClass(TokenExchangeService::class)]
+#[CoversClass(ClientAuthentication::class)]
 final class TokenExchangeServiceTest extends TestCase
 {
     public function testConfidentialClientAuthenticatesViaBasicAuthAndOmitsCredentialsFromTheBody(): void
@@ -49,6 +52,57 @@ final class TokenExchangeServiceTest extends TestCase
         $service->exchangeCodeForTokens($provider, 'the-code', 'https://shop.example/callback', 'verifier');
     }
 
+    public function testClientSecretPostSendsTheCredentialsInTheBodyWithoutAnAuthorizationHeader(): void
+    {
+        $provider = $this->buildProvider(publicClient: false);
+        $provider->setTokenEndpointAuthMethod(Sw6OidcProviderDefinition::CLIENT_AUTH_METHOD_POST);
+
+        $httpClient = $this->createMock(OidcHttpClient::class);
+        $httpClient->expects(self::once())
+            ->method('postForm')
+            ->with(
+                'https://idp.example/token',
+                self::callback(static function (array $params): bool {
+                    self::assertSame('client-1', $params['client_id']);
+                    self::assertSame('the-secret', $params['client_secret']);
+                    self::assertSame('the-code', $params['code']);
+
+                    return true;
+                }),
+                10,
+                null,
+                null,
+            )
+            ->willReturn(['access_token' => 'at']);
+
+        (new TokenExchangeService($httpClient))->exchangeCodeForTokens($provider, 'the-code', 'https://shop.example/callback', 'verifier');
+    }
+
+    public function testPublicClientIgnoresClientSecretPost(): void
+    {
+        $provider = $this->buildProvider(publicClient: true);
+        $provider->setTokenEndpointAuthMethod(Sw6OidcProviderDefinition::CLIENT_AUTH_METHOD_POST);
+
+        $httpClient = $this->createMock(OidcHttpClient::class);
+        $httpClient->expects(self::once())
+            ->method('postForm')
+            ->with(
+                'https://idp.example/token',
+                self::callback(static function (array $params): bool {
+                    self::assertSame('client-1', $params['client_id']);
+                    self::assertArrayNotHasKey('client_secret', $params);
+
+                    return true;
+                }),
+                10,
+                null,
+                null,
+            )
+            ->willReturn(['access_token' => 'at']);
+
+        (new TokenExchangeService($httpClient))->exchangeCodeForTokens($provider, 'the-code', 'https://shop.example/callback', 'verifier');
+    }
+
     public function testPublicClientSendsClientIdInTheBodyWithoutAnAuthorizationHeader(): void
     {
         $provider = $this->buildProvider(publicClient: true);
@@ -72,32 +126,6 @@ final class TokenExchangeServiceTest extends TestCase
 
         $service = new TokenExchangeService($httpClient);
         $service->exchangeCodeForTokens($provider, 'the-code', 'https://shop.example/callback', 'verifier');
-    }
-
-    public function testRefreshAccessTokenAlsoAuthenticatesConfidentialClientsViaBasicAuth(): void
-    {
-        $provider = $this->buildProvider(publicClient: false);
-
-        $httpClient = $this->createMock(OidcHttpClient::class);
-        $httpClient->expects(self::once())
-            ->method('postForm')
-            ->with(
-                'https://idp.example/token',
-                self::callback(static function (array $params): bool {
-                    self::assertArrayNotHasKey('client_id', $params);
-                    self::assertArrayNotHasKey('client_secret', $params);
-                    self::assertSame('refresh_token', $params['grant_type']);
-
-                    return true;
-                }),
-                10,
-                'client-1',
-                'the-secret',
-            )
-            ->willReturn(['access_token' => 'at']);
-
-        $service = new TokenExchangeService($httpClient);
-        $service->refreshAccessToken($provider, 'refresh-token-value');
     }
 
     public function testUndecryptableSecretFailsBeforeAnyRequest(): void

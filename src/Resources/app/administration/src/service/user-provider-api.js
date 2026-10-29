@@ -1,18 +1,10 @@
 /**
  * Thin client for OidcUserProviderAdminController - the "OIDC Provider"
- * binding shown on the admin user and customer pages. Plain fetch() with the
- * current bearer token, form-encoded, matching the other sw6oidc admin calls
- * (see sw6oidc-profile-passkey).
+ * binding shown on the admin user and customer pages, through the plugin's
+ * ApiService (API base path and token refresh like core, F-H4).
  */
-function apiFetch(path, bodyFields) {
-    return fetch(path, {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${Shopware.Service('loginService').getToken()}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams(bodyFields),
-    });
+function api() {
+    return Shopware.Service('sw6oidcApiService');
 }
 
 /**
@@ -24,24 +16,14 @@ export async function fetchUserProviderBindings(userType, userIds) {
         return {};
     }
 
-    const response = await apiFetch('/api/_action/sw6oidc/user-provider/info', {
+    const { bindings } = await api().post('_action/sw6oidc/user-provider/info', {
         userType,
         userIds: userIds.join(','),
     });
 
-    if (!response.ok) {
-        throw new Error(`Loading OIDC provider bindings failed with status ${response.status}`);
-    }
-
-    const { bindings } = await response.json();
-
-    return bindings;
+    return bindings ?? {};
 }
 
 export async function unlinkUserProvider(userType, userId) {
-    const response = await apiFetch('/api/_action/sw6oidc/user-provider/unlink', { userType, userId });
-
-    if (!response.ok) {
-        throw new Error(`Unlinking OIDC provider failed with status ${response.status}`);
-    }
+    await api().post('_action/sw6oidc/user-provider/unlink', { userType, userId });
 }

@@ -22,7 +22,8 @@ final class AccessControlRulesTest extends Sw6OidcIntegrationTestCase
     public function testMatchingRulesLetTheCustomerIn(): void
     {
         $this->loginWithRules([
-            ['claimKey' => 'email', 'operator' => 'contains', 'value' => '@EXAMPLE.com'],
+            // Domain restriction: email_domain, never a substring match (N-M11).
+            ['claimKey' => 'email', 'operator' => 'email_domain', 'value' => 'EXAMPLE.com'],
             ['claimKey' => 'email_verified', 'operator' => 'eq', 'value' => 'true'],
         ]);
 

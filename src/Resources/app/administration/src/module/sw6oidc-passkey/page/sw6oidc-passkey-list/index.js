@@ -1,47 +1,39 @@
 import template from './sw6oidc-passkey-list.html.twig';
-import {
-    preparePublicKeyCreationOptions,
-    serializeAttestationCredential,
-} from '../../../../service/webauthn-codec';
 
 const { Component, Mixin } = Shopware;
 const { Criteria } = Shopware.Data;
 
 /**
- * Lockout-recovery grid (list + delete, via sw-entity-listing) plus the
- * missing piece: a "Register new passkey" action that runs the actual
- * WebAuthn attestation ceremony for the currently logged-in admin against
- * PasskeyAdminController::registrationOptions/registrationVerify. Registering
- * a passkey has no dedicated DAL "create" form — a public key can't be
- * hand-typed — so this button, not sw-entity-listing's own create route, is
- * the only way to add a credential.
+ * Lockout-recovery grid: every registered passkey (admin + customer), with
+ * delete for `sw6oidc_passkey_credential.deleter`. Registering a passkey is
+ * self-service only — in "My profile > Passkeys", which asks for step-up
+ * re-authentication first; this list doesn't duplicate that ceremony.
  *
- * Registered as a lazy factory (matching how Shopware's own core components
- * are registered), not a plain object, so that Mixin.getByName('notification')
- * below is only evaluated once Shopware actually builds this component -
- * never during this plugin's forced-early script execution on the login
- * screen (see Resources/views/administration/index.html.twig), where the
- * "notification" mixin isn't registered yet and this component is never
- * rendered anyway.
+ * Registered as a lazy factory, so the mixins are only resolved once
+ * Shopware builds the component — never during the plugin's forced-early
+ * script execution on the login screen, where they aren't registered yet.
  */
 Component.register('sw6oidc-passkey-list', () => Promise.resolve({
     template,
 
-    inject: ['repositoryFactory', 'acl', 'loginService'],
+    inject: ['repositoryFactory', 'acl'],
 
-    mixins: [Mixin.getByName('notification')],
+    mixins: [
+        Mixin.getByName('notification'),
+        Mixin.getByName('listing'),
+    ],
 
     data() {
         return {
             credentials: null,
             isLoading: true,
-            isRegistering: false,
-            // Keyed by `${userType}:${userId}` -> a human-readable label.
-            // sw6oidc_passkey_credential has no association to user/customer
-            // (it's a polymorphic userType/userId pair, not a real FK), so
-            // there's nothing the Admin API's own search can join in here -
-            // this is resolved with a couple of extra lookups instead.
+            limit: 25,
+            sortBy: 'createdAt',
+            sortDirection: 'DESC',
+            // `${userType}:${userId}` -> label; the credential's owner is a
+            // polymorphic pair without a DAL association.
             ownerNames: {},
+            requestId: 0,
         };
     },
 
@@ -66,34 +58,53 @@ Component.register('sw6oidc-passkey-list', () => Promise.resolve({
 
         columns() {
             return [
-                { property: 'userType', label: this.$tc('sw6oidc.passkeySettings.list.columnUserType') },
-                { property: 'owner', label: this.$tc('sw6oidc.passkeySettings.list.columnOwner') },
-                { property: 'nickname', label: this.$tc('sw6oidc.passkeySettings.list.columnNickname') },
-                { property: 'createdAt', label: this.$tc('sw6oidc.passkeySettings.list.columnCreatedAt') },
+                { property: 'userType', label: this.$t('sw6oidc.passkeySettings.list.columnUserType'), sortable: true },
+                { property: 'owner', label: this.$t('sw6oidc.passkeySettings.list.columnOwner'), sortable: false },
+                { property: 'nickname', label: this.$t('sw6oidc.passkeySettings.list.columnNickname'), sortable: true },
+                { property: 'createdAt', label: this.$t('sw6oidc.passkeySettings.list.columnCreatedAt'), sortable: true },
             ];
         },
     },
 
-    created() {
-        this.getList();
-    },
+    // No own created(): the listing mixin's created() already loads the list (R3-F11).
 
     methods: {
-        getList() {
+        async getList() {
+            const requestId = ++this.requestId;
             this.isLoading = true;
-            const criteria = new Criteria(1, 25);
-            criteria.addSorting(Criteria.sort('createdAt', 'DESC'));
 
-            return this.credentialRepository.search(criteria, Shopware.Context.api).then(async (result) => {
-                this.credentials = result;
-                await this.loadOwnerNames(result);
-                this.isLoading = false;
+            const criteria = new Criteria(this.page, this.limit);
+            criteria.addSorting(Criteria.sort(this.sortBy, this.sortDirection));
+            // Only what the grid shows; never the public key JSON (R3-L19).
+            criteria.addIncludes({
+                sw6oidc_passkey_credential: ['id', 'userType', 'userId', 'nickname', 'createdAt', 'disabledAt'],
             });
+
+            try {
+                const result = await this.credentialRepository.search(criteria, Shopware.Context.api);
+                const ownerNames = await this.loadOwnerNames(result);
+
+                // Only the newest request may update the list and the owner names (R3-F11).
+                if (requestId === this.requestId) {
+                    this.ownerNames = ownerNames;
+                    this.total = result.total;
+                    this.credentials = result;
+                }
+            } catch {
+                if (requestId === this.requestId) {
+                    this.createNotificationError({ message: this.$t('sw6oidc.passkeySettings.loadError') });
+                }
+            } finally {
+                if (requestId === this.requestId) {
+                    this.isLoading = false;
+                }
+            }
         },
 
         async loadOwnerNames(credentials) {
-            const adminIds = [...new Set(credentials.filter((credential) => credential.userType === 'admin').map((credential) => credential.userId))];
-            const customerIds = [...new Set(credentials.filter((credential) => credential.userType === 'customer').map((credential) => credential.userId))];
+            const idsOf = (type) => [...new Set(credentials.filter((credential) => credential.userType === type).map((credential) => credential.userId))];
+            const adminIds = idsOf('admin');
+            const customerIds = idsOf('customer');
 
             const [admins, customers] = await Promise.all([
                 adminIds.length
@@ -112,70 +123,19 @@ Component.register('sw6oidc-passkey-list', () => Promise.resolve({
                 names[`customer:${customer.id}`] = `${customer.firstName} ${customer.lastName}`.trim() || customer.email;
             });
 
-            this.ownerNames = names;
+            return names;
         },
 
         ownerName(item) {
             return this.ownerNames[`${item.userType}:${item.userId}`] || item.userId;
         },
 
-        async registerPasskey() {
-            if (!window.PublicKeyCredential) {
-                this.createNotificationError({ message: this.$tc('sw6oidc.passkeySettings.registerNoSupport') });
-                return;
-            }
-
-            this.isRegistering = true;
-
-            try {
-                const optionsResponse = await this.sw6oidcApiFetch('/api/sw6oidc/admin/passkey/registration-options', {});
-
-                if (!optionsResponse.ok) {
-                    throw new Error(`Registration options request failed with status ${optionsResponse.status}`);
-                }
-
-                const { sessionId, options } = await optionsResponse.json();
-
-                const credential = await navigator.credentials.create({
-                    publicKey: preparePublicKeyCreationOptions(options),
-                });
-
-                const nickname = window.prompt(this.$tc('sw6oidc.passkeySettings.registerNicknamePrompt')) || null;
-
-                const verifyResponse = await this.sw6oidcApiFetch('/api/sw6oidc/admin/passkey/registration-verify', {
-                    sessionId,
-                    credential: JSON.stringify(serializeAttestationCredential(credential)),
-                    nickname,
-                });
-
-                const result = await verifyResponse.json();
-
-                if (!verifyResponse.ok || !result.status) {
-                    throw new Error(result.message || `Registration failed with status ${verifyResponse.status}`);
-                }
-
-                this.createNotificationSuccess({ message: this.$tc('sw6oidc.passkeySettings.registerSuccess') });
-                await this.getList();
-            } catch (exception) {
-                // eslint-disable-next-line no-console
-                console.error('sw6oidc: admin passkey registration failed', exception);
-                this.createNotificationError({ message: this.$tc('sw6oidc.passkeySettings.registerError') });
-            } finally {
-                this.isRegistering = false;
-            }
+        userTypeLabel(item) {
+            return this.$t(`sw6oidc.passkeySettings.userType.${item.userType}`);
         },
 
-        sw6oidcApiFetch(path, bodyFields) {
-            return fetch(path, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    Authorization: `Bearer ${this.loginService.getToken()}`,
-                },
-                body: new URLSearchParams(
-                    Object.fromEntries(Object.entries(bodyFields).filter(([, value]) => value !== null && value !== undefined)),
-                ),
-            });
+        formatDate(value) {
+            return value ? Shopware.Utils.format.date(value) : '—';
         },
     },
 }));

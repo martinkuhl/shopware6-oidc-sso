@@ -4,6 +4,7 @@ namespace MartinKuhl\Sw6Oidc\Core\Content\Provider\Field;
 
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\Field;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\StorageAware;
 use Shopware\Core\Framework\DataAbstractionLayer\FieldSerializer\FieldSerializerInterface;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\DataStack\KeyValuePair;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\EntityExistence;
@@ -41,9 +42,10 @@ class Sw6OidcEncryptedFieldSerializer implements FieldSerializerInterface
     public function encode(Field $field, EntityExistence $existence, KeyValuePair $data, WriteParameterBag $parameters): \Generator
     {
         $value = $data->getValue();
+        $purpose = self::purpose($field);
 
         if (\is_string($value) && $this->encryptor->isEncrypted($value)) {
-            if (!$this->encryptor->canDecrypt($value)) {
+            if (!$this->encryptor->canDecrypt($value, $purpose)) {
                 $violations = new ConstraintViolationList([new ConstraintViolation(
                     'The encrypted secret cannot be decrypted with this installation\'s APP_SECRET. Provide the plaintext secret instead.',
                     null,
@@ -58,16 +60,25 @@ class Sw6OidcEncryptedFieldSerializer implements FieldSerializerInterface
                 throw new WriteConstraintViolationException($violations, $parameters->getPath());
             }
 
-            $data->setValue($this->encryptor->decrypt($value));
+            $data->setValue($this->encryptor->decrypt($value, $purpose));
         }
 
         foreach ($this->stringFieldSerializer->encode($field, $existence, $data, $parameters) as $storageName => $encoded) {
-            yield $storageName => \is_string($encoded) ? $this->encryptor->encrypt($encoded) : $encoded;
+            yield $storageName => \is_string($encoded) ? $this->encryptor->encrypt($encoded, $purpose) : $encoded;
         }
     }
 
     public function decode(Field $field, mixed $value): ?string
     {
-        return \is_string($value) ? $this->encryptor->decrypt($value) : null;
+        return \is_string($value) ? $this->encryptor->decrypt($value, self::purpose($field)) : null;
+    }
+
+    /**
+     * The encryption purpose (key + associated data) of a field: its entity
+     * and storage name, so an envelope only decrypts where it was written.
+     */
+    public static function purpose(Field $field): string
+    {
+        return 'sw6oidc_provider.' . ($field instanceof StorageAware ? $field->getStorageName() : $field->getPropertyName());
     }
 }

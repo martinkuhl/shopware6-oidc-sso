@@ -40,7 +40,12 @@ class WebhookNotifier
                 'timeout' => 10,
             ])->getStatusCode();
         } catch (\Throwable $exception) {
-            $this->logger->warning('sw6oidc: health alert webhook failed.', ['exception' => $exception->getMessage()]);
+            // Class and code only: transport messages contain the full URL,
+            // and webhook URLs embed their token (N-L8).
+            $this->logger->warning('sw6oidc: health alert webhook failed.', [
+                'exceptionClass' => $exception::class,
+                'exceptionCode' => $exception->getCode(),
+            ]);
 
             return false;
         }

@@ -3,8 +3,11 @@
 namespace MartinKuhl\Sw6Oidc\Controller\Api;
 
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
+use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
+use MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant;
+use MartinKuhl\Sw6Oidc\Service\Security\UserVerifiedScope;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;
@@ -17,13 +20,12 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * Read/unlink access to sw6oidc_user_provider for the Administration's
- * user and customer pages - the "OIDC Provider" info row, mirroring the
- * Magento reference module's OidcUserInfoPlugin/OidcInfoPlugin and its
- * "Unlink IdP" button (Controller/Adminhtml/Provider/UnlinkUser).
+ * user and customer pages - the "OIDC Provider" info row and its "Unlink
+ * IdP" button.
  *
  * A dedicated endpoint rather than the generic entity API because the
  * binding's userId is polymorphic (no DAL association to user/customer), and
@@ -42,10 +44,14 @@ class OidcUserProviderAdminController extends AbstractController
         Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER => 'customer',
     ];
 
+    /**
+     * @param EntityRepository<Sw6OidcUserProviderCollection> $userProviderRepository
+     */
     public function __construct(
         private readonly EntityRepository $userProviderRepository,
         private readonly UserProviderBindingService $bindingService,
         private readonly LoggerInterface $logger,
+        private readonly SsoOnlyInvariant $ssoOnlyInvariant,
     ) {
     }
 
@@ -83,7 +89,6 @@ class OidcUserProviderAdminController extends AbstractController
         $bindings = [];
 
         foreach ($this->userProviderRepository->search($criteria, $context)->getEntities() as $binding) {
-            \assert($binding instanceof Sw6OidcUserProviderEntity);
             $provider = $binding->getProvider();
 
             $bindings[$binding->getUserId()] = [
@@ -108,6 +113,21 @@ class OidcUserProviderAdminController extends AbstractController
 
         if (!$this->isAllowed($context, self::PRIVILEGE_PREFIX[$userType] . ':update')) {
             return new JsonResponse(['error' => 'forbidden'], 403);
+        }
+
+        if ($userType === Sw6OidcUserProviderEntity::USER_TYPE_ADMIN) {
+            // Core requires a re-authenticated token for any user change; an
+            // unlink can lock an admin out, so it needs the same (R3-H7).
+            if (!UserVerifiedScope::isPresent($request)) {
+                return new JsonResponse(['error' => 'user_verification_required'], 403);
+            }
+
+            if (!$this->ssoOnlyInvariant->holds(unboundUserIds: [$userId]) && $this->ssoOnlyInvariant->holds()) {
+                return new JsonResponse([
+                    'error' => 'last_sso_admin',
+                    'message' => 'Administration password login is disabled and this is the last admin who can log in through single sign-on.',
+                ], 409);
+            }
         }
 
         // System scope: the acting role was checked above, but it holds no

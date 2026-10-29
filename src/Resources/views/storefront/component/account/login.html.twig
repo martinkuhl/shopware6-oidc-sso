@@ -17,12 +17,16 @@
 {% sw_extends '@Storefront/storefront/component/account/login.html.twig' %}
 
 {% block component_account_login_form %}
+    {% set sw6oidcSsoProviders = sw6oidc_storefront_sso_providers(context) %}
+    {% set sw6oidcPasskeyAvailable = sw6oidc_storefront_passkey_available(context) %}
+
     {#
         disable_non_oidc_customer_login: don't render the email/password
-        form at all. Cosmetic only — PasswordLoginGuardLoginRoute rejects
-        password logins (Storefront and Store API) server-side either way.
+        form — but only when this page actually offers another way in.
+        Cosmetic only — PasswordLoginGuardLoginRoute rejects password logins
+        (Storefront and Store API) server-side either way.
     #}
-    {% if sw6oidc_storefront_password_login_disabled(context) %}
+    {% if sw6oidc_storefront_password_login_disabled(context) and (sw6oidcSsoProviders is not empty or sw6oidcPasskeyAvailable) %}
         {% sw_include '@Storefront/storefront/utilities/alert.html.twig' with {
             type: 'info',
             content: 'sw6oidc.login.passwordLoginDisabled'|trans|sw_sanitize
@@ -30,9 +34,6 @@
     {% else %}
         {{ parent() }}
     {% endif %}
-
-    {% set sw6oidcSsoProviders = sw6oidc_storefront_sso_providers(context) %}
-    {% set sw6oidcPasskeyAvailable = sw6oidc_storefront_passkey_available(context) %}
 
     {% if sw6oidcSsoProviders is not empty or sw6oidcPasskeyAvailable %}
         {#
@@ -52,19 +53,38 @@
                 provider otherwise has no way to tell them apart here.
             #}
             {% for sw6oidcSsoProvider in sw6oidcSsoProviders %}
-                <a href="{{ path('frontend.sw6oidc.login', { redirectTo: app.request.get('redirectTo'), providerId: sw6oidcSsoProvider.id }) }}"
+                {#
+                    The same redirectTo/redirectParameters core's own login form
+                    submits (route name + parameters, e.g. the checkout), resolved
+                    and validated server-side by RelayStateValidator.
+                #}
+                <a href="{{ path('frontend.sw6oidc.login', {
+                    redirectTo: redirectTo ?? 'frontend.account.home.page',
+                    redirectParameters: redirectParameters is defined and redirectParameters is iterable ? redirectParameters|json_encode : (redirectParameters ?? null),
+                    providerId: sw6oidcSsoProvider.id
+                }) }}"
+                   rel="nofollow"
                    class="btn btn-secondary">
-                    {{ sw6oidcSsoProvider.label|sw_sanitize }}
+                    {{ sw6oidcSsoProvider.label }}
                 </a>
             {% endfor %}
 
             {% if sw6oidcPasskeyAvailable %}
                 <button type="button"
                         class="btn btn-secondary"
-                        data-sw6oidc-passkey-login="true">
+                        data-sw6oidc-passkey-login="true"
+                        data-sw6oidc-options-url="{{ path('frontend.sw6oidc.passkey.login-options') }}"
+                        data-sw6oidc-verify-url="{{ path('frontend.sw6oidc.passkey.login-verify') }}"
+                        data-sw6oidc-error-target="sw6oidc-passkey-login-error"
+                        data-sw6oidc-error-text="{{ 'sw6oidc.passkey.loginError'|trans|striptags }}"
+                        data-sw6oidc-no-support-text="{{ 'sw6oidc.passkey.noSupport'|trans|striptags }}">
                     {{ 'sw6oidc.passkey.button'|trans|sw_sanitize }}
                 </button>
             {% endif %}
         </div>
+
+        {% if sw6oidcPasskeyAvailable %}
+            <div id="sw6oidc-passkey-login-error" class="alert alert-danger mt-2" role="alert" hidden></div>
+        {% endif %}
     {% endif %}
 {% endblock %}

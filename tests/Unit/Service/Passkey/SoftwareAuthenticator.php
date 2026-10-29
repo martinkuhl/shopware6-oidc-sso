@@ -15,8 +15,15 @@ final class SoftwareAuthenticator
 
     private int $counter = 0;
 
-    public function __construct(private readonly string $origin = 'https://shop.example')
-    {
+    /**
+     * @param string|null $rpIdOverride  sign for this RP ID instead of the origin's host (relay attacks)
+     * @param bool        $userVerified  whether the authenticator reports user verification (PIN/biometrics)
+     */
+    public function __construct(
+        private readonly string $origin = 'https://shop.example',
+        private readonly ?string $rpIdOverride = null,
+        private bool $userVerified = true,
+    ) {
         $key = openssl_pkey_new(['private_key_type' => \OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
         \assert($key instanceof \OpenSSLAsymmetricKey);
         $this->key = $key;
@@ -25,7 +32,20 @@ final class SoftwareAuthenticator
 
     public function rpId(): string
     {
-        return (string) parse_url($this->origin, \PHP_URL_HOST);
+        return $this->rpIdOverride ?? (string) parse_url($this->origin, \PHP_URL_HOST);
+    }
+
+    public function setUserVerified(bool $userVerified): void
+    {
+        $this->userVerified = $userVerified;
+    }
+
+    /**
+     * Simulates a cloned authenticator whose counter lags behind.
+     */
+    public function rewindCounter(int $counter): void
+    {
+        $this->counter = $counter;
     }
 
     /**
@@ -43,7 +63,7 @@ final class SoftwareAuthenticator
 
         $coseKey = self::cbor([1 => 2, 3 => -7, -1 => 1, -2 => new CborBytes($x), -3 => new CborBytes($y)]);
         $authData = hash('sha256', $this->rpId(), true)
-            . \chr(0x45) // UP | UV | AT
+            . \chr($this->userVerified ? 0x45 : 0x41) // UP | (UV) | AT
             . pack('N', $this->counter)
             . str_repeat("\0", 16) // aaguid
             . pack('n', \strlen($this->credentialId)) . $this->credentialId
@@ -64,7 +84,7 @@ final class SoftwareAuthenticator
     {
         ++$this->counter;
 
-        $authData = hash('sha256', $this->rpId(), true) . \chr(0x05) . pack('N', $this->counter);
+        $authData = hash('sha256', $this->rpId(), true) . \chr($this->userVerified ? 0x05 : 0x01) . pack('N', $this->counter);
         $clientData = $this->clientData('webauthn.get', (string) $options['challenge']);
         openssl_sign($authData . hash('sha256', $clientData, true), $signature, $this->key, \OPENSSL_ALGO_SHA256);
 

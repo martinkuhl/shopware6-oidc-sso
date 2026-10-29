@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Security;
 
+use MartinKuhl\Sw6Oidc\Core\Content\AccessControlRule\Sw6OidcAccessControlRuleCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\AccessControlRule\Sw6OidcAccessControlRuleDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\AccessControlRule\Sw6OidcAccessControlRuleEntity;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\AccessControlDeniedException;
@@ -17,22 +18,32 @@ use Shopware\Core\Framework\DataAbstractionLayer\Search\Sorting\FieldSorting;
  * must pass (AND, in sort_order); the first failing rule denies the login
  * with its own message. No rules configured = everyone allowed.
  *
- * Matching works on ClaimsNormalizer::flatten() output, list-aware:
- * - the claim's *members* are the values of its numeric children
- *   (`groups.0`, `groups.1`, ...) plus the names of its non-numeric children
- *   (Zitadel-style role object `roles.Engineering.orgId` → member
- *   `Engineering`);
- * - `eq`/`neq` compare the claim's own scalar value, or — for a one-member
- *   list — that member;
- * - `contains`/`not_contains` test membership when the claim has members,
- *   otherwise a substring of the scalar value (e.g. email contains
- *   "@example.com");
- * - `exists`/`not_exists` look at the key itself or any child key.
- * All comparisons are case-insensitive and trimmed; booleans, "true"/"false"
- * and 1/0 compare as equal. An unknown operator fails closed.
+ * Matching works on ClaimsNormalizer::flatten() output, list-aware. A
+ * claim's *values* are its members when it has any — the values of its
+ * numeric children (`groups.0`, `groups.1`, ...) plus the names of its
+ * non-numeric children (Zitadel-style role object `roles.Engineering.orgId`
+ * → `engineering`) — else its own scalar value:
+ * - `eq`: any value equals the expected value;
+ * - `neq`: the claim is present and no value equals it;
+ * - `contains`: a member equals it; on a scalar, one of its whitespace- or
+ *   comma-separated tokens does (exact token, never a substring, N-M11);
+ * - `not_contains`: the claim is present and `contains` is false;
+ * - `ends_with`: any value ends with the expected suffix;
+ * - `email_domain`: any value is an email address whose domain is exactly
+ *   the expected one (a leading `@` is ignored) — the safe way to restrict
+ *   by domain;
+ * - `exists`/`not_exists`: the key itself or any child key.
+ * Negative operators (`neq`, `not_contains`) **deny** when the claim is
+ * missing, so an omitted claim (group overage, ungranted scope) can never
+ * skip a deny-list rule (N-M10). All comparisons are case-insensitive and
+ * trimmed; booleans, "true"/"false" and 1/0 compare as equal. An unknown
+ * operator fails closed.
  */
 class Sw6OidcAccessControlEvaluator
 {
+    /**
+     * @param EntityRepository<Sw6OidcAccessControlRuleCollection> $ruleRepository
+     */
     public function __construct(
         private readonly EntityRepository $ruleRepository,
         private readonly LoggerInterface $logger,
@@ -51,8 +62,6 @@ class Sw6OidcAccessControlEvaluator
             ->addSorting(new FieldSorting('sortOrder', FieldSorting::ASCENDING));
 
         foreach ($this->ruleRepository->search($criteria, $context)->getEntities() as $rule) {
-            \assert($rule instanceof Sw6OidcAccessControlRuleEntity);
-
             if ($this->matches($rule, $flattenedClaims)) {
                 continue;
             }
@@ -77,31 +86,39 @@ class Sw6OidcAccessControlEvaluator
         $expected = $this->normalize($rule->getValue());
         $scalar = \array_key_exists($key, $flattenedClaims) ? $this->normalize($flattenedClaims[$key]) : null;
         $members = $this->members($key, $flattenedClaims);
-        $exists = $scalar !== null || $members !== [];
+        $values = $members !== [] ? $members : ($scalar !== null ? [$scalar] : []);
 
         return match ($rule->getOperator()) {
-            Sw6OidcAccessControlRuleDefinition::OPERATOR_EXISTS => $exists,
-            Sw6OidcAccessControlRuleDefinition::OPERATOR_NOT_EXISTS => !$exists,
-            Sw6OidcAccessControlRuleDefinition::OPERATOR_EQ => $this->equalsClaim($scalar, $members, $expected),
-            Sw6OidcAccessControlRuleDefinition::OPERATOR_NEQ => !$this->equalsClaim($scalar, $members, $expected),
+            Sw6OidcAccessControlRuleDefinition::OPERATOR_EXISTS => $values !== [],
+            Sw6OidcAccessControlRuleDefinition::OPERATOR_NOT_EXISTS => $values === [],
+            Sw6OidcAccessControlRuleDefinition::OPERATOR_EQ => $this->anyValue($values, $expected, $this->sameValue(...)),
+            Sw6OidcAccessControlRuleDefinition::OPERATOR_NEQ => $values !== [] && $expected !== null && !$this->anyValue($values, $expected, $this->sameValue(...)),
             Sw6OidcAccessControlRuleDefinition::OPERATOR_CONTAINS => $this->containsClaim($scalar, $members, $expected),
-            Sw6OidcAccessControlRuleDefinition::OPERATOR_NOT_CONTAINS => !$this->containsClaim($scalar, $members, $expected),
+            Sw6OidcAccessControlRuleDefinition::OPERATOR_NOT_CONTAINS => $values !== [] && $expected !== null && $expected !== ''
+                && !$this->containsClaim($scalar, $members, $expected),
+            Sw6OidcAccessControlRuleDefinition::OPERATOR_ENDS_WITH => $expected !== '' && $this->anyValue($values, $expected, str_ends_with(...)),
+            Sw6OidcAccessControlRuleDefinition::OPERATOR_EMAIL_DOMAIN => $this->anyValue($values, $expected, $this->hasEmailDomain(...)),
             default => $this->unknownOperator($rule),
         };
     }
 
     /**
-     * @param list<string> $members
+     * @param list<string> $values
+     * @param callable(string, string): bool $predicate
      */
-    private function equalsClaim(?string $scalar, array $members, ?string $expected): bool
+    private function anyValue(array $values, ?string $expected, callable $predicate): bool
     {
         if ($expected === null) {
             return false;
         }
 
-        $actual = $scalar ?? (\count($members) === 1 ? $members[0] : null);
+        foreach ($values as $value) {
+            if ($predicate($value, $expected)) {
+                return true;
+            }
+        }
 
-        return $actual !== null && $this->sameValue($actual, $expected);
+        return false;
     }
 
     /**
@@ -114,18 +131,29 @@ class Sw6OidcAccessControlEvaluator
         }
 
         if ($members !== []) {
-            foreach ($members as $member) {
-                if ($this->sameValue($member, $expected)) {
-                    return true;
-                }
-            }
+            return $this->anyValue($members, $expected, $this->sameValue(...));
+        }
 
+        if ($scalar === null) {
             return false;
         }
 
-        return $scalar !== null && str_contains($scalar, $expected);
+        $tokens = preg_split('/[\s,]+/u', $scalar, -1, \PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return \in_array($expected, $tokens, true);
     }
 
+    private function hasEmailDomain(string $value, string $expectedDomain): bool
+    {
+        $expectedDomain = ltrim($expectedDomain, '@');
+        $at = strrpos($value, '@');
+
+        if ($expectedDomain === '' || $at === false || filter_var($value, \FILTER_VALIDATE_EMAIL) === false) {
+            return false;
+        }
+
+        return substr($value, $at + 1) === $expectedDomain;
+    }
     /**
      * @param array<string, mixed> $flattenedClaims
      *

@@ -39,7 +39,7 @@ class OidcConnectionTestService
      *     revocationEndpoint?: string|null,
      *     issuer?: string|null,
      *     clientId?: string|null,
-     *     clientSecret?: string|null,
+     *     hasClientSecret?: bool,
      *     publicClient?: bool,
      *     httpTimeout?: int,
      * } $config
@@ -94,10 +94,17 @@ class OidcConnectionTestService
             return ['id' => 'well_known_reachable', 'status' => 'fail', 'detail' => $exception->getMessage()];
         }
 
+        $algorithmWarning = OidcDiscoveryService::unsupportedSigningAlgorithmsWarning($document['idTokenSigningAlgValuesSupported'] ?? null);
+        unset($document['idTokenSigningAlgValuesSupported']);
+
         // Fill in any endpoint the admin hasn't manually overridden, so the
         // downstream checks (required-endpoints, JWKS) see discovered values too.
         foreach ($document as $key => $value) {
             $endpoints[$key] ??= $value;
+        }
+
+        if ($algorithmWarning !== null) {
+            return ['id' => 'well_known_reachable', 'status' => 'fail', 'detail' => $algorithmWarning];
         }
 
         if ($violation['warnings'] !== []) {
@@ -153,14 +160,15 @@ class OidcConnectionTestService
     private function checkClientCredentials(array $config): array
     {
         $clientId = trim((string) ($config['clientId'] ?? ''));
-        $clientSecret = trim((string) ($config['clientSecret'] ?? ''));
+        // Only whether a secret exists: the test never needs its value (R3-L44).
+        $hasClientSecret = (bool) ($config['hasClientSecret'] ?? false);
         $publicClient = (bool) ($config['publicClient'] ?? false);
 
         if ($clientId === '') {
             return ['id' => 'client_credentials_present', 'status' => 'fail', 'detail' => 'Client ID is not set.', 'messageKey' => 'clientIdMissing'];
         }
 
-        if (!$publicClient && $clientSecret === '') {
+        if (!$publicClient && !$hasClientSecret) {
             return [
                 'id' => 'client_credentials_present',
                 'status' => 'fail',

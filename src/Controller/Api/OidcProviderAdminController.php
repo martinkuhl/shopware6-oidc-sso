@@ -2,17 +2,23 @@
 
 namespace MartinKuhl\Sw6Oidc\Controller\Api;
 
+use Doctrine\DBAL\Connection;
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Http\Exception\OidcHttpException;
 use MartinKuhl\Sw6Oidc\Service\Oidc\AuthorizationRequestBuilder;
-use MartinKuhl\Sw6Oidc\Service\Security\SsrfUrlValidator;
 use MartinKuhl\Sw6Oidc\Service\Oidc\OidcConnectionTestService;
 use MartinKuhl\Sw6Oidc\Service\Oidc\OidcDiscoveryService;
 use MartinKuhl\Sw6Oidc\Service\Oidc\OidcLiveLoginTestService;
 use MartinKuhl\Sw6Oidc\Service\Oidc\TestResultTranslator;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\InvalidStateException;
+use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use MartinKuhl\Sw6Oidc\Service\Security\OidcSecurityHelper;
+use MartinKuhl\Sw6Oidc\Service\Security\PublicError;
+use MartinKuhl\Sw6Oidc\Service\Security\SsrfUrlValidator;
+use MartinKuhl\Sw6Oidc\Subscriber\Sw6OidcProviderWriteGuardSubscriber;
 use Psr\Log\LoggerInterface;
+use Shopware\Core\Defaults;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
@@ -22,7 +28,8 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
@@ -44,6 +51,13 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 #[Route(defaults: ['_routeScope' => ['api']])]
 class OidcProviderAdminController extends AbstractController
 {
+    private const MAX_STORED_CLAIM_KEYS = 500;
+    private const DEFAULT_TEST_TIMEOUT_SECONDS = 10;
+    private const MAX_TEST_TIMEOUT_SECONDS = 30;
+
+    /**
+     * @param EntityRepository<Sw6OidcProviderCollection> $providerRepository
+     */
     public function __construct(
         private readonly EntityRepository $providerRepository,
         private readonly AuthorizationRequestBuilder $requestBuilder,
@@ -54,24 +68,71 @@ class OidcProviderAdminController extends AbstractController
         private readonly OidcLiveLoginTestService $liveLoginTestService,
         private readonly LoggerInterface $logger,
         private readonly TestResultTranslator $translator,
+        private readonly ?Connection $connection = null,
     ) {
+    }
+
+    /**
+     * What the provider form needs from the server: the storefront
+     * post-logout landing URLs (one per storefront domain — the admin's own
+     * origin is usually not one, F-N15) and whether a webhook URL is stored
+     * for this provider (it's write-only, F-N6).
+     */
+    #[Route(
+        path: '/api/_action/sw6oidc/provider/form-context',
+        name: 'api.action.sw6oidc.provider.form-context',
+        defaults: ['_acl' => ['sw6oidc_provider:read']],
+        methods: ['GET'],
+    )]
+    public function formContext(Request $request, Context $context): JsonResponse
+    {
+        $providerId = (string) $request->query->get('providerId', '');
+        $provider = Uuid::isValid($providerId) ? $this->loadProvider($providerId, $context) : null;
+
+        return new JsonResponse([
+            'postLogoutLandingUrls' => $this->postLogoutLandingUrls(),
+            'webhookConfigured' => $provider instanceof Sw6OidcProviderEntity && (string) $provider->getHealthAlertWebhookUrl() !== '',
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function postLogoutLandingUrls(): array
+    {
+        if (!$this->connection instanceof Connection) {
+            return [];
+        }
+
+        $urls = $this->connection->fetchFirstColumn(
+            'SELECT DISTINCT domain.`url` FROM `sales_channel_domain` domain
+             INNER JOIN `sales_channel` channel ON channel.`id` = domain.`sales_channel_id`
+             WHERE channel.`type_id` = :storefront AND channel.`active` = 1
+             ORDER BY domain.`url`',
+            ['storefront' => Uuid::fromHexToBytes(Defaults::SALES_CHANNEL_TYPE_STOREFRONT)],
+        );
+
+        return array_values(array_map(
+            static fn (mixed $url): string => rtrim((string) $url, '/') . '/sw6oidc/postlogout',
+            array_filter($urls, static fn (mixed $url): bool => \is_string($url) && $url !== ''),
+        ));
     }
 
     #[Route(
         path: '/api/_action/sw6oidc/provider/discover',
         name: 'api.action.sw6oidc.provider.discover',
-        defaults: ['_acl' => ['sw6oidc_provider.editor']],
+        defaults: ['_acl' => ['sw6oidc_provider:update']],
         methods: ['POST'],
     )]
     public function discover(Request $request): JsonResponse
     {
-        $wellKnownConfigUrl = (string) $request->request->get('wellKnownConfigUrl', '');
+        $wellKnownConfigUrl = $this->stringInput($request, 'wellKnownConfigUrl') ?? '';
 
         if ($wellKnownConfigUrl === '') {
             return new JsonResponse(['error' => 'invalid_request', 'message' => 'A well-known configuration URL is required.'], 400);
         }
 
-        $timeout = (int) $request->request->get('httpTimeout', 10) ?: 10;
+        $timeout = $this->timeoutInput($request);
 
         $violation = $this->urlValidator->validate($wellKnownConfigUrl);
 
@@ -82,45 +143,51 @@ class OidcProviderAdminController extends AbstractController
         try {
             $endpoints = $this->discoveryService->discover($wellKnownConfigUrl, $timeout);
         } catch (OidcHttpException $exception) {
-            $this->logger->warning('sw6oidc: discovery request failed.', ['exception' => $exception->getMessage()]);
-
-            return new JsonResponse(['error' => 'discovery_failed', 'message' => $exception->getMessage()], 400);
+            return PublicError::response($this->logger, 'sw6oidc: discovery request failed.', $exception, 'discovery_failed', Response::HTTP_BAD_REQUEST);
         }
 
-        return new JsonResponse(array_merge($endpoints, ['warnings' => $violation['warnings']]));
+        $warnings = $violation['warnings'];
+        $algorithmWarning = OidcDiscoveryService::unsupportedSigningAlgorithmsWarning($endpoints['idTokenSigningAlgValuesSupported'] ?? null);
+        unset($endpoints['idTokenSigningAlgValuesSupported']);
+
+        if ($algorithmWarning !== null) {
+            $warnings[] = $algorithmWarning;
+        }
+
+        return new JsonResponse(array_merge($endpoints, ['warnings' => $warnings]));
     }
 
     #[Route(
         path: '/api/_action/sw6oidc/provider/test-connection',
         name: 'api.action.sw6oidc.provider.test-connection',
-        defaults: ['_acl' => ['sw6oidc_provider.editor']],
+        defaults: ['_acl' => ['sw6oidc_provider:update']],
         methods: ['POST'],
     )]
     public function testConnection(Request $request, Context $context): JsonResponse
     {
-        $clientSecret = $request->request->get('clientSecret');
-        $providerId = (string) $request->request->get('providerId', '');
+        $providerId = $this->stringInput($request, 'providerId') ?? '';
+        $hasClientSecret = trim($this->stringInput($request, 'clientSecret') ?? '') !== '';
 
         // client_secret is write-only over the API, so the form of an existing
         // provider sends nothing unless the admin typed a new one: fall back
         // to the stored secret.
-        if (($clientSecret === null || $clientSecret === '') && Uuid::isValid($providerId)) {
-            $clientSecret = $this->loadProvider($providerId, $context)?->getClientSecret();
+        if (!$hasClientSecret && Uuid::isValid($providerId)) {
+            $hasClientSecret = $this->loadProvider($providerId, $context)?->getUsableClientSecret() !== null;
         }
 
         $config = [
-            'wellKnownConfigUrl' => $request->request->get('wellKnownConfigUrl'),
-            'authorizeEndpoint' => $request->request->get('authorizeEndpoint'),
-            'accessTokenEndpoint' => $request->request->get('accessTokenEndpoint'),
-            'userInfoEndpoint' => $request->request->get('userInfoEndpoint'),
-            'jwksEndpoint' => $request->request->get('jwksEndpoint'),
-            'endSessionEndpoint' => $request->request->get('endSessionEndpoint'),
-            'revocationEndpoint' => $request->request->get('revocationEndpoint'),
-            'issuer' => $request->request->get('issuer'),
-            'clientId' => $request->request->get('clientId'),
-            'clientSecret' => $clientSecret,
+            'wellKnownConfigUrl' => $this->stringInput($request, 'wellKnownConfigUrl'),
+            'authorizeEndpoint' => $this->stringInput($request, 'authorizeEndpoint'),
+            'accessTokenEndpoint' => $this->stringInput($request, 'accessTokenEndpoint'),
+            'userInfoEndpoint' => $this->stringInput($request, 'userInfoEndpoint'),
+            'jwksEndpoint' => $this->stringInput($request, 'jwksEndpoint'),
+            'endSessionEndpoint' => $this->stringInput($request, 'endSessionEndpoint'),
+            'revocationEndpoint' => $this->stringInput($request, 'revocationEndpoint'),
+            'issuer' => $this->stringInput($request, 'issuer'),
+            'clientId' => $this->stringInput($request, 'clientId'),
+            'hasClientSecret' => $hasClientSecret,
             'publicClient' => $request->request->getBoolean('publicClient'),
-            'httpTimeout' => (int) $request->request->get('httpTimeout', 10) ?: 10,
+            'httpTimeout' => $this->timeoutInput($request),
         ];
 
         return new JsonResponse($this->connectionTestService->test($config));
@@ -129,7 +196,7 @@ class OidcProviderAdminController extends AbstractController
     #[Route(
         path: '/api/_action/sw6oidc/provider/{id}/test',
         name: 'api.action.sw6oidc.provider.test-start',
-        defaults: ['_acl' => ['sw6oidc_provider.viewer']],
+        defaults: ['_acl' => ['sw6oidc_provider:update']],
         methods: ['POST'],
     )]
     public function startLiveTest(string $id, Request $request, Context $context): JsonResponse
@@ -148,11 +215,10 @@ class OidcProviderAdminController extends AbstractController
         }
 
         $redirectUri = $this->generateUrl('api.action.sw6oidc.provider.test-callback', [], UrlGeneratorInterface::ABSOLUTE_URL);
-        // A test flow has no post-login redirect, so its relay-state slot
-        // carries the admin's UI locale through the IdP round trip instead:
-        // the anonymous popup callback has no other way to know it.
+        // The anonymous popup callback has no other way to know the admin's
+        // UI locale, so the flow carries it.
         $locale = $this->translator->normalizeLocale((string) $request->request->get('locale', ''));
-        $authorizeUrl = $this->requestBuilder->build($provider, 'test', $locale, $redirectUri);
+        $authorizeUrl = $this->requestBuilder->build($provider, LoginType::ProviderTest->value, '', $redirectUri, locale: $locale);
 
         return new JsonResponse(['authorizeUrl' => $authorizeUrl]);
     }
@@ -185,16 +251,16 @@ class OidcProviderAdminController extends AbstractController
 
         try {
             $flow = $this->securityHelper->consumeAuthorizationFlow(\is_string($state) ? $state : null);
-        } catch (InvalidStateException $exception) {
+        } catch (InvalidStateException) {
             // No flow, so no stored admin locale: best effort from the browser.
             $locale = $this->translator->normalizeLocale($request->getPreferredLanguage());
 
             return $this->renderTestResultPage('fail', [
-                ['id' => 'callback', 'status' => 'fail', 'detail' => $exception->getMessage(), 'messageKey' => 'callbackInvalidState'],
+                ['id' => 'callback', 'status' => 'fail', 'detail' => 'Unknown, expired, or already-used test state.', 'messageKey' => 'callbackInvalidState'],
             ], [], $cspNonce, $locale);
         }
 
-        if ($flow->loginType !== 'test') {
+        if ($flow->loginType !== LoginType::ProviderTest->value) {
             $this->logger->warning('sw6oidc: provider test callback received a non-test authorization flow; refusing.', [
                 'providerId' => $flow->providerId,
             ]);
@@ -209,7 +275,7 @@ class OidcProviderAdminController extends AbstractController
             ], [], $cspNonce, $this->translator->normalizeLocale($request->getPreferredLanguage()));
         }
 
-        $locale = $this->translator->normalizeLocale($flow->relayState);
+        $locale = $this->translator->normalizeLocale($flow->locale ?? '');
 
         $context = Context::createDefaultContext();
 
@@ -258,9 +324,38 @@ class OidcProviderAdminController extends AbstractController
         return $this->renderTestResultPage($result['status'], $result['steps'], $result['claims'], $cspNonce, $locale);
     }
 
+    /**
+     * Deletes a provider although accounts are bound to it: the
+     * Administration asked first, because those accounts lose SSO (their
+     * bindings go with the provider). A plain DAL delete of such a provider is
+     * refused by the write guard (R3-L43).
+     */
+    #[Route(
+        path: '/api/_action/sw6oidc/provider/{id}/delete',
+        name: 'api.action.sw6oidc.provider.delete',
+        defaults: ['_acl' => ['sw6oidc_provider:delete']],
+        methods: ['POST'],
+    )]
+    public function deleteWithBindings(string $id, Context $context): JsonResponse
+    {
+        if (!$this->loadProvider($id, $context) instanceof Sw6OidcProviderEntity) {
+            return new JsonResponse(['error' => 'not_found'], 404);
+        }
+
+        $context->addState(Sw6OidcProviderWriteGuardSubscriber::STATE_BINDING_LOSS_CONFIRMED);
+
+        try {
+            $this->providerRepository->delete([['id' => $id]], $context);
+        } finally {
+            $context->removeState(Sw6OidcProviderWriteGuardSubscriber::STATE_BINDING_LOSS_CONFIRMED);
+        }
+
+        return new JsonResponse(['status' => true]);
+    }
+
     private function loadProvider(string $id, Context $context): ?Sw6OidcProviderEntity
     {
-        $provider = $this->providerRepository->search(new Criteria([$id]), $context)->first();
+        $provider = Uuid::isValid($id) ? $this->providerRepository->search(new Criteria([$id]), $context)->first() : null;
 
         return $provider instanceof Sw6OidcProviderEntity ? $provider : null;
     }
@@ -282,11 +377,46 @@ class OidcProviderAdminController extends AbstractController
         // any $claims) must not wipe out the claims a prior successful test
         // already gave the admin to work with in the attribute-mapping
         // picker.
+        //
+        // Only the claim *keys* are kept (M13): the attribute-mapping picker
+        // needs nothing else, and the values are the tester's personal data,
+        // readable by every provider viewer. The values are shown once, in
+        // the result popup of the admin who ran the test.
         if ($claims !== []) {
-            $payload['lastTestClaims'] = $claims;
+            $payload['lastTestClaims'] = array_fill_keys(\array_slice(array_map(strval(...), array_keys($claims)), 0, self::MAX_STORED_CLAIM_KEYS), null);
         }
 
         $this->providerRepository->update([$payload], $context);
+    }
+
+    /**
+     * A string request field, or null when absent. Any other JSON type is a
+     * client error, not a TypeError deep inside the test (R3-L44).
+     */
+    private function stringInput(Request $request, string $key): ?string
+    {
+        $value = $request->request->all()[$key] ?? null;
+
+        if ($value === null || \is_string($value)) {
+            return $value;
+        }
+
+        throw new BadRequestHttpException(sprintf('"%s" must be a string.', $key));
+    }
+
+    /**
+     * The test timeout in seconds, clamped to 1–30 (R3-L44): the endpoints
+     * run inside the admin's request.
+     */
+    private function timeoutInput(Request $request): int
+    {
+        $value = $request->request->all()['httpTimeout'] ?? self::DEFAULT_TEST_TIMEOUT_SECONDS;
+
+        if (!is_numeric($value)) {
+            throw new BadRequestHttpException('"httpTimeout" must be a number.');
+        }
+
+        return max(1, min(self::MAX_TEST_TIMEOUT_SECONDS, (int) $value));
     }
 
     /**

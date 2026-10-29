@@ -8,18 +8,20 @@ use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\OrFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\SuffixFilter;
+use Shopware\Core\System\Country\Aggregate\CountryState\CountryStateCollection;
+use Shopware\Core\System\Country\CountryCollection;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Resolves a free-text country claim (ISO-2, ISO-3, or a display name in any
  * shop language) to a Shopware `country` entity id — ISO passthrough first,
- * then a translated-name lookup, memoized per request. Mirrors the Magento
- * module's unified Model/Attribute/CountryResolver.php. Also resolves a
+ * then a translated-name lookup, memoized per request. Also resolves a
  * free-text state/region claim to a `country_state` id, scoped to an
  * already-resolved country (short codes like "BY" collide across
  * countries, so a state can only ever be resolved once its country is
  * known).
  */
-class CountryResolver
+class CountryResolver implements ResetInterface
 {
     /** @var array<string, string|null> */
     private array $memoized = [];
@@ -27,10 +29,23 @@ class CountryResolver
     /** @var array<string, string|null> */
     private array $stateMemoized = [];
 
+    /**
+     * @param EntityRepository<CountryCollection> $countryRepository
+     * @param EntityRepository<CountryStateCollection> $countryStateRepository
+     */
     public function __construct(
         private readonly EntityRepository $countryRepository,
         private readonly EntityRepository $countryStateRepository,
     ) {
+    }
+
+    /**
+     * Long-running workers: the memo is per request (M20).
+     */
+    public function reset(): void
+    {
+        $this->memoized = [];
+        $this->stateMemoized = [];
     }
 
     public function resolveCountryId(?string $countryClaim, Context $context): ?string

@@ -5,11 +5,13 @@ namespace MartinKuhl\Sw6Oidc\Service\Provisioning;
 /**
  * Claim values already resolved against a provider's sw6oidc_attribute_mapping
  * rows, ready to be written to a Shopware customer/user (+ address) entity.
- * Every field but email is optional — full attribute parity (Phase 1 decision)
- * without forcing every claim to be configured.
+ * Every field but email is optional, so no claim has to be configured.
  */
 final readonly class MappedProfile
 {
+    /** customer/address/user first_name, last_name, username (core: 255) */
+    public const MAX_NAME_LENGTH = 255;
+
     public function __construct(
         public string $email,
         public ?string $username = null,
@@ -31,5 +33,34 @@ final readonly class MappedProfile
         /** @var string[] */
         public array $groups = [],
     ) {
+    }
+
+    /**
+     * A copy with every free-text value cut to the column it ends up in
+     * (customer, address and user fields): a 300-character `given_name` must
+     * not make every login of that user fail with a WriteException (R3-L21).
+     */
+    public function truncatedToFieldLimits(): self
+    {
+        return new self(
+            $this->email,
+            self::fit($this->username, self::MAX_NAME_LENGTH),
+            self::fit($this->firstName, self::MAX_NAME_LENGTH),
+            self::fit($this->lastName, self::MAX_NAME_LENGTH),
+            $this->birthday,
+            $this->salutationTechnicalName,
+            self::fit($this->phone, AddressProfile::MAX_PHONE_LENGTH),
+            $this->locale,
+            $this->zoneinfo,
+            $this->picture,
+            $this->billingAddress?->truncatedToFieldLimits(),
+            $this->shippingAddress?->truncatedToFieldLimits(),
+            $this->groups,
+        );
+    }
+
+    public static function fit(?string $value, int $maxLength): ?string
+    {
+        return $value !== null && mb_strlen($value) > $maxLength ? mb_substr($value, 0, $maxLength) : $value;
     }
 }

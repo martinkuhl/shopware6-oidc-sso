@@ -33,7 +33,9 @@ class PasswordLoginPolicy
 
         return array_filter(
             $this->providerResolver->getActiveProviders($loginType, $context),
-            static fn (Sw6OidcProviderEntity $provider): bool => $loginType === 'admin' ? $provider->isDisableNonOidcAdminLogin() : $provider->isDisableNonOidcCustomerLogin(),
+            static fn (Sw6OidcProviderEntity $provider): bool => $loginType === LoginType::Admin->value
+                ? $provider->isDisableNonOidcAdminLogin()
+                : $provider->isDisableNonOidcCustomerLogin(),
         ) !== [];
     }
 }

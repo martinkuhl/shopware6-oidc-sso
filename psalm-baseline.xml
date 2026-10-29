@@ -1,0 +1,955 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<files psalm-version="6.19.1@e2ca44251c1f1aa2e35452d426895746b47de64e">
+  <file src="src/Console/ExportOidcConfigCommand.php">
+    <UnusedClass>
+      <code><![CDATA[ExportOidcConfigCommand]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Console/ImportOidcConfigCommand.php">
+    <UnusedClass>
+      <code><![CDATA[ImportOidcConfigCommand]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Api/OidcAdminAuthController.php">
+    <UnusedClass>
+      <code><![CDATA[OidcAdminAuthController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Api/OidcDiagnosticsController.php">
+    <UnusedClass>
+      <code><![CDATA[OidcDiagnosticsController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Api/OidcProviderAdminController.php">
+    <UnusedClass>
+      <code><![CDATA[OidcProviderAdminController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Api/OidcUserProviderAdminController.php">
+    <UnusedClass>
+      <code><![CDATA[OidcUserProviderAdminController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Api/PasskeyAdminController.php">
+    <UnusedClass>
+      <code><![CDATA[PasskeyAdminController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Api/ProviderLockoutConfirmationController.php">
+    <UnusedClass>
+      <code><![CDATA[ProviderLockoutConfirmationController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Api/SessionActivityController.php">
+    <UnusedClass>
+      <code><![CDATA[SessionActivityController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Api/StepUpController.php">
+    <UnusedClass>
+      <code><![CDATA[StepUpController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/HealthCheckController.php">
+    <UnusedClass>
+      <code><![CDATA[HealthCheckController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Oidc/BackChannelLogoutController.php">
+    <UnusedClass>
+      <code><![CDATA[BackChannelLogoutController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Oidc/FrontChannelLogoutController.php">
+    <UnusedClass>
+      <code><![CDATA[FrontChannelLogoutController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Controller/Oidc/PostLogoutController.php">
+    <UnusedClass>
+      <code><![CDATA[PostLogoutController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Core/Content/AccessControlRule/Sw6OidcAccessControlRuleEntity.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[getProviderId]]></code>
+      <code><![CDATA[setClaimKey]]></code>
+      <code><![CDATA[setErrorMessage]]></code>
+      <code><![CDATA[setOperator]]></code>
+      <code><![CDATA[setProvider]]></code>
+      <code><![CDATA[setProviderId]]></code>
+      <code><![CDATA[setSortOrder]]></code>
+      <code><![CDATA[setValue]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Core/Content/AttributeMapping/Sw6OidcAttributeMappingEntity.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[getProviderId]]></code>
+      <code><![CDATA[setAttributeName]]></code>
+      <code><![CDATA[setAttributeType]]></code>
+      <code><![CDATA[setProvider]]></code>
+      <code><![CDATA[setProviderId]]></code>
+      <code><![CDATA[setTransformFunction]]></code>
+      <code><![CDATA[setTransformParams]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Core/Content/PasskeyCredential/Sw6OidcPasskeyCredentialEntity.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getCredentialId]]></code>
+      <code><![CDATA[getSignCount]]></code>
+      <code><![CDATA[getUserHandle]]></code>
+      <code><![CDATA[setCredentialId]]></code>
+      <code><![CDATA[setCredentialIdHash]]></code>
+      <code><![CDATA[setDisabledAt]]></code>
+      <code><![CDATA[setNickname]]></code>
+      <code><![CDATA[setPublicKey]]></code>
+      <code><![CDATA[setSignCount]]></code>
+      <code><![CDATA[setUserHandle]]></code>
+      <code><![CDATA[setUserId]]></code>
+      <code><![CDATA[setUserType]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Core/Content/Provider/Field/Sw6OidcEncryptedFieldSerializer.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Core/Content/Provider/Sw6OidcProviderEntity.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getLastTestAt]]></code>
+      <code><![CDATA[getLastTestClaims]]></code>
+      <code><![CDATA[getLastTestStatus]]></code>
+      <code><![CDATA[getSortOrder]]></code>
+      <code><![CDATA[setAccessControlRules]]></code>
+      <code><![CDATA[setAccessTokenEndpoint]]></code>
+      <code><![CDATA[setAllowSuperadminGroupMapping]]></code>
+      <code><![CDATA[setAppName]]></code>
+      <code><![CDATA[setAttributeMappings]]></code>
+      <code><![CDATA[setAuthorizeEndpoint]]></code>
+      <code><![CDATA[setAutoCreateAdmin]]></code>
+      <code><![CDATA[setAutoCreateCustomer]]></code>
+      <code><![CDATA[setBase64Claims]]></code>
+      <code><![CDATA[setClientId]]></code>
+      <code><![CDATA[setClientSecret]]></code>
+      <code><![CDATA[setDefaultAclRole]]></code>
+      <code><![CDATA[setDefaultAclRoleId]]></code>
+      <code><![CDATA[setDefaultCustomerGroup]]></code>
+      <code><![CDATA[setDefaultCustomerGroupId]]></code>
+      <code><![CDATA[setDisableNonOidcAdminLogin]]></code>
+      <code><![CDATA[setDisableNonOidcCustomerLogin]]></code>
+      <code><![CDATA[setDisplayName]]></code>
+      <code><![CDATA[setEndSessionEndpoint]]></code>
+      <code><![CDATA[setFrontchannelAdminLogout]]></code>
+      <code><![CDATA[setGroupAttribute]]></code>
+      <code><![CDATA[setHealthAlertFailureThreshold]]></code>
+      <code><![CDATA[setHealthAlertNotifyOnRecovery]]></code>
+      <code><![CDATA[setHealthAlertWebhookUrl]]></code>
+      <code><![CDATA[setHttpTimeout]]></code>
+      <code><![CDATA[setIsActive]]></code>
+      <code><![CDATA[setIssuer]]></code>
+      <code><![CDATA[setJwksCacheTtl]]></code>
+      <code><![CDATA[setJwksEndpoint]]></code>
+      <code><![CDATA[setLastTestAt]]></code>
+      <code><![CDATA[setLastTestClaims]]></code>
+      <code><![CDATA[setLastTestStatus]]></code>
+      <code><![CDATA[setLinkExistingAccounts]]></code>
+      <code><![CDATA[setLoginType]]></code>
+      <code><![CDATA[setLogoutStyle]]></code>
+      <code><![CDATA[setPkceFlow]]></code>
+      <code><![CDATA[setPostLogoutUrl]]></code>
+      <code><![CDATA[setPublicClient]]></code>
+      <code><![CDATA[setRequireEmailVerified]]></code>
+      <code><![CDATA[setRevocationEndpoint]]></code>
+      <code><![CDATA[setRevocationEndpointAuthMethod]]></code>
+      <code><![CDATA[setRevokeSuperadminOnSso]]></code>
+      <code><![CDATA[setRoleMappings]]></code>
+      <code><![CDATA[setScope]]></code>
+      <code><![CDATA[setShowAdminLink]]></code>
+      <code><![CDATA[setShowCustomerLink]]></code>
+      <code><![CDATA[setSortOrder]]></code>
+      <code><![CDATA[setSyncAdminProfileOnSso]]></code>
+      <code><![CDATA[setSyncAdminRoleOnSso]]></code>
+      <code><![CDATA[setSyncCustomerAddressOnSso]]></code>
+      <code><![CDATA[setSyncCustomerGroupOnSso]]></code>
+      <code><![CDATA[setSyncCustomerProfileOnSso]]></code>
+      <code><![CDATA[setTokenEndpointAuthMethod]]></code>
+      <code><![CDATA[setUserInfoEndpoint]]></code>
+      <code><![CDATA[setWellKnownConfigUrl]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Core/Content/RoleMapping/Sw6OidcRoleMappingEntity.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[getProviderId]]></code>
+      <code><![CDATA[setAclRole]]></code>
+      <code><![CDATA[setAclRoleId]]></code>
+      <code><![CDATA[setCustomerGroup]]></code>
+      <code><![CDATA[setCustomerGroupId]]></code>
+      <code><![CDATA[setMappingType]]></code>
+      <code><![CDATA[setOidcGroup]]></code>
+      <code><![CDATA[setProvider]]></code>
+      <code><![CDATA[setProviderId]]></code>
+      <code><![CDATA[setSortOrder]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Core/Content/SessionActivity/Sw6OidcSessionActivityEntity.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getIpAddress]]></code>
+      <code><![CDATA[getLoggedInAt]]></code>
+      <code><![CDATA[getLoginMethod]]></code>
+      <code><![CDATA[getLogoutReason]]></code>
+      <code><![CDATA[getPasskeyCredentialHash]]></code>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[getProviderId]]></code>
+      <code><![CDATA[getSessionKeyHash]]></code>
+      <code><![CDATA[getSid]]></code>
+      <code><![CDATA[getSub]]></code>
+      <code><![CDATA[getUserAgent]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Core/Content/UserProvider/Sw6OidcUserProviderEntity.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getIssuer]]></code>
+      <code><![CDATA[getUserType]]></code>
+      <code><![CDATA[setBindingScope]]></code>
+      <code><![CDATA[setIssuer]]></code>
+      <code><![CDATA[setIssuerHash]]></code>
+      <code><![CDATA[setProvider]]></code>
+      <code><![CDATA[setProviderId]]></code>
+      <code><![CDATA[setSub]]></code>
+      <code><![CDATA[setUserId]]></code>
+      <code><![CDATA[setUserType]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Event/AdminAfterCreateEvent.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getProfile]]></code>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[getUser]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Event/AdminBeforeCreateEvent.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getProfile]]></code>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[setPayload]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Event/AttributeMappingCompletedEvent.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getFlattenedClaims]]></code>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[setProfile]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Event/CustomerAfterCreateEvent.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getCustomer]]></code>
+      <code><![CDATA[getProfile]]></code>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[getSalesChannelContext]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Event/CustomerBeforeCreateEvent.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getProfile]]></code>
+      <code><![CDATA[getProvider]]></code>
+      <code><![CDATA[getSalesChannelContext]]></code>
+      <code><![CDATA[setPayload]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Event/PasskeyRegisteredEvent.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getUserId]]></code>
+      <code><![CDATA[getUserType]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Migration/Migration1730000001CreateOidcSchema.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1730000001CreateOidcSchema]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1758000001AddProviderTestStatus.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1758000001AddProviderTestStatus]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1789383427AddSuperadminGroupMapping.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1789383427AddSuperadminGroupMapping]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1789390512AddLastTestClaims.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1789390512AddLastTestClaims]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1789470000AddUserProviderUpdatedAt.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1789470000AddUserProviderUpdatedAt]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790685361EncryptProviderClientSecrets.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790685361EncryptProviderClientSecrets]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790686535DropAttributeMappingSyncOnSso.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790686535DropAttributeMappingSyncOnSso]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800001CreateAccessControlRuleSchema.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800001CreateAccessControlRuleSchema]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800002AddProviderPostLogoutUrl.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800002AddProviderPostLogoutUrl]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800003CreateSessionActivitySchema.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800003CreateSessionActivitySchema]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800004AddProviderHealthAlerting.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800004AddProviderHealthAlerting]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800005AddUserProviderSubject.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800005AddUserProviderSubject]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800006CreateStateTables.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800006CreateStateTables]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800007PasskeyCredentialHardening.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800007PasskeyCredentialHardening]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800008AddProviderFrontchannelAdminLogout.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800008AddProviderFrontchannelAdminLogout]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800009AddProviderRevokeSuperadminOnSso.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800009AddProviderRevokeSuperadminOnSso]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800010ReencryptSecrets.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800010ReencryptSecrets]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800011AddProviderBase64Claims.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800011AddProviderBase64Claims]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800012DropProviderButtonColumns.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800012DropProviderButtonColumns]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800013MakeClientSecretOptional.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800013MakeClientSecretOptional]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800014AddSessionActivityPasskeyCredential.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800014AddSessionActivityPasskeyCredential]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800015SplitPasskeyRpId.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800015SplitPasskeyRpId]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800016AddProviderLogoutStyle.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800016AddProviderLogoutStyle]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800017BindingIdentityKey.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800017BindingIdentityKey]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800018CreateManagedAclRole.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800018CreateManagedAclRole]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800019SessionProviderCascadeAndHashedSid.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800019SessionProviderCascadeAndHashedSid]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800020DropProviderClaimEncoding.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800020DropProviderClaimEncoding]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Migration/Migration1790800021AddProviderClientAuthMethods.php">
+    <UnusedClass>
+      <code><![CDATA[Migration1790800021AddProviderClientAuthMethods]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/ScheduledTask/HealthCheckAlertTaskHandler.php">
+    <UnusedClass>
+      <code><![CDATA[HealthCheckAlertTaskHandler]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/ScheduledTask/OneTimeTokenCleanupTaskHandler.php">
+    <UnusedClass>
+      <code><![CDATA[OneTimeTokenCleanupTaskHandler]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/ScheduledTask/SessionActivityCleanupTaskHandler.php">
+    <UnusedClass>
+      <code><![CDATA[SessionActivityCleanupTaskHandler]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Service/AdminAuth/AdminAuthorizationServerFactory.php">
+    <UnusedClass>
+      <code><![CDATA[AdminAuthorizationServerFactory]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Service/AdminAuth/AdminLoginErrorTicketStore.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/AdminAuth/AdminLoginNonceService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/AdminAuth/AdminOidcGrant.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/AdminAuth/AdminTokenIssuer.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/AdminAuth/PasswordLoginGuardClientRepository.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/AdminAuth/PasswordLoginGuardUserRepository.php">
+    <UnusedClass>
+      <code><![CDATA[PasswordLoginGuardUserRepository]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Service/AdminAuth/StepUpService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Cache/DatabaseAtomicCache.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+    <PossiblyUnusedReturnValue>
+      <code><![CDATA[int]]></code>
+    </PossiblyUnusedReturnValue>
+  </file>
+  <file src="src/Service/Cache/RedisAtomicCache.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Cache/RedisConnectionFactory.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Config/OidcConfigTransfer.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Health/InfrastructureInspector.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Health/NodeHeartbeat.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Health/ProviderConfigInspector.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Health/ProviderHealthMonitor.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Health/ProviderReachabilityChecker.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Health/WebhookNotifier.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Http/OidcHttpClient.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Http/Sw6OidcHttpClientFactory.php">
+    <UnusedClass>
+      <code><![CDATA[Sw6OidcHttpClientFactory]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Service/Jwt/JwtVerifier.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Logging/ConfigurableLevelHandler.php">
+    <UnusedClass>
+      <code><![CDATA[ConfigurableLevelHandler]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Service/Logging/SensitiveDataProcessor.php">
+    <UnusedClass>
+      <code><![CDATA[SensitiveDataProcessor]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Service/Oidc/AuthorizationRequestBuilder.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/ClaimsMerger.php">
+    <PossiblyUnusedReturnValue>
+      <code><![CDATA[string]]></code>
+    </PossiblyUnusedReturnValue>
+  </file>
+  <file src="src/Service/Oidc/LogoutContextStore.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/OidcCallbackProcessor.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/OidcConnectionTestService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/OidcDiscoveryService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/OidcLiveLoginTestService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/PostLogoutState.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/RpInitiatedLogoutService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/TestResultTranslator.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/TokenExchangeService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Oidc/UserInfoService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Passkey/PasskeyAuthenticationService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Passkey/PasskeyConfig.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Passkey/PasskeyCredentialRepository.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Passkey/PasskeyRegistrationService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Passkey/PasskeyRelyingPartyResolver.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Passkey/PasskeySessionTerminator.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provider/ProviderResolver.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/AdminProvisioningService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/AdminRoleStore.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/AttributeMapper.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/AttributeTransformer.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/AvatarFetcher.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/CountryResolver.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/CustomerProvisioningService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/ExternalIdentity.php">
+    <PossiblyUnusedProperty>
+      <code><![CDATA[$email]]></code>
+    </PossiblyUnusedProperty>
+  </file>
+  <file src="src/Service/Provisioning/GroupMappingResolver.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/IdentityResolver.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Provisioning/UserProviderBindingService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/BrowserBinding.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/Exception/AccessControlDeniedException.php">
+    <PossiblyUnusedProperty>
+      <code><![CDATA[$ruleId]]></code>
+    </PossiblyUnusedProperty>
+  </file>
+  <file src="src/Service/Security/IssuerChangeConfirmationStore.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/LockoutConfirmationStore.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/Message/PasswordSessionRevocationHandler.php">
+    <UnusedClass>
+      <code><![CDATA[PasswordSessionRevocationHandler]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Service/Security/OidcSecurityHelper.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/PasswordLoginPolicy.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/PasswordSessionRevoker.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/RelayStateValidator.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/SsoOnlyInvariant.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/SsrfUrlValidator.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/Sw6OidcAccessControlEvaluator.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/Sw6OidcCspHostCollector.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Security/Sw6OidcRateLimiter.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Session/SessionAuthenticationClock.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Session/Sw6OidcIdpLogoutHandler.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Session/Sw6OidcSessionActivityRecorder.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Session/Sw6OidcSessionDestructionService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Session/Sw6OidcSessionRegistry.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+    <PossiblyUnusedReturnValue>
+      <code><![CDATA[int]]></code>
+      <code><![CDATA[int]]></code>
+    </PossiblyUnusedReturnValue>
+  </file>
+  <file src="src/Storefront/Controller/AccountPasskeyController.php">
+    <UnusedClass>
+      <code><![CDATA[AccountPasskeyController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/Controller/OidcCallbackController.php">
+    <UnusedClass>
+      <code><![CDATA[OidcCallbackController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/Controller/PasskeyController.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+      <code><![CDATA[loginOptions]]></code>
+      <code><![CDATA[loginVerify]]></code>
+      <code><![CDATA[registrationOptions]]></code>
+      <code><![CDATA[registrationVerify]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Storefront/Controller/SendAuthorizationRequestController.php">
+    <UnusedClass>
+      <code><![CDATA[SendAuthorizationRequestController]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/EventSubscriber/CustomerLogoutSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[CustomerLogoutSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/EventSubscriber/PasswordLoginDisabledExceptionSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[PasswordLoginDisabledExceptionSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/EventSubscriber/PlaceholderAddressSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[PlaceholderAddressSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/Service/OidcLogoutRoute.php">
+    <UnusedClass>
+      <code><![CDATA[OidcLogoutRoute]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/Service/PasswordLoginGuardLoginRoute.php">
+    <UnusedClass>
+      <code><![CDATA[PasswordLoginGuardLoginRoute]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/Service/PasswordLoginGuardRegisterConfirmRoute.php">
+    <UnusedClass>
+      <code><![CDATA[PasswordLoginGuardRegisterConfirmRoute]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Storefront/Service/PasswordLoginGuardRegisterRoute.php">
+    <UnusedClass>
+      <code><![CDATA[PasswordLoginGuardRegisterRoute]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/AdminLockoutGuardSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[AdminLockoutGuardSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/AdminPasswordLoginGuardSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[AdminPasswordLoginGuardSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/AttributeMappingWriteGuardSubscriber.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+      <code><![CDATA[validate]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Subscriber/BrowserBindingCookieSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[BrowserBindingCookieSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/BusinessEventSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[BusinessEventSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/CustomerAuthenticationClockSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[CustomerAuthenticationClockSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/PasskeyDeletionSubscriber.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+      <code><![CDATA[onDeleted]]></code>
+      <code><![CDATA[rememberDeletedCredentials]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Subscriber/PasskeyRpIdConfigValidator.php">
+    <UnusedClass>
+      <code><![CDATA[PasskeyRpIdConfigValidator]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/ProviderSecretPayloadScrubber.php">
+    <UnusedClass>
+      <code><![CDATA[ProviderSecretPayloadScrubber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/ProviderTrustGuardSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[ProviderTrustGuardSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/SessionActivityWriteGuardSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[SessionActivityWriteGuardSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/Sw6OidcCspSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[Sw6OidcCspSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/Sw6OidcProviderWriteGuardSubscriber.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+      <code><![CDATA[onProviderWritten]]></code>
+      <code><![CDATA[validate]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Subscriber/TrustEntityWriteGuardSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[TrustEntityWriteGuardSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Subscriber/UserProviderCleanupSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[UserProviderCleanupSubscriber]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Sw6Oidc.php">
+    <UnusedClass>
+      <code><![CDATA[Sw6Oidc]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Twig/AdminEntrypointsExtension.php">
+    <UnusedClass>
+      <code><![CDATA[AdminEntrypointsExtension]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Twig/StorefrontLoginOptionsExtension.php">
+    <UnusedClass>
+      <code><![CDATA[StorefrontLoginOptionsExtension]]></code>
+    </UnusedClass>
+  </file>
+  <file src="src/Twig/StorefrontLoginOptionsRuntime.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+      <code><![CDATA[getAccountSso]]></code>
+      <code><![CDATA[getSsoProviders]]></code>
+      <code><![CDATA[isPasskeyAvailable]]></code>
+      <code><![CDATA[isPasskeyEnabled]]></code>
+      <code><![CDATA[isPasswordLoginDisabled]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+</files>

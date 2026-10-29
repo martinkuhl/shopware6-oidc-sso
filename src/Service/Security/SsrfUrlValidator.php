@@ -9,8 +9,7 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * (discovery, token, userinfo, JWKS, revocation, ...): HTTPS only, and the
  * host must not resolve to a private, loopback, link-local or otherwise
  * reserved address (Symfony's IpUtils::PRIVATE_SUBNETS, plus multicast — the
- * same list NoPrivateNetworkHttpClient enforces at request time). A port of
- * the Magento sibling module's validator.
+ * same list NoPrivateNetworkHttpClient enforces at request time).
  *
  * SW6OIDC_ALLOW_INSECURE_IDP_URLS=1 ($allowInsecure) relaxes both rules for
  * development setups (a local/docker IdP over plain HTTP on a private IP):
@@ -32,10 +31,6 @@ class SsrfUrlValidator
         $this->resolver = $resolver ?? $this->resolveViaDns(...);
     }
 
-    public function isInsecureModeEnabled(): bool
-    {
-        return $this->allowInsecure;
-    }
 
     /**
      * @return array{blocked: bool, warnings: list<string>}
@@ -74,7 +69,7 @@ class SsrfUrlValidator
         }
 
         foreach ($ips as $ip) {
-            if (!self::isPublicIp($ip)) {
+            if (!$this->isPublicIp($ip)) {
                 if (!$this->allowInsecure) {
                     return ['blocked' => true, 'warnings' => [
                         'This URL resolves to a private, loopback, or otherwise non-public address and cannot be used '
@@ -91,7 +86,7 @@ class SsrfUrlValidator
         return ['blocked' => false, 'warnings' => $warnings];
     }
 
-    public static function isPublicIp(string $ip): bool
+    private function isPublicIp(string $ip): bool
     {
         if (filter_var($ip, \FILTER_VALIDATE_IP) === false) {
             return false;

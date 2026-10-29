@@ -21,7 +21,7 @@ final class OidcConnectionTestServiceTest extends TestCase
 
         $result = $service->test([
             'clientId' => '',
-            'clientSecret' => 'secret',
+            'hasClientSecret' => true,
             'authorizeEndpoint' => 'https://8.8.8.8/authorize',
             'accessTokenEndpoint' => 'https://8.8.8.8/token',
             'jwksEndpoint' => 'https://8.8.8.8/jwks',
@@ -43,7 +43,7 @@ final class OidcConnectionTestServiceTest extends TestCase
 
         $result = $service->test([
             'clientId' => 'my-client',
-            'clientSecret' => 'my-secret',
+            'hasClientSecret' => true,
             'publicClient' => false,
             'authorizeEndpoint' => 'https://8.8.8.8/authorize',
             'accessTokenEndpoint' => 'https://8.8.8.8/token',
@@ -61,7 +61,7 @@ final class OidcConnectionTestServiceTest extends TestCase
 
         $result = $service->test([
             'clientId' => 'my-client',
-            'clientSecret' => 'my-secret',
+            'hasClientSecret' => true,
             'authorizeEndpoint' => 'https://8.8.8.8/authorize',
             'accessTokenEndpoint' => 'https://8.8.8.8/token',
             // jwksEndpoint intentionally omitted
@@ -81,7 +81,7 @@ final class OidcConnectionTestServiceTest extends TestCase
 
         $result = $service->test([
             'clientId' => 'my-client',
-            'clientSecret' => '',
+            'hasClientSecret' => false,
             'publicClient' => true,
             'authorizeEndpoint' => 'https://8.8.8.8/authorize',
             'accessTokenEndpoint' => 'https://8.8.8.8/token',

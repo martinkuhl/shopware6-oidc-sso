@@ -2,14 +2,12 @@
 <sw-page class="sw6oidc-passkey-list">
     {% block sw6oidc_passkey_list_smart_bar_actions %}
     <template #smart-bar-actions>
-        <sw-button
-            variant="primary"
-            :is-loading="isRegistering"
-            :disabled="isRegistering"
-            @click="registerPasskey"
+        <mt-button
+            variant="secondary"
+            @click="$router.push({ name: 'sw.profile.index.sw6oidcPasskey' })"
         >
-            {{ $tc('sw6oidc.passkeySettings.registerButton') }}
-        </sw-button>
+            {{ $t('sw6oidc.passkeySettings.manageOwnButton') }}
+        </mt-button>
     </template>
     {% endblock %}
 
@@ -21,13 +19,38 @@
             :repository="credentialRepository"
             :columns="columns"
             :is-loading="isLoading"
+            :sort-by="sortBy"
+            :sort-direction="sortDirection"
             :disable-data-fetching="true"
             :show-selection="false"
             :allow-edit="false"
             :allow-view="false"
+            :allow-delete="acl.can('sw6oidc_passkey_credential.deleter') || undefined"
+            @column-sort="onSortColumn"
+            @page-change="onPageChange"
+            @delete-item-finish="getList"
         >
+            <template #column-userType="{ item }">
+                {{ userTypeLabel(item) }}
+            </template>
             <template #column-owner="{ item }">
                 {{ ownerName(item) }}
+                <mt-badge
+                    v-if="item.disabledAt"
+                    variant="critical"
+                >
+                    {{ $t('sw6oidc.passkeySettings.disabledBadge') }}
+                </mt-badge>
+            </template>
+            <template #column-createdAt="{ item }">
+                {{ formatDate(item.createdAt) }}
+            </template>
+            {# Deleting a key ends the sessions it logged in; for an admin that is every session (F-6). #}
+            <template #delete-confirm-text="{ item }">
+                {{ $t('sw6oidc.passkeySettings.deleteConfirm') }}
+                {{ $t(item.userType === 'admin'
+                    ? 'sw6oidc.passkeySettings.deleteConfirmSessionsAdmin'
+                    : 'sw6oidc.passkeySettings.deleteConfirmSessionsCustomer') }}
             </template>
         </sw-entity-listing>
     </template>

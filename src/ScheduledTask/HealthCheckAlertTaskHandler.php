@@ -19,6 +19,10 @@ class HealthCheckAlertTaskHandler extends ScheduledTaskHandler
         parent::__construct($scheduledTaskRepository, $exceptionLogger);
     }
 
+    /**
+     * No node heartbeat here: the worker isn't a web node, and counting it
+     * reported every one-web-node setup as multi-node (R3-L32).
+     */
     public function run(): void
     {
         $this->monitor->run();

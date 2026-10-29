@@ -3,10 +3,13 @@
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Security;
 
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\InvalidStateException;
+use MartinKuhl\Sw6Oidc\Service\Security\Exception\UnknownStateException;
 use MartinKuhl\Sw6Oidc\Service\Security\OidcSecurityHelper;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemoryAtomicCache;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\RequestStack;
+use MartinKuhl\Sw6Oidc\Service\Security\BrowserBinding;
 
 #[CoversClass(OidcSecurityHelper::class)]
 final class OidcSecurityHelperTest extends TestCase
@@ -20,7 +23,7 @@ final class OidcSecurityHelperTest extends TestCase
     protected function setUp(): void
     {
         $this->cache = new InMemoryAtomicCache();
-        $this->helper = new OidcSecurityHelper($this->cache);
+        $this->helper = new OidcSecurityHelper($this->cache, new BrowserBinding(new RequestStack()));
     }
 
     public function testBeginGeneratesUrlSafeStateNonceAndChallenge(): void
@@ -77,14 +80,16 @@ final class OidcSecurityHelperTest extends TestCase
         self::assertSame('plain', $flow->codeChallengeMethod);
     }
 
-    public function testDeriveCodeChallengeMatchesRfc7636Vector(): void
+    public function testTheCodeChallengeIsTheS256HashOfTheStoredVerifier(): void
     {
-        // RFC 7636 Appendix B.
-        self::assertSame(
-            'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
-            $this->helper->deriveCodeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk', 'S256'),
-        );
-        self::assertSame('verifier', $this->helper->deriveCodeChallenge('verifier', 'plain'));
+        $result = $this->helper->beginAuthorizationRequest('provider-1', 'admin', '', 'S256');
+        $flow = $this->helper->consumeAuthorizationFlow($result['state']);
+
+        // RFC 7636 §4.2: BASE64URL(SHA256(code_verifier)).
+        self::assertSame(rtrim(strtr(base64_encode(hash('sha256', $flow->codeVerifier, true)), '+/', '-_'), '='), $result['codeChallenge']);
+
+        $plain = $this->helper->beginAuthorizationRequest('provider-1', 'admin', '', 'plain');
+        self::assertSame($this->helper->consumeAuthorizationFlow($plain['state'])->codeVerifier, $plain['codeChallenge']);
     }
 
     public function testConsumeReturnsStoredContext(): void
@@ -112,13 +117,13 @@ final class OidcSecurityHelperTest extends TestCase
 
     public function testConsumeRejectsNullState(): void
     {
-        $this->expectException(InvalidStateException::class);
+        $this->expectException(UnknownStateException::class);
         $this->helper->consumeAuthorizationFlow(null);
     }
 
     public function testConsumeRejectsEmptyState(): void
     {
-        $this->expectException(InvalidStateException::class);
+        $this->expectException(UnknownStateException::class);
         $this->helper->consumeAuthorizationFlow('');
     }
 
@@ -126,7 +131,7 @@ final class OidcSecurityHelperTest extends TestCase
     {
         $this->helper->beginAuthorizationRequest('provider-1', 'customer', '/', 'S256');
 
-        $this->expectException(InvalidStateException::class);
+        $this->expectException(UnknownStateException::class);
         $this->helper->consumeAuthorizationFlow('not-a-real-state');
     }
 
@@ -136,7 +141,7 @@ final class OidcSecurityHelperTest extends TestCase
         // Simulate TTL expiry: the cache entry is gone.
         unset($this->cache->items['sw6oidc_flow_' . $result['state']]);
 
-        $this->expectException(InvalidStateException::class);
+        $this->expectException(UnknownStateException::class);
         $this->helper->consumeAuthorizationFlow($result['state']);
     }
 

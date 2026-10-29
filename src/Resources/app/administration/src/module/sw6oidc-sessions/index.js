@@ -3,9 +3,8 @@ import { registerModuleWhenReady } from '../../service/defer-module-register';
 
 /**
  * Session activity log (sw6oidc_session_activity): every OIDC/Passkey login
- * with its logout time and reason, plus a "Force logout" row action. Declaring
- * `entity` makes Shopware generate the sw6oidc_session_activity.viewer/editor/…
- * privileges; force logout requires `sw6oidc_session_activity:update` server-side.
+ * with its logout time and reason, plus a "Force logout" row action. Role
+ * privileges: acl/index.js (viewer, force_logout).
  *
  * Registered via registerModuleWhenReady() rather than a bare
  * Shopware.Module.register() call - see that function's own comment for why.

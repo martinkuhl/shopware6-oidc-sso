@@ -2,203 +2,364 @@
 <sw-page class="sw6oidc-provider-detail">
     {% block sw6oidc_provider_detail_smart_bar_actions %}
     <template #smart-bar-actions>
-        <sw-button :router-link="{ name: 'sw6oidc.provider.index' }">
-            {{ $tc('sw6oidc.provider.detail.buttonCancel') }}
-        </sw-button>
-        <sw-button-process
+        <mt-button
+            variant="secondary"
+            size="default"
+            @click="$router.push({ name: 'sw6oidc.provider.index' })"
+        >
+            {{ $t('sw6oidc.provider.detail.buttonCancel') }}
+        </mt-button>
+        <mt-button
+            class="sw6oidc-provider-detail__save-action"
             variant="primary"
+            size="default"
             :is-loading="isLoading"
-            :process-success="isSaveSuccessful"
+            :disabled="!canEdit || isLoading"
             @click="onClickSave"
         >
-            {{ $tc('sw6oidc.provider.detail.buttonSave') }}
-        </sw-button-process>
+            {{ $t('sw6oidc.provider.detail.buttonSave') }}
+        </mt-button>
     </template>
     {% endblock %}
 
     {% block sw6oidc_provider_detail_content %}
     <template #content>
         <sw-card-view v-if="provider">
-            <sw-card class="sw6oidc-bold-field-labels" :title="$tc('sw6oidc.provider.detail.cardGeneral')">
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-text-field v-model="provider.appName" :label="$tc('sw6oidc.provider.detail.appName')" required />
-                    <sw-text-field v-model="provider.displayName" :label="$tc('sw6oidc.provider.detail.displayName')" />
-                </sw-container>
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-single-select
-                        v-model:value="provider.loginType"
-                        :label="$tc('sw6oidc.provider.detail.loginType.label')"
-                        :options="loginTypeOptions"
-                    />
-                    <sw-number-field v-model="provider.sortOrder" :label="$tc('sw6oidc.provider.detail.sortOrder')" />
-                </sw-container>
-                <sw-container columns="1fr 1fr 1fr" gap="0 30px">
-                    <sw-switch-field v-model:value="provider.isActive" :label="$tc('sw6oidc.provider.detail.isActive')" />
-                    <sw-switch-field v-model:value="provider.showCustomerLink" :label="$tc('sw6oidc.provider.detail.showCustomerLink')" />
-                    <sw-switch-field v-model:value="provider.showAdminLink" :label="$tc('sw6oidc.provider.detail.showAdminLink')" />
-                </sw-container>
-            </sw-card>
+            <mt-banner
+                v-if="!canEdit"
+                variant="info"
+                class="sw6oidc-provider-detail__read-only"
+            >
+                {{ $t('sw6oidc.provider.detail.readOnlyHint') }}
+            </mt-banner>
+            <mt-banner
+                v-else-if="!isSuperadmin"
+                variant="attention"
+                class="sw6oidc-provider-detail__superadmin-hint"
+            >
+                {{ $t('sw6oidc.provider.detail.superadminRequiredHint') }}
+            </mt-banner>
 
-            <sw-card class="sw6oidc-bold-field-labels" :title="$tc('sw6oidc.provider.detail.cardOAuth')">
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-text-field
-                        v-model="provider.clientId"
-                        :label="$tc('sw6oidc.provider.detail.clientId')"
-                        :help-text="$tc('sw6oidc.provider.detail.clientIdHelp')"
+            {#
+                Every field passes its own :disabled (R3-F14): viewers can't
+                edit anything, and non-superadmins can't edit the settings
+                ProviderTrustGuardSubscriber reserves for superadmins (canEditTrust,
+                plan F-2). Saving is refused by the server either way.
+            #}
+            <mt-card
+                class="sw6oidc-bold-field-labels"
+                position-identifier="sw6oidc-provider-detail-general"
+                :title="$t('sw6oidc.provider.detail.cardGeneral')"
+            >
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-text-field
+                        v-model="provider.appName"
+                        :label="$t('sw6oidc.provider.detail.appName')"
+                        :disabled="!canEdit"
                         required
                     />
-                    <sw-password-field
-                        v-model="provider.clientSecret"
-                        :label="$tc('sw6oidc.provider.detail.clientSecret')"
-                        :help-text="$tc('sw6oidc.provider.detail.clientSecretHelp')"
-                        :placeholder="isNewProvider ? '' : $tc('sw6oidc.provider.detail.clientSecretStoredPlaceholder')"
-                        :required="isNewProvider"
+                    <mt-text-field
+                        v-model="provider.displayName"
+                        :label="$t('sw6oidc.provider.detail.displayName')"
+                        :disabled="!canEdit"
                     />
                 </sw-container>
-                <sw-text-field
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <sw-single-select
+                        v-model:value="provider.loginType"
+                        :label="$t('sw6oidc.provider.detail.loginType.label')"
+                        :options="loginTypeOptions"
+                        :error="providerLoginTypeError"
+                        :disabled="!canEditTrust || undefined"
+                    />
+                    <mt-number-field
+                        v-model="provider.sortOrder"
+                        number-type="int"
+                        :label="$t('sw6oidc.provider.detail.sortOrder')"
+                        :disabled="!canEdit"
+                    />
+                </sw-container>
+                <sw-container
+                    columns="1fr 1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-switch
+                        v-model="provider.isActive"
+                        :label="$t('sw6oidc.provider.detail.isActive')"
+                        :disabled="!canEdit"
+                    />
+                    <mt-switch
+                        v-model="provider.showCustomerLink"
+                        :label="$t('sw6oidc.provider.detail.showCustomerLink')"
+                        :disabled="!canEdit"
+                    />
+                    <mt-switch
+                        v-model="provider.showAdminLink"
+                        :label="$t('sw6oidc.provider.detail.showAdminLink')"
+                        :disabled="!canEdit"
+                    />
+                </sw-container>
+            </mt-card>
+
+            <mt-card
+                class="sw6oidc-bold-field-labels"
+                position-identifier="sw6oidc-provider-detail-oauth"
+                :title="$t('sw6oidc.provider.detail.cardOAuth')"
+            >
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-text-field
+                        v-model="provider.clientId"
+                        :error="providerClientIdError"
+                        :label="$t('sw6oidc.provider.detail.clientId')"
+                        :help-text="$t('sw6oidc.provider.detail.clientIdHelp')"
+                        :disabled="!canEditTrust"
+                        required
+                    />
+                    <mt-password-field
+                        v-model="provider.clientSecret"
+                        :error="providerClientSecretError"
+                        :label="$t('sw6oidc.provider.detail.clientSecret')"
+                        :help-text="$t('sw6oidc.provider.detail.clientSecretHelp')"
+                        :placeholder="isNewProvider ? '' : $t('sw6oidc.provider.detail.clientSecretStoredPlaceholder')"
+                        :required="isNewProvider && !provider.publicClient"
+                        :disabled="!canEdit"
+                    />
+                </sw-container>
+                <mt-text-field
                     v-model="provider.wellKnownConfigUrl"
                     :error="providerWellKnownConfigUrlError"
-                    :label="$tc('sw6oidc.provider.detail.wellKnownConfigUrl')"
-                    :help-text="$tc('sw6oidc.provider.detail.wellKnownConfigUrlHelp')"
+                    :label="$t('sw6oidc.provider.detail.wellKnownConfigUrl')"
+                    :help-text="$t('sw6oidc.provider.detail.wellKnownConfigUrlHelp')"
+                    :disabled="!canEditTrust"
                 />
 
                 {% block sw6oidc_provider_detail_discovery_actions %}
-                <sw-container columns="max-content max-content" gap="0 16px" style="margin-bottom: 16px;">
-                    <sw-button
+                <sw-container
+                    columns="max-content max-content"
+                    gap="0 16px"
+                    class="sw6oidc-provider-detail__spaced"
+                >
+                    {# Discovery fills the endpoint fields, which only a superadmin may change. #}
+                    <mt-button
+                        variant="secondary"
                         size="small"
                         :is-loading="isLoadingConfiguration"
-                        :disabled="!provider.wellKnownConfigUrl"
+                        :disabled="!provider.wellKnownConfigUrl || !canEditTrust"
                         @click="onClickLoadConfiguration"
                     >
-                        {{ $tc('sw6oidc.provider.detail.buttonLoadConfiguration') }}
-                    </sw-button>
-                    <sw-button
+                        {{ $t('sw6oidc.provider.detail.buttonLoadConfiguration') }}
+                    </mt-button>
+                    <mt-button
+                        variant="secondary"
                         size="small"
                         :is-loading="isTestingConnection"
+                        :disabled="!canEdit"
                         @click="onClickTestConnection"
                     >
-                        {{ $tc('sw6oidc.provider.detail.buttonTestConnection') }}
-                    </sw-button>
+                        {{ $t('sw6oidc.provider.detail.buttonTestConnection') }}
+                    </mt-button>
                 </sw-container>
                 {% endblock %}
 
                 {% block sw6oidc_provider_detail_connection_test_result %}
-                <sw-card v-if="connectionTestResult" :title="$tc('sw6oidc.provider.detail.testConnectionResultTitle')" style="margin-bottom: 16px;">
-                    <ul class="sw6oidc-test-result-list">
+                <mt-card
+                    v-if="connectionTestResult"
+                    class="sw6oidc-provider-detail__spaced"
+                    position-identifier="sw6oidc-provider-detail-connection-test"
+                    :title="$t('sw6oidc.provider.detail.testConnectionResultTitle')"
+                >
+                    <ul
+                        class="sw6oidc-test-result-list"
+                        aria-live="polite"
+                    >
                         <li
                             v-for="check in connectionTestResult.checks"
                             :key="check.id"
                             class="sw6oidc-test-result-list__item"
                         >
-                            <strong>{{ $tc(`sw6oidc.provider.detail.testConnection.check.${check.id}`) }}:</strong>
+                            <strong>{{ snippetOr(`sw6oidc.provider.detail.testConnection.check.${check.id}`, check.id) }}:</strong>
                             <span>{{ testResultMessage(check) }}</span>
-                            <sw-label
-                                size="medium"
-                                appearance="pill"
-                                :variant="testStatusVariant(check.status)"
-                            >{{ $tc(`sw6oidc.provider.detail.testStatus.${check.status}`) }}</sw-label>
+                            <mt-badge :variant="testStatusVariant(check.status)">
+                                {{ snippetOr(`sw6oidc.provider.detail.testStatus.${check.status}`, check.status) }}
+                            </mt-badge>
                         </li>
                     </ul>
-                </sw-card>
+                </mt-card>
                 {% endblock %}
 
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-text-field
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-text-field
                         v-model="provider.authorizeEndpoint"
                         :error="providerAuthorizeEndpointError"
-                        :label="$tc('sw6oidc.provider.detail.authorizeEndpoint')"
-                        :help-text="$tc('sw6oidc.provider.detail.authorizeEndpointHelp')"
+                        :label="$t('sw6oidc.provider.detail.authorizeEndpoint')"
+                        :help-text="$t('sw6oidc.provider.detail.authorizeEndpointHelp')"
+                        :disabled="!canEditTrust"
                     />
-                    <sw-text-field
+                    <mt-text-field
                         v-model="provider.accessTokenEndpoint"
                         :error="providerAccessTokenEndpointError"
-                        :label="$tc('sw6oidc.provider.detail.accessTokenEndpoint')"
-                        :help-text="$tc('sw6oidc.provider.detail.accessTokenEndpointHelp')"
+                        :label="$t('sw6oidc.provider.detail.accessTokenEndpoint')"
+                        :help-text="$t('sw6oidc.provider.detail.accessTokenEndpointHelp')"
+                        :disabled="!canEditTrust"
+                    />
+                    <sw-single-select
+                        v-model:value="provider.tokenEndpointAuthMethod"
+                        :label="$t('sw6oidc.provider.detail.tokenEndpointAuthMethod.label')"
+                        :help-text="$t('sw6oidc.provider.detail.tokenEndpointAuthMethod.help')"
+                        :options="clientAuthMethodOptions"
+                        :disabled="!canEdit || provider.publicClient || undefined"
                     />
                 </sw-container>
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-text-field
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-text-field
                         v-model="provider.userInfoEndpoint"
                         :error="providerUserInfoEndpointError"
-                        :label="$tc('sw6oidc.provider.detail.userInfoEndpoint')"
-                        :help-text="$tc('sw6oidc.provider.detail.userInfoEndpointHelp')"
+                        :label="$t('sw6oidc.provider.detail.userInfoEndpoint')"
+                        :help-text="$t('sw6oidc.provider.detail.userInfoEndpointHelp')"
+                        :disabled="!canEditTrust"
                     />
-                    <sw-text-field
+                    <mt-text-field
                         v-model="provider.jwksEndpoint"
                         :error="providerJwksEndpointError"
-                        :label="$tc('sw6oidc.provider.detail.jwksEndpoint')"
-                        :help-text="$tc('sw6oidc.provider.detail.jwksEndpointHelp')"
+                        :label="$t('sw6oidc.provider.detail.jwksEndpoint')"
+                        :help-text="$t('sw6oidc.provider.detail.jwksEndpointHelp')"
+                        :disabled="!canEditTrust"
                     />
                 </sw-container>
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-text-field
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-text-field
                         v-model="provider.endSessionEndpoint"
                         :error="providerEndSessionEndpointError"
-                        :label="$tc('sw6oidc.provider.detail.endSessionEndpoint')"
-                        :help-text="$tc('sw6oidc.provider.detail.endSessionEndpointHelp')"
+                        :label="$t('sw6oidc.provider.detail.endSessionEndpoint')"
+                        :help-text="$t('sw6oidc.provider.detail.endSessionEndpointHelp')"
+                        :disabled="!canEditTrust"
                     />
-                    <sw-text-field
+                    <sw-single-select
+                        v-model:value="provider.logoutStyle"
+                        :label="$t('sw6oidc.provider.detail.logoutStyle.label')"
+                        :help-text="$t('sw6oidc.provider.detail.logoutStyle.help')"
+                        :options="logoutStyleOptions"
+                        :disabled="!canEdit || undefined"
+                    />
+                    <mt-text-field
                         v-model="provider.postLogoutUrl"
                         :error="providerPostLogoutUrlError"
-                        :label="$tc('sw6oidc.provider.detail.postLogoutUrl')"
-                        :help-text="$tc('sw6oidc.provider.detail.postLogoutUrlHelp')"
+                        :label="$t('sw6oidc.provider.detail.postLogoutUrl')"
+                        :help-text="$t('sw6oidc.provider.detail.postLogoutUrlHelp')"
                         :placeholder="postLogoutLandingUrl"
+                        :disabled="!canEdit"
                     />
-                    <sw-text-field
+                    <mt-text-field
                         v-model="provider.revocationEndpoint"
                         :error="providerRevocationEndpointError"
-                        :label="$tc('sw6oidc.provider.detail.revocationEndpoint')"
-                        :help-text="$tc('sw6oidc.provider.detail.revocationEndpointHelp')"
+                        :label="$t('sw6oidc.provider.detail.revocationEndpoint')"
+                        :help-text="$t('sw6oidc.provider.detail.revocationEndpointHelp')"
+                        :disabled="!canEditTrust"
+                    />
+                    <sw-single-select
+                        v-model:value="provider.revocationEndpointAuthMethod"
+                        :label="$t('sw6oidc.provider.detail.revocationEndpointAuthMethod.label')"
+                        :help-text="$t('sw6oidc.provider.detail.revocationEndpointAuthMethod.help')"
+                        :options="clientAuthMethodOptions"
+                        :disabled="!canEdit || provider.publicClient || undefined"
+                    />
+                    <mt-switch
+                        v-model="provider.frontchannelAdminLogout"
+                        :label="$t('sw6oidc.provider.detail.frontchannelAdminLogout')"
+                        :help-text="$t('sw6oidc.provider.detail.frontchannelAdminLogoutHelp')"
+                        :disabled="!canEdit"
                     />
                 </sw-container>
-                <sw-container columns="1fr 1fr 1fr" gap="0 30px">
-                    <sw-text-field
+                <sw-container
+                    columns="1fr 1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-text-field
                         v-model="provider.issuer"
-                        :label="$tc('sw6oidc.provider.detail.issuer')"
-                        :help-text="$tc('sw6oidc.provider.detail.issuerHelp')"
+                        :error="providerIssuerError"
+                        :label="$t('sw6oidc.provider.detail.issuer')"
+                        :help-text="$t('sw6oidc.provider.detail.issuerHelp')"
+                        :disabled="!canEditTrust"
                     />
-                    <sw-text-field
+                    <mt-text-field
                         v-model="provider.scope"
-                        :label="$tc('sw6oidc.provider.detail.scope')"
-                        :help-text="$tc('sw6oidc.provider.detail.scopeHelp')"
+                        :error="providerScopeError"
+                        :label="$t('sw6oidc.provider.detail.scope')"
+                        :help-text="$t('sw6oidc.provider.detail.scopeHelp')"
+                        :disabled="!canEditTrust"
                     />
-                    <sw-text-field
+                    <mt-text-field
                         v-model="provider.groupAttribute"
-                        :label="$tc('sw6oidc.provider.detail.groupAttribute')"
-                        :help-text="$tc('sw6oidc.provider.detail.groupAttributeHelp')"
+                        :error="providerGroupAttributeError"
+                        :label="$t('sw6oidc.provider.detail.groupAttribute')"
+                        :help-text="$t('sw6oidc.provider.detail.groupAttributeHelp')"
+                        :disabled="!canEditTrust"
                     />
                 </sw-container>
-                <sw-container columns="1fr 1fr" gap="0 30px">
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
                     <sw-single-select
                         v-model:value="provider.pkceFlow"
-                        :label="$tc('sw6oidc.provider.detail.pkceFlow')"
-                        :help-text="$tc('sw6oidc.provider.detail.pkceFlowHelp')"
+                        :label="$t('sw6oidc.provider.detail.pkceFlow')"
+                        :help-text="$t('sw6oidc.provider.detail.pkceFlowHelp')"
                         :options="pkceFlowOptions"
+                        :disabled="!canEdit || undefined"
                     />
-                    <sw-single-select
-                        v-model:value="provider.claimEncoding"
-                        :label="$tc('sw6oidc.provider.detail.claimEncoding')"
-                        :help-text="$tc('sw6oidc.provider.detail.claimEncodingHelp')"
-                        :options="claimEncodingOptions"
+                    <sw-multi-tag-select
+                        v-model:value="base64Claims"
+                        :label="$t('sw6oidc.provider.detail.base64Claims')"
+                        :help-text="$t('sw6oidc.provider.detail.base64ClaimsHelp')"
+                        :placeholder="$t('sw6oidc.provider.detail.base64ClaimsPlaceholder')"
+                        :error="providerBase64ClaimsError"
+                        :disabled="!canEditTrust || undefined"
                     />
                 </sw-container>
                 {# Own row: next to the label-on-top selects, the switch sat
                    vertically off-centre against their input boxes. #}
-                <sw-switch-field
-                    v-model:value="provider.publicClient"
-                    :label="$tc('sw6oidc.provider.detail.publicClient')"
-                    :help-text="$tc('sw6oidc.provider.detail.publicClientHelp')"
+                <mt-switch
+                    v-model="provider.publicClient"
+                    :error="providerPublicClientError"
+                    :label="$t('sw6oidc.provider.detail.publicClient')"
+                    :help-text="$t('sw6oidc.provider.detail.publicClientHelp')"
+                    :disabled="!canEditTrust"
                 />
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-number-field
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-number-field
                         v-model="provider.httpTimeout"
-                        :label="$tc('sw6oidc.provider.detail.httpTimeout')"
-                        :help-text="$tc('sw6oidc.provider.detail.httpTimeoutHelp')"
+                        number-type="int"
+                        :label="$t('sw6oidc.provider.detail.httpTimeout')"
+                        :help-text="$t('sw6oidc.provider.detail.httpTimeoutHelp')"
+                        :disabled="!canEdit"
                     />
-                    <sw-number-field
+                    <mt-number-field
                         v-model="provider.jwksCacheTtl"
-                        :label="$tc('sw6oidc.provider.detail.jwksCacheTtl')"
-                        :help-text="$tc('sw6oidc.provider.detail.jwksCacheTtlHelp')"
+                        number-type="int"
+                        :label="$t('sw6oidc.provider.detail.jwksCacheTtl')"
+                        :help-text="$t('sw6oidc.provider.detail.jwksCacheTtlHelp')"
+                        :disabled="!canEdit"
                     />
                 </sw-container>
 
@@ -207,54 +368,58 @@
                     class="sw6oidc-live-test-actions"
                     columns="max-content 1fr"
                     gap="0 16px"
-                    style="align-items: center;"
                 >
-                    <sw-button
+                    <mt-button
+                        v-tooltip="{
+                            message: $t('sw6oidc.provider.detail.liveTestRequiresSaveHint'),
+                            disabled: canRunLiveTest,
+                            showOnDisabledElements: true
+                        }"
+                        variant="secondary"
                         size="small"
                         :is-loading="isRunningLiveTest"
-                        :disabled="!canRunLiveTest"
-                        :tooltip="canRunLiveTest ? null : { message: $tc('sw6oidc.provider.detail.liveTestRequiresSaveHint') }"
+                        :disabled="!canRunLiveTest || !canEdit"
                         @click="onClickRunLiveTest"
                     >
-                        {{ $tc('sw6oidc.provider.detail.buttonRunLiveTest') }}
-                    </sw-button>
+                        {{ $t('sw6oidc.provider.detail.buttonRunLiveTest') }}
+                    </mt-button>
                     <span
                         v-if="provider.lastTestStatus"
                         class="sw6oidc-test-result-list__item"
                     >
-                        <strong>{{ $tc('sw6oidc.provider.detail.lastTestStatusLabel') }}:</strong>
+                        <strong>{{ $t('sw6oidc.provider.detail.lastTestStatusLabel') }}:</strong>
                         <span v-if="formattedLastTestAt">{{ formattedLastTestAt }}</span>
-                        <sw-label
-                            size="medium"
-                            appearance="pill"
-                            :variant="testStatusVariant(provider.lastTestStatus)"
-                        >{{ $tc(`sw6oidc.provider.detail.testStatus.${provider.lastTestStatus}`) }}</sw-label>
+                        <mt-badge :variant="testStatusVariant(provider.lastTestStatus)">
+                            {{ snippetOr(`sw6oidc.provider.detail.testStatus.${provider.lastTestStatus}`, provider.lastTestStatus) }}
+                        </mt-badge>
                     </span>
                 </sw-container>
 
-                <sw-card
+                <mt-card
                     v-if="liveTestReport"
                     class="sw6oidc-live-test-result"
-                    :title="$tc('sw6oidc.provider.detail.liveTestResultTitle')"
+                    position-identifier="sw6oidc-provider-detail-live-test"
+                    :title="$t('sw6oidc.provider.detail.liveTestResultTitle')"
                 >
-                    <ul class="sw6oidc-test-result-list">
+                    <ul
+                        class="sw6oidc-test-result-list"
+                        aria-live="polite"
+                    >
                         <li
                             v-for="step in liveTestReport.steps"
                             :key="step.id"
                             class="sw6oidc-test-result-list__item"
                         >
-                            <strong>{{ $tc(`sw6oidc.provider.detail.liveTest.step.${step.id}`) }}:</strong>
+                            <strong>{{ snippetOr(`sw6oidc.provider.detail.liveTest.step.${step.id}`, step.id) }}:</strong>
                             <span>{{ testResultMessage(step) }}</span>
-                            <sw-label
-                                size="medium"
-                                appearance="pill"
-                                :variant="testStatusVariant(step.status)"
-                            >{{ $tc(`sw6oidc.provider.detail.testStatus.${step.status}`) }}</sw-label>
+                            <mt-badge :variant="testStatusVariant(step.status)">
+                                {{ snippetOr(`sw6oidc.provider.detail.testStatus.${step.status}`, step.status) }}
+                            </mt-badge>
                         </li>
                     </ul>
-                </sw-card>
+                </mt-card>
                 {% endblock %}
-            </sw-card>
+            </mt-card>
 
             {#
                 Split into separate titled cards (Account creation /
@@ -266,98 +431,136 @@
                 what they actually affect instead of one undifferentiated
                 wall of switches.
             #}
-            <sw-card :title="$tc('sw6oidc.provider.detail.cardProvisioningAccounts')">
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-switch-field
-                        v-model:value="provider.autoCreateCustomer"
-                        :label="$tc('sw6oidc.provider.detail.autoCreateCustomer')"
-                        :help-text="$tc('sw6oidc.provider.detail.autoCreateCustomerHelp')"
+            <mt-card
+                position-identifier="sw6oidc-provider-detail-provisioning-accounts"
+                :title="$t('sw6oidc.provider.detail.cardProvisioningAccounts')"
+            >
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-switch
+                        v-model="provider.autoCreateCustomer"
+                        :label="$t('sw6oidc.provider.detail.autoCreateCustomer')"
+                        :help-text="$t('sw6oidc.provider.detail.autoCreateCustomerHelp')"
+                        :disabled="!canEdit"
                     />
-                    <sw-switch-field
-                        v-model:value="provider.autoCreateAdmin"
-                        :label="$tc('sw6oidc.provider.detail.autoCreateAdmin')"
-                        :help-text="$tc('sw6oidc.provider.detail.autoCreateAdminHelp')"
+                    <mt-switch
+                        v-model="provider.autoCreateAdmin"
+                        :error="providerAutoCreateAdminError"
+                        :label="$t('sw6oidc.provider.detail.autoCreateAdmin')"
+                        :help-text="$t('sw6oidc.provider.detail.autoCreateAdminHelp')"
+                        :disabled="!canEditTrust"
                     />
                 </sw-container>
-                <sw-container columns="1fr 1fr" gap="0 30px">
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
                     <sw-entity-single-select
                         v-model:value="provider.defaultCustomerGroupId"
                         entity="customer_group"
                         label-property="name"
-                        :label="$tc('sw6oidc.provider.detail.defaultCustomerGroupId')"
-                        :placeholder="$tc('sw6oidc.provider.detail.targetPlaceholderGroup')"
-                        :help-text="$tc('sw6oidc.provider.detail.defaultCustomerGroupIdHelp')"
+                        :label="$t('sw6oidc.provider.detail.defaultCustomerGroupId')"
+                        :placeholder="$t('sw6oidc.provider.detail.targetPlaceholderGroup')"
+                        :help-text="$t('sw6oidc.provider.detail.defaultCustomerGroupIdHelp')"
+                        :disabled="!canEdit || undefined"
                     />
                     <sw-entity-single-select
                         v-model:value="provider.defaultAclRoleId"
                         entity="acl_role"
                         label-property="name"
-                        :label="$tc('sw6oidc.provider.detail.defaultAclRoleId')"
-                        :placeholder="$tc('sw6oidc.provider.detail.targetPlaceholderRole')"
-                        :help-text="$tc('sw6oidc.provider.detail.defaultAclRoleIdHelp')"
+                        :label="$t('sw6oidc.provider.detail.defaultAclRoleId')"
+                        :placeholder="$t('sw6oidc.provider.detail.targetPlaceholderRole')"
+                        :help-text="$t('sw6oidc.provider.detail.defaultAclRoleIdHelp')"
+                        :error="providerDefaultAclRoleIdError"
+                        :disabled="!canEditTrust || undefined"
                     />
                 </sw-container>
                 <mt-banner
                     v-if="adminProvisioningWarning"
                     variant="attention"
                 >
-                    {{ $tc('sw6oidc.provider.detail.adminProvisioningWarning') }}
+                    {{ $t('sw6oidc.provider.detail.adminProvisioningWarning') }}
                 </mt-banner>
-            </sw-card>
+            </mt-card>
 
-            <sw-card :title="$tc('sw6oidc.provider.detail.cardProvisioningLoginRestrictions')">
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-switch-field
-                        v-model:value="provider.disableNonOidcCustomerLogin"
+            <mt-card
+                position-identifier="sw6oidc-provider-detail-login-restrictions"
+                :title="$t('sw6oidc.provider.detail.cardProvisioningLoginRestrictions')"
+            >
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-switch
+                        v-model="provider.disableNonOidcCustomerLogin"
                         :error="providerDisableNonOidcCustomerLoginError"
-                        :label="$tc('sw6oidc.provider.detail.disableNonOidcCustomerLogin')"
-                        :help-text="$tc('sw6oidc.provider.detail.disableNonOidcCustomerLoginHelp')"
+                        :label="$t('sw6oidc.provider.detail.disableNonOidcCustomerLogin')"
+                        :help-text="$t('sw6oidc.provider.detail.disableNonOidcCustomerLoginHelp')"
+                        :disabled="!canEdit"
                     />
-                    <sw-switch-field
-                        v-model:value="provider.disableNonOidcAdminLogin"
+                    <mt-switch
+                        v-model="provider.disableNonOidcAdminLogin"
                         :error="providerDisableNonOidcAdminLoginError"
-                        :label="$tc('sw6oidc.provider.detail.disableNonOidcAdminLogin')"
-                        :help-text="$tc('sw6oidc.provider.detail.disableNonOidcAdminLoginHelp')"
+                        :label="$t('sw6oidc.provider.detail.disableNonOidcAdminLogin')"
+                        :help-text="$t('sw6oidc.provider.detail.disableNonOidcAdminLoginHelp')"
+                        :disabled="!canEdit"
                     />
                 </sw-container>
-            </sw-card>
+            </mt-card>
 
-            <sw-card :title="$tc('sw6oidc.provider.detail.cardProvisioningSync')">
-                <sw-container columns="1fr 1fr 1fr" gap="0 30px">
-                    <sw-switch-field
-                        v-model:value="provider.syncCustomerProfileOnSso"
-                        :label="$tc('sw6oidc.provider.detail.syncCustomerProfileOnSso')"
-                        :help-text="$tc('sw6oidc.provider.detail.syncCustomerProfileOnSsoHelp')"
+            <mt-card
+                position-identifier="sw6oidc-provider-detail-sync"
+                :title="$t('sw6oidc.provider.detail.cardProvisioningSync')"
+            >
+                <sw-container
+                    columns="1fr 1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-switch
+                        v-model="provider.syncCustomerProfileOnSso"
+                        :label="$t('sw6oidc.provider.detail.syncCustomerProfileOnSso')"
+                        :help-text="$t('sw6oidc.provider.detail.syncCustomerProfileOnSsoHelp')"
+                        :disabled="!canEdit"
                     />
-                    <sw-switch-field
-                        v-model:value="provider.syncCustomerAddressOnSso"
-                        :label="$tc('sw6oidc.provider.detail.syncCustomerAddressOnSso')"
-                        :help-text="$tc('sw6oidc.provider.detail.syncCustomerAddressOnSsoHelp')"
+                    <mt-switch
+                        v-model="provider.syncCustomerAddressOnSso"
+                        :label="$t('sw6oidc.provider.detail.syncCustomerAddressOnSso')"
+                        :help-text="$t('sw6oidc.provider.detail.syncCustomerAddressOnSsoHelp')"
+                        :disabled="!canEdit"
                     />
-                    <sw-switch-field
-                        v-model:value="provider.syncCustomerGroupOnSso"
-                        :label="$tc('sw6oidc.provider.detail.syncCustomerGroupOnSso')"
-                        :help-text="$tc('sw6oidc.provider.detail.syncCustomerGroupOnSsoHelp')"
-                    />
-                </sw-container>
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-switch-field
-                        v-model:value="provider.syncAdminProfileOnSso"
-                        :label="$tc('sw6oidc.provider.detail.syncAdminProfileOnSso')"
-                        :help-text="$tc('sw6oidc.provider.detail.syncAdminProfileOnSsoHelp')"
-                    />
-                    <sw-switch-field
-                        v-model:value="provider.syncAdminRoleOnSso"
-                        :label="$tc('sw6oidc.provider.detail.syncAdminRoleOnSso')"
-                        :help-text="$tc('sw6oidc.provider.detail.syncAdminRoleOnSsoHelp')"
+                    <mt-switch
+                        v-model="provider.syncCustomerGroupOnSso"
+                        :label="$t('sw6oidc.provider.detail.syncCustomerGroupOnSso')"
+                        :help-text="$t('sw6oidc.provider.detail.syncCustomerGroupOnSsoHelp')"
+                        :disabled="!canEdit"
                     />
                 </sw-container>
-            </sw-card>
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-switch
+                        v-model="provider.syncAdminProfileOnSso"
+                        :label="$t('sw6oidc.provider.detail.syncAdminProfileOnSso')"
+                        :help-text="$t('sw6oidc.provider.detail.syncAdminProfileOnSsoHelp')"
+                        :disabled="!canEdit"
+                    />
+                    <mt-switch
+                        v-model="provider.syncAdminRoleOnSso"
+                        :label="$t('sw6oidc.provider.detail.syncAdminRoleOnSso')"
+                        :help-text="$t('sw6oidc.provider.detail.syncAdminRoleOnSsoHelp')"
+                        :disabled="!canEdit"
+                    />
+                </sw-container>
+            </mt-card>
 
             {% block sw6oidc_provider_detail_attribute_mappings %}
-            <sw-card
+            <mt-card
                 v-if="provider.attributeMappings"
-                :title="$tc('sw6oidc.provider.detail.cardAttributeMapping')"
+                position-identifier="sw6oidc-provider-detail-attribute-mappings"
+                :title="$t('sw6oidc.provider.detail.cardAttributeMapping')"
             >
                 {#
                     The claim-name select below only ever offers claims from
@@ -370,22 +573,27 @@
                 <mt-banner
                     v-if="!discoveredClaimKeys.length"
                     variant="info"
-                    style="margin-bottom: 16px;"
+                    class="sw6oidc-provider-detail__spaced"
                 >
-                    {{ $tc('sw6oidc.provider.detail.attributeMappingRequiresLiveTestHint') }}
+                    {{ $t('sw6oidc.provider.detail.attributeMappingRequiresLiveTestHint') }}
                 </mt-banner>
                 <sw-data-grid
                     :data-source="provider.attributeMappings"
                     :columns="[
-                        { property: 'attributeType', label: $tc('sw6oidc.provider.detail.attributeType.label'), width: attributeTypeColumnWidth },
-                        { property: 'attributeName', label: $tc('sw6oidc.provider.detail.attributeClaimName'), width: '294px' },
-                        { property: 'transformFunction', label: $tc('sw6oidc.provider.detail.transform.label'), width: '200px' },
-                        { property: 'transformParams', label: $tc('sw6oidc.provider.detail.transform.params') },
+                        { property: 'attributeType', label: $t('sw6oidc.provider.detail.attributeType.label'), width: attributeTypeColumnWidth },
+                        { property: 'attributeName', label: $t('sw6oidc.provider.detail.attributeClaimName'), width: '294px' },
+                        { property: 'transformFunction', label: $t('sw6oidc.provider.detail.transform.label'), width: '200px' },
+                        { property: 'transformParams', label: $t('sw6oidc.provider.detail.transform.params') },
                     ]"
                     :show-selection="false"
                 >
                     <template #column-attributeType="{ item }">
-                        <sw-single-select v-model:value="item.attributeType" :options="attributeTypeOptions" size="small" />
+                        <sw-single-select
+                            v-model:value="item.attributeType"
+                            :options="attributeTypeOptionsFor(item)"
+                            size="small"
+                            :disabled="!canEditAttributeMapping(item) || undefined"
+                        />
                     </template>
                     {#
                         A plain select, same pattern as #column-attributeType
@@ -402,8 +610,9 @@
                         <sw-single-select
                             v-model:value="item.attributeName"
                             :options="claimSelectOptions"
-                            :placeholder="$tc('sw6oidc.provider.detail.pickDiscoveredClaimPlaceholder')"
+                            :placeholder="$t('sw6oidc.provider.detail.pickDiscoveredClaimPlaceholder')"
                             size="small"
+                            :disabled="!canEditAttributeMapping(item) || undefined"
                         />
                     </template>
                     {# Optional value transform, applied by AttributeTransformer on every login. #}
@@ -412,6 +621,7 @@
                             :value="item.transformFunction"
                             :options="transformFunctionOptions"
                             size="small"
+                            :disabled="!canEditAttributeMapping(item) || undefined"
                             @update:value="onTransformFunctionChange(item, $event)"
                         />
                     </template>
@@ -424,89 +634,108 @@
                                 <sw-multi-select
                                     v-model:value="item.transformParams.claims"
                                     :options="claimSelectOptions"
-                                    :placeholder="$tc('sw6oidc.provider.detail.transform.concatClaims')"
+                                    :placeholder="$t('sw6oidc.provider.detail.transform.concatClaims')"
                                     size="small"
+                                    :disabled="!canEditAttributeMapping(item) || undefined"
                                 />
-                                <sw-text-field
+                                <mt-text-field
                                     v-model="item.transformParams.separator"
-                                    :placeholder="$tc('sw6oidc.provider.detail.transform.separator')"
+                                    :placeholder="$t('sw6oidc.provider.detail.transform.separator')"
                                     size="small"
+                                    :disabled="!canEditAttributeMapping(item)"
                                 />
                             </template>
                             <template v-else-if="item.transformFunction === 'split'">
-                                <sw-text-field
+                                <mt-text-field
                                     v-model="item.transformParams.separator"
-                                    :placeholder="$tc('sw6oidc.provider.detail.transform.separator')"
+                                    :placeholder="$t('sw6oidc.provider.detail.transform.separator')"
                                     size="small"
+                                    :disabled="!canEditAttributeMapping(item)"
                                 />
-                                <sw-number-field
+                                <mt-number-field
                                     v-model="item.transformParams.index"
-                                    :placeholder="$tc('sw6oidc.provider.detail.transform.index')"
+                                    :placeholder="$t('sw6oidc.provider.detail.transform.index')"
                                     number-type="int"
                                     size="small"
+                                    :disabled="!canEditAttributeMapping(item)"
                                 />
                             </template>
-                            <sw-text-field
+                            <mt-text-field
                                 v-else-if="item.transformFunction === 'prefix'"
                                 v-model="item.transformParams.value"
-                                :placeholder="$tc('sw6oidc.provider.detail.transform.prefix')"
+                                :placeholder="$t('sw6oidc.provider.detail.transform.prefix')"
                                 size="small"
+                                :disabled="!canEditAttributeMapping(item)"
                             />
                             <template v-else-if="item.transformFunction === 'regex_replace'">
-                                <sw-text-field
+                                <mt-text-field
                                     v-model="item.transformParams.pattern"
-                                    :placeholder="$tc('sw6oidc.provider.detail.transform.pattern')"
+                                    :placeholder="$t('sw6oidc.provider.detail.transform.pattern')"
                                     size="small"
+                                    :disabled="!canEditAttributeMapping(item)"
                                 />
-                                <sw-text-field
+                                <mt-text-field
                                     v-model="item.transformParams.replacement"
-                                    :placeholder="$tc('sw6oidc.provider.detail.transform.replacement')"
+                                    :placeholder="$t('sw6oidc.provider.detail.transform.replacement')"
                                     size="small"
+                                    :disabled="!canEditAttributeMapping(item)"
                                 />
                             </template>
                         </div>
                     </template>
                     <template #actions="{ item }">
-                        <sw-context-menu-item variant="danger" @click="onRemoveAttributeMapping(item)">
-                            {{ $tc('sw6oidc.provider.detail.remove') }}
+                        <sw-context-menu-item
+                            variant="danger"
+                            :disabled="!canEditAttributeMapping(item)"
+                            @click="onRemoveAttributeMapping(item)"
+                        >
+                            {{ $t('sw6oidc.provider.detail.remove') }}
                         </sw-context-menu-item>
                     </template>
                 </sw-data-grid>
-                <sw-button
+                <mt-button
+                    variant="secondary"
                     size="small"
-                    style="margin-top: 16px;"
+                    class="sw6oidc-provider-detail__spaced-top"
+                    :disabled="!canEdit"
                     @click="onAddAttributeMapping"
                 >
-                    {{ $tc('sw6oidc.provider.detail.addAttributeMapping') }}
-                </sw-button>
-            </sw-card>
+                    {{ $t('sw6oidc.provider.detail.addAttributeMapping') }}
+                </mt-button>
+            </mt-card>
             {% endblock %}
 
             {% block sw6oidc_provider_detail_role_mappings %}
-            <sw-card
+            <mt-card
                 v-if="provider.roleMappings"
-                :title="$tc('sw6oidc.provider.detail.cardRoleMapping')"
+                position-identifier="sw6oidc-provider-detail-role-mappings"
+                :title="$t('sw6oidc.provider.detail.cardRoleMapping')"
             >
                 <sw-data-grid
                     :data-source="provider.roleMappings"
                     :columns="[
-                        { property: 'mappingType', label: $tc('sw6oidc.provider.detail.mappingType.label'), width: mappingTypeColumnWidth },
-                        { property: 'oidcGroup', label: $tc('sw6oidc.provider.detail.oidcGroup') },
-                        { property: 'target', label: $tc('sw6oidc.provider.detail.target') },
-                        { property: 'sortOrder', label: $tc('sw6oidc.provider.detail.sortOrder') },
+                        { property: 'mappingType', label: $t('sw6oidc.provider.detail.mappingType.label'), width: mappingTypeColumnWidth },
+                        { property: 'oidcGroup', label: $t('sw6oidc.provider.detail.oidcGroup') },
+                        { property: 'target', label: $t('sw6oidc.provider.detail.target') },
+                        { property: 'sortOrder', label: $t('sw6oidc.provider.detail.sortOrder') },
                     ]"
                     :show-selection="false"
                 >
                     <template #column-mappingType="{ item }">
                         <sw-single-select
                             v-model:value="item.mappingType"
-                            :options="mappingTypeOptions"
+                            :options="mappingTypeOptionsFor(item)"
                             size="small"
+                            :disabled="!canEditRoleMapping(item) || undefined"
                             @update:value="onMappingTypeChange(item)"
                         />
                     </template>
                     <template #column-oidcGroup="{ item }">
-                        <sw-text-field v-model="item.oidcGroup" size="small" />
+                        <mt-text-field
+                            v-model="item.oidcGroup"
+                            size="small"
+                            :disabled="!canEditRoleMapping(item)"
+                        />
                     </template>
                     {#
                         Two separate selects, toggled by mappingType, rather than
@@ -521,7 +750,8 @@
                             entity="acl_role"
                             label-property="name"
                             size="small"
-                            :placeholder="$tc('sw6oidc.provider.detail.targetPlaceholderRole')"
+                            :placeholder="$t('sw6oidc.provider.detail.targetPlaceholderRole')"
+                            :disabled="!canEditRoleMapping(item) || undefined"
                         />
                         <sw-entity-single-select
                             v-else-if="item.mappingType === 'customer_group'"
@@ -529,7 +759,8 @@
                             entity="customer_group"
                             label-property="name"
                             size="small"
-                            :placeholder="$tc('sw6oidc.provider.detail.targetPlaceholderGroup')"
+                            :placeholder="$t('sw6oidc.provider.detail.targetPlaceholderGroup')"
+                            :disabled="!canEditRoleMapping(item) || undefined"
                         />
                         {#
                             'superadmin' rows need no target picker — they
@@ -537,38 +768,50 @@
                             ACL role or customer group.
                         #}
                         <span v-else>
-                            {{ $tc('sw6oidc.provider.detail.targetSuperadmin') }}
+                            {{ $t('sw6oidc.provider.detail.targetSuperadmin') }}
                         </span>
                     </template>
                     <template #column-sortOrder="{ item }">
-                        <sw-number-field v-model="item.sortOrder" size="small" />
+                        <mt-number-field
+                            v-model="item.sortOrder"
+                            number-type="int"
+                            size="small"
+                            :disabled="!canEditRoleMapping(item)"
+                        />
                     </template>
                     <template #actions="{ item }">
-                        <sw-context-menu-item variant="danger" @click="onRemoveRoleMapping(item)">
-                            {{ $tc('sw6oidc.provider.detail.remove') }}
+                        <sw-context-menu-item
+                            variant="danger"
+                            :disabled="!canEditRoleMapping(item)"
+                            @click="onRemoveRoleMapping(item)"
+                        >
+                            {{ $t('sw6oidc.provider.detail.remove') }}
                         </sw-context-menu-item>
                     </template>
                 </sw-data-grid>
-                <sw-button
+                <mt-button
+                    variant="secondary"
                     size="small"
-                    style="margin-top: 16px;"
+                    class="sw6oidc-provider-detail__spaced-top"
+                    :disabled="!canEdit"
                     @click="onAddRoleMapping"
                 >
-                    {{ $tc('sw6oidc.provider.detail.addRoleMapping') }}
-                </sw-button>
-            </sw-card>
+                    {{ $t('sw6oidc.provider.detail.addRoleMapping') }}
+                </mt-button>
+            </mt-card>
             {% endblock %}
 
             {% block sw6oidc_provider_detail_access_control_rules %}
-            <sw-card
+            <mt-card
                 v-if="provider.accessControlRules"
-                :title="$tc('sw6oidc.provider.detail.cardAccessControl')"
+                position-identifier="sw6oidc-provider-detail-access-control"
+                :title="$t('sw6oidc.provider.detail.cardAccessControl')"
             >
                 <mt-banner
                     variant="info"
-                    style="margin-bottom: 16px;"
+                    class="sw6oidc-provider-detail__spaced"
                 >
-                    {{ $tc('sw6oidc.provider.detail.accessControlHint') }}
+                    {{ $t('sw6oidc.provider.detail.accessControlHint') }}
                     <template v-if="accessControlClaimKeys.length">
                         <br>
                         {{ $t('sw6oidc.provider.detail.accessControlDiscoveredClaims', { claims: accessControlClaimKeys.join(', ') }) }}
@@ -582,151 +825,318 @@
                 <sw-data-grid
                     :data-source="provider.accessControlRules"
                     :columns="[
-                        { property: 'claimKey', label: $tc('sw6oidc.provider.detail.claimKey'), width: '220px' },
-                        { property: 'operator', label: $tc('sw6oidc.provider.detail.operator'), width: '200px' },
-                        { property: 'value', label: $tc('sw6oidc.provider.detail.ruleValue'), width: '200px' },
-                        { property: 'errorMessage', label: $tc('sw6oidc.provider.detail.ruleErrorMessage') },
-                        { property: 'sortOrder', label: $tc('sw6oidc.provider.detail.sortOrder'), width: '120px' },
+                        { property: 'claimKey', label: $t('sw6oidc.provider.detail.claimKey'), width: '220px' },
+                        { property: 'operator', label: $t('sw6oidc.provider.detail.operator'), width: '200px' },
+                        { property: 'value', label: $t('sw6oidc.provider.detail.ruleValue'), width: '200px' },
+                        { property: 'errorMessage', label: $t('sw6oidc.provider.detail.ruleErrorMessage') },
+                        { property: 'sortOrder', label: $t('sw6oidc.provider.detail.sortOrder'), width: '120px' },
                     ]"
                     :show-selection="false"
                 >
                     <template #column-claimKey="{ item }">
-                        <sw-text-field v-model="item.claimKey" size="small" />
+                        <mt-text-field
+                            v-model="item.claimKey"
+                            size="small"
+                            :disabled="!canEditAccessControl"
+                        />
                     </template>
                     <template #column-operator="{ item }">
                         <sw-single-select
                             v-model:value="item.operator"
                             :options="operatorOptions"
                             size="small"
+                            :disabled="!canEditAccessControl || undefined"
                             @update:value="onOperatorChange(item)"
                         />
                     </template>
                     <template #column-value="{ item }">
-                        <sw-text-field
+                        <mt-text-field
                             v-if="!isValuelessOperator(item.operator)"
                             v-model="item.value"
                             size="small"
+                            :disabled="!canEditAccessControl"
                         />
                         <span v-else>—</span>
                     </template>
                     <template #column-errorMessage="{ item }">
-                        <sw-text-field
+                        <mt-text-field
                             v-model="item.errorMessage"
-                            :placeholder="$tc('sw6oidc.provider.detail.ruleErrorMessagePlaceholder')"
+                            :placeholder="$t('sw6oidc.provider.detail.ruleErrorMessagePlaceholder')"
                             size="small"
+                            :disabled="!canEditAccessControl"
                         />
                     </template>
                     <template #column-sortOrder="{ item }">
-                        <sw-number-field v-model="item.sortOrder" size="small" />
+                        <mt-number-field
+                            v-model="item.sortOrder"
+                            number-type="int"
+                            size="small"
+                            :disabled="!canEditAccessControl"
+                        />
                     </template>
                     <template #actions="{ item }">
-                        <sw-context-menu-item variant="danger" @click="onRemoveAccessControlRule(item)">
-                            {{ $tc('sw6oidc.provider.detail.remove') }}
+                        <sw-context-menu-item
+                            variant="danger"
+                            :disabled="!canEditAccessControl"
+                            @click="onRemoveAccessControlRule(item)"
+                        >
+                            {{ $t('sw6oidc.provider.detail.remove') }}
                         </sw-context-menu-item>
                     </template>
                 </sw-data-grid>
-                <sw-button
+                <mt-button
+                    variant="secondary"
                     size="small"
-                    style="margin-top: 16px;"
+                    class="sw6oidc-provider-detail__spaced-top"
+                    :disabled="!canEditAccessControl"
                     @click="onAddAccessControlRule"
                 >
-                    {{ $tc('sw6oidc.provider.detail.addAccessControlRule') }}
-                </sw-button>
-            </sw-card>
+                    {{ $t('sw6oidc.provider.detail.addAccessControlRule') }}
+                </mt-button>
+            </mt-card>
             {% endblock %}
 
-            <sw-card :title="$tc('sw6oidc.provider.detail.cardProvisioningSuperadmin')">
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-switch-field
-                        v-model:value="provider.allowSuperadminGroupMapping"
-                        :label="$tc('sw6oidc.provider.detail.allowSuperadminGroupMapping')"
-                        :help-text="$tc('sw6oidc.provider.detail.allowSuperadminGroupMappingHelp')"
+            <mt-card
+                position-identifier="sw6oidc-provider-detail-account-linking"
+                :title="$t('sw6oidc.provider.detail.cardAccountLinking')"
+            >
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-switch
+                        v-model="provider.requireEmailVerified"
+                        :error="providerRequireEmailVerifiedError"
+                        :label="$t('sw6oidc.provider.detail.requireEmailVerified')"
+                        :help-text="$t('sw6oidc.provider.detail.requireEmailVerifiedHelp')"
+                        :disabled="!canEditTrust"
+                    />
+                    <mt-switch
+                        v-model="provider.linkExistingAccounts"
+                        :error="providerLinkExistingAccountsError"
+                        :label="$t('sw6oidc.provider.detail.linkExistingAccounts')"
+                        :help-text="$t('sw6oidc.provider.detail.linkExistingAccountsHelp')"
+                        :disabled="!canEditTrust"
+                    />
+                </sw-container>
+                <mt-banner
+                    v-if="provider.linkExistingAccounts && !provider.requireEmailVerified"
+                    variant="attention"
+                >
+                    {{ $t('sw6oidc.provider.detail.linkExistingAccountsUnverifiedWarning') }}
+                </mt-banner>
+            </mt-card>
+
+            <mt-card
+                position-identifier="sw6oidc-provider-detail-superadmin"
+                :title="$t('sw6oidc.provider.detail.cardProvisioningSuperadmin')"
+            >
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-switch
+                        v-model="provider.allowSuperadminGroupMapping"
+                        :error="providerAllowSuperadminGroupMappingError"
+                        :label="$t('sw6oidc.provider.detail.allowSuperadminGroupMapping')"
+                        :help-text="$t('sw6oidc.provider.detail.allowSuperadminGroupMappingHelp')"
+                        :disabled="!canEditTrust"
+                    />
+                    <mt-switch
+                        v-model="provider.revokeSuperadminOnSso"
+                        :disabled="!canEdit || !provider.syncAdminRoleOnSso"
+                        :label="$t('sw6oidc.provider.detail.revokeSuperadminOnSso')"
+                        :help-text="$t('sw6oidc.provider.detail.revokeSuperadminOnSsoHelp')"
                     />
                 </sw-container>
                 <mt-banner
                     v-if="provider.allowSuperadminGroupMapping"
                     variant="critical"
                 >
-                    {{ $tc('sw6oidc.provider.detail.superadminMappingActiveWarning') }}
+                    {{ $t('sw6oidc.provider.detail.superadminMappingActiveWarning') }}
                 </mt-banner>
-            </sw-card>
+            </mt-card>
 
             {% block sw6oidc_provider_detail_health %}
-            <sw-card class="sw6oidc-bold-field-labels" :title="$tc('sw6oidc.provider.detail.cardHealth')">
-                <sw-container columns="1fr 1fr" gap="0 30px">
-                    <sw-number-field
+            <mt-card
+                class="sw6oidc-bold-field-labels"
+                position-identifier="sw6oidc-provider-detail-health"
+                :title="$t('sw6oidc.provider.detail.cardHealth')"
+            >
+                <sw-container
+                    columns="1fr 1fr"
+                    gap="0 30px"
+                >
+                    <mt-number-field
                         v-model="provider.healthAlertFailureThreshold"
                         number-type="int"
                         :min="0"
                         :max="1000"
-                        :label="$tc('sw6oidc.provider.detail.healthAlertFailureThreshold')"
-                        :help-text="$tc('sw6oidc.provider.detail.healthAlertFailureThresholdHelp')"
+                        :label="$t('sw6oidc.provider.detail.healthAlertFailureThreshold')"
+                        :help-text="$t('sw6oidc.provider.detail.healthAlertFailureThresholdHelp')"
+                        :disabled="!canEdit"
                     />
-                    <sw-switch-field
-                        v-model:value="provider.healthAlertNotifyOnRecovery"
-                        :label="$tc('sw6oidc.provider.detail.healthAlertNotifyOnRecovery')"
-                        :help-text="$tc('sw6oidc.provider.detail.healthAlertNotifyOnRecoveryHelp')"
+                    <mt-switch
+                        v-model="provider.healthAlertNotifyOnRecovery"
+                        :label="$t('sw6oidc.provider.detail.healthAlertNotifyOnRecovery')"
+                        :help-text="$t('sw6oidc.provider.detail.healthAlertNotifyOnRecoveryHelp')"
+                        :disabled="!canEdit"
                     />
                 </sw-container>
-                <sw-password-field
+                <mt-password-field
                     v-model="provider.healthAlertWebhookUrl"
                     :error="providerHealthAlertWebhookUrlError"
-                    :label="$tc('sw6oidc.provider.detail.healthAlertWebhookUrl')"
-                    :help-text="$tc('sw6oidc.provider.detail.healthAlertWebhookUrlHelp')"
-                    :placeholder="diagnostics && diagnostics.alerting.webhookConfigured ? $tc('sw6oidc.provider.detail.clientSecretStoredPlaceholder') : 'https://hooks.example.com/…'"
+                    :label="$t('sw6oidc.provider.detail.healthAlertWebhookUrl')"
+                    :help-text="$t('sw6oidc.provider.detail.healthAlertWebhookUrlHelp')"
+                    :placeholder="webhookConfigured ? $t('sw6oidc.provider.detail.clientSecretStoredPlaceholder') : 'https://hooks.example.com/…'"
+                    :disabled="!canEdit"
                 />
+                <mt-button
+                    v-if="webhookConfigured && canEdit"
+                    size="small"
+                    variant="secondary"
+                    @click="onRemoveWebhook"
+                >
+                    {{ $t('sw6oidc.provider.detail.removeWebhook') }}
+                </mt-button>
+                <p
+                    v-if="removeWebhook"
+                    class="sw6oidc-health-state"
+                >
+                    {{ $t('sw6oidc.provider.detail.webhookRemovedOnSave') }}
+                </p>
                 <p
                     v-if="provider.healthAlertLastCheckedAt"
                     class="sw6oidc-health-state"
                 >
                     {{ $t('sw6oidc.provider.detail.healthLastCheck', {
                         date: formatDate(provider.healthAlertLastCheckedAt),
-                        status: $tc(`sw6oidc.provider.detail.healthStatus.${provider.healthAlertLastStatus || 'unknown'}`),
+                        status: snippetOr(`sw6oidc.provider.detail.healthStatus.${provider.healthAlertLastStatus || 'unknown'}`, provider.healthAlertLastStatus || 'unknown'),
                         failures: provider.healthAlertConsecutiveFailures,
                     }) }}
                 </p>
 
-                <sw-button
+                <mt-button
+                    variant="secondary"
                     size="small"
                     :is-loading="isRunningDiagnostics"
                     :disabled="!canRunLiveTest"
-                    style="margin-top: 8px;"
+                    class="sw6oidc-provider-detail__spaced-top-small"
                     @click="onClickRunDiagnostics"
                 >
-                    {{ $tc('sw6oidc.provider.detail.buttonRunDiagnostics') }}
-                </sw-button>
+                    {{ $t('sw6oidc.provider.detail.buttonRunDiagnostics') }}
+                </mt-button>
 
                 <ul
                     v-if="diagnostics"
-                    class="sw6oidc-test-result-list"
-                    style="margin-top: 16px;"
+                    class="sw6oidc-test-result-list sw6oidc-provider-detail__spaced-top"
+                    aria-live="polite"
                 >
                     <li class="sw6oidc-test-result-list__item">
-                        <strong>{{ $tc('sw6oidc.provider.detail.diagnosticsReachability') }}:</strong>
+                        <strong>{{ $t('sw6oidc.provider.detail.diagnosticsReachability') }}:</strong>
                         <span>{{ diagnostics.reachability.detail }} ({{ diagnostics.reachability.durationMs }} ms)</span>
-                        <sw-label
-                            size="medium"
-                            appearance="pill"
-                            :variant="diagnostics.reachability.ok ? 'success' : 'danger'"
-                        >{{ $tc(`sw6oidc.provider.detail.testStatus.${diagnostics.reachability.ok ? 'pass' : 'fail'}`) }}</sw-label>
+                        <mt-badge :variant="testStatusVariant(diagnostics.reachability.ok ? 'pass' : 'fail')">
+                            {{ snippetOr(`sw6oidc.provider.detail.testStatus.${diagnostics.reachability.ok ? 'pass' : 'fail'}`, diagnostics.reachability.ok ? 'pass' : 'fail') }}
+                        </mt-badge>
                     </li>
                     <li class="sw6oidc-test-result-list__item">
-                        <strong>{{ $tc('sw6oidc.provider.detail.diagnosticsConfig') }}:</strong>
-                        <span v-if="!diagnostics.configProblems.length">{{ $tc('sw6oidc.provider.detail.diagnosticsConfigComplete') }}</span>
-                        <span v-else>{{ diagnostics.configProblems.map((code) => $tc(`sw6oidc.provider.detail.configProblem.${code}`)).join(', ') }}</span>
-                        <sw-label
-                            size="medium"
-                            appearance="pill"
-                            :variant="diagnostics.configProblems.length ? 'danger' : 'success'"
-                        >{{ $tc(`sw6oidc.provider.detail.testStatus.${diagnostics.configProblems.length ? 'fail' : 'pass'}`) }}</sw-label>
+                        <strong>{{ $t('sw6oidc.provider.detail.diagnosticsConfig') }}:</strong>
+                        <span v-if="!diagnostics.configProblems.length">{{ $t('sw6oidc.provider.detail.diagnosticsConfigComplete') }}</span>
+                        <span v-else>{{ diagnostics.configProblems.map((code) => snippetOr(`sw6oidc.provider.detail.configProblem.${code}`, code)).join(', ') }}</span>
+                        <mt-badge :variant="testStatusVariant(diagnostics.configProblems.length ? 'fail' : 'pass')">
+                            {{ snippetOr(`sw6oidc.provider.detail.testStatus.${diagnostics.configProblems.length ? 'fail' : 'pass'}`, diagnostics.configProblems.length ? 'fail' : 'pass') }}
+                        </mt-badge>
                     </li>
                     <li class="sw6oidc-test-result-list__item">
-                        <strong>{{ $tc('sw6oidc.provider.detail.diagnosticsAlerting') }}:</strong>
-                        <span>{{ $tc(diagnostics.alerting.enabled ? 'sw6oidc.provider.detail.diagnosticsAlertingOn' : 'sw6oidc.provider.detail.diagnosticsAlertingOff') }}</span>
+                        <strong>{{ $t('sw6oidc.provider.detail.diagnosticsAlerting') }}:</strong>
+                        <span>{{ $t(diagnostics.alerting.enabled ? 'sw6oidc.provider.detail.diagnosticsAlertingOn' : 'sw6oidc.provider.detail.diagnosticsAlertingOff') }}</span>
+                    </li>
+                    <li
+                        v-if="diagnostics.infrastructure"
+                        class="sw6oidc-test-result-list__item"
+                    >
+                        <strong>{{ $t('sw6oidc.provider.detail.diagnosticsAtomicStore') }}:</strong>
+                        <span>{{ snippetOr(`sw6oidc.provider.detail.atomicStore.${diagnostics.infrastructure.atomicStore}`, diagnostics.infrastructure.atomicStore) }}</span>
                     </li>
                 </ul>
-            </sw-card>
+                <template v-if="diagnostics?.infrastructure">
+                    <mt-banner
+                        v-for="warning in diagnostics.infrastructure.warnings"
+                        :key="warning"
+                        variant="attention"
+                    >
+                        {{ snippetOr(`sw6oidc.provider.detail.infrastructureWarning.${warning}`, warning) }}
+                    </mt-banner>
+                </template>
+            </mt-card>
             {% endblock %}
+
+            <sw-modal
+                v-if="lockoutConfirmation"
+                :title="$t('sw6oidc.provider.detail.lockoutConfirmTitle')"
+                variant="small"
+                @modal-close="lockoutConfirmation = null"
+            >
+                <p role="alert">{{ lockoutConfirmation }}</p>
+
+                <template #modal-footer>
+                    <mt-button
+                        variant="secondary"
+                        @click="lockoutConfirmation = null"
+                    >
+                        {{ $t('global.default.cancel') }}
+                    </mt-button>
+                    <mt-button
+                        variant="critical"
+                        @click="onConfirmLockout"
+                    >
+                        {{ $t('sw6oidc.provider.detail.lockoutConfirmButton') }}
+                    </mt-button>
+                </template>
+            </sw-modal>
+
+            <sw-verify-user-modal
+                v-if="lockoutVerifying"
+                @verified="onLockoutVerified"
+                @close="lockoutVerifying = false"
+            />
+
+            <sw-modal
+                v-if="issuerChangeConfirmation"
+                :title="$t('sw6oidc.provider.detail.issuerChange.title')"
+                variant="small"
+                @modal-close="issuerChangeConfirmation = null"
+            >
+                <p role="alert">{{ issuerChangeConfirmation }}</p>
+                <p class="sw6oidc-provider-detail__spaced-top-small">{{ $t('sw6oidc.provider.detail.issuerChange.explanation') }}</p>
+
+                <template #modal-footer>
+                    <mt-button
+                        variant="secondary"
+                        @click="issuerChangeConfirmation = null"
+                    >
+                        {{ $t('global.default.cancel') }}
+                    </mt-button>
+                    <mt-button
+                        variant="critical"
+                        @click="onDecideIssuerChange(false)"
+                    >
+                        {{ $t('sw6oidc.provider.detail.issuerChange.disconnect') }}
+                    </mt-button>
+                    <mt-button
+                        variant="primary"
+                        @click="onDecideIssuerChange(true)"
+                    >
+                        {{ $t('sw6oidc.provider.detail.issuerChange.rebind') }}
+                    </mt-button>
+                </template>
+            </sw-modal>
+
+            <sw-verify-user-modal
+                v-if="issuerChangeRebind !== null"
+                @verified="onIssuerChangeVerified"
+                @close="issuerChangeRebind = null"
+            />
         </sw-card-view>
     </template>
     {% endblock %}

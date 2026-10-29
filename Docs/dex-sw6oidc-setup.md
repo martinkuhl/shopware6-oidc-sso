@@ -38,18 +38,24 @@ Dex authenticates confidential clients with HTTP Basic (`client_secret_basic`), 
 |---|---|
 | Client ID / Client secret | `shopware` / the secret from step 1 |
 | Well-known configuration URL | `https://dex.example.com/dex/.well-known/openid-configuration`, then **Load configuration** |
-| Scope | `openid profile email groups` (`groups` only if your connector provides groups) |
+| Scope | `openid profile email groups` (`groups` only if your connector provides groups; `openid` is required — the plugin then expects an ID token) |
 | PKCE flow | `S256` |
 | Group attribute | `groups` |
 
 Save, then use **Test connection** and **Run live login test**. Dex sends `sub`, `email`, `email_verified`, `name`, `preferred_username` and, with the `groups` scope and a connector that supports it, `groups`.
 
-Dex's `sub` is an encoded combination of the connector and the upstream user id. It stays stable for a user as long as the connector id doesn't change.
+Dex's `sub` is an encoded combination of the connector and the upstream user id. It stays stable for a user as long as the connector id doesn't change. Shop accounts are bound to it, so renaming a connector id disconnects every account (unlink and connect again).
+
+**Verified email**: the provider's **Require a verified email** setting is on by default, so the live test must show `email_verified: true`. Dex takes this value from the connector; check your connector's documentation if it is `false`. Turn the setting off only deliberately, if the upstream source fully controls every user's email address.
+
+**Existing shop accounts** with the same email are not taken over automatically. Users connect them with **Connect SSO** in their account/profile, or you enable **Link existing accounts by verified email** on the provider.
+
+**Step-up in the Administration**: confirming an admin's identity via SSO needs `auth_time` in the ID token. If Dex doesn't send it, admins confirm with a passkey or their password instead.
 
 ## 3. Groups and access control
 
 - **Group/Role mapping**: map Dex group names to customer groups or ACL roles. For GitHub these look like `my-org:my-team`; for LDAP they come from the connector's `groupSearch`.
-- **Access control**: `email_verified` *equals* `true`, or `groups` *contains* `my-org:shop-admins`.
+- **Access control**: for example `groups` *contains* `my-org:shop-admins`, or `email` *email domain is* `example.com`. (`email_verified` *equals* `true` is only needed when **Require a verified email** is off.)
 
 ## 4. Logout
 
@@ -59,4 +65,5 @@ Dex doesn't support RP-initiated logout (there is no `end_session_endpoint`), Ba
 
 - **"Unregistered redirect_uri"**: the URI must match a `redirectURIs` entry exactly.
 - **No `groups` claim**: request the `groups` scope, and check that the connector returns groups (for LDAP: `groupSearch`; for GitHub: `loadAllGroups` or `orgs`).
+- **"email address not verified"**: the connector reported `email_verified: false`; see "Verified email" above.
 - **Dex on a private network or plain HTTP (testing only)**: set `SW6OIDC_ALLOW_INSECURE_IDP_URLS=1`, and never in production.

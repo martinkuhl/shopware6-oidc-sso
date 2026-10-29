@@ -2,10 +2,11 @@
 
 namespace MartinKuhl\Sw6Oidc\Storefront\Controller;
 
+use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyCredentialRepository;
 use Shopware\Core\Checkout\Customer\CustomerEntity;
-use Shopware\Core\Checkout\Customer\SalesChannel\LogoutRoute;
+use Shopware\Core\Checkout\Customer\SalesChannel\AbstractLogoutRoute;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
 use Shopware\Core\PlatformRequest;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
@@ -13,7 +14,7 @@ use Shopware\Storefront\Controller\StorefrontController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * Self-service Passkey register/delete under My Account - lists and manages
@@ -31,13 +32,10 @@ class AccountPasskeyController extends StorefrontController
     public function __construct(
         private readonly PasskeyCredentialRepository $passkeyCredentialRepository,
         private readonly PasskeyConfig $passkeyConfig,
-        // Type-hinted concrete, not AbstractLogoutRoute: unlike
-        // AbstractLoginRoute, this Shopware version doesn't register an
-        // AbstractLogoutRoute alias for it (confirmed via a real
-        // cache:clear failure - "has a dependency on a non-existent
-        // service"), matching LogoutRoute::getDecorated() itself throwing
-        // DecorationPatternException - it isn't meant to be decorated here.
-        private readonly LogoutRoute $logoutRoute,
+        // The service id is core's LogoutRoute, but the plugin decorates it
+        // (OidcLogoutRoute), so only the abstract type fits: the concrete
+        // type hint made this controller fail to build (R7-H1).
+        private readonly AbstractLogoutRoute $logoutRoute,
     ) {
     }
 
@@ -49,7 +47,7 @@ class AccountPasskeyController extends StorefrontController
     )]
     public function index(SalesChannelContext $context, CustomerEntity $customer): Response
     {
-        $credentials = $this->passkeyCredentialRepository->findAllForOwner('customer', $customer->getId(), $context->getContext());
+        $credentials = $this->passkeyCredentialRepository->findAllForOwner(LoginType::Customer->value, $customer->getId(), $context->getContext());
 
         return $this->renderStorefront('@Sw6Oidc/storefront/page/account/passkey/index.html.twig', [
             'sw6oidcCredentials' => $credentials,
@@ -65,7 +63,7 @@ class AccountPasskeyController extends StorefrontController
     )]
     public function delete(string $credentialId, Request $request, SalesChannelContext $context, CustomerEntity $customer): RedirectResponse
     {
-        $deleted = $this->passkeyCredentialRepository->deleteOwnedByUser($credentialId, 'customer', $customer->getId(), $context->getContext());
+        $deleted = $this->passkeyCredentialRepository->deleteOwnedByUser($credentialId, LoginType::Customer->value, $customer->getId(), $context->getContext());
 
         if (!$deleted) {
             $this->addFlash(self::DANGER, $this->trans('sw6oidc.passkey.deleteError'));

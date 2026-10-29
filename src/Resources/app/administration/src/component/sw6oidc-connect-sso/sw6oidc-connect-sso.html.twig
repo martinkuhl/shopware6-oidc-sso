@@ -1,0 +1,28 @@
+{% block sw6oidc_connect_sso %}
+<div
+    v-if="!isLoading && !isBound && providers.length"
+    class="sw6oidc-connect-sso"
+>
+    <p class="sw6oidc-connect-sso__intro">
+        {{ $t('sw6oidc.userProvider.connectIntro') }}
+    </p>
+
+    <mt-button
+        v-for="provider in providers"
+        :key="provider.id"
+        class="sw6oidc-connect-sso__button"
+        variant="secondary"
+        size="small"
+        :disabled="isConnecting"
+        @click="onClickConnect(provider.id)"
+    >
+        {{ $t('sw6oidc.userProvider.connectButton', { name: provider.label || $t('sw6oidc.login.ssoButton') }) }}
+    </mt-button>
+
+    <sw-verify-user-modal
+        v-if="pendingProviderId"
+        @verified="onVerified"
+        @close="pendingProviderId = null"
+    />
+</div>
+{% endblock %}
