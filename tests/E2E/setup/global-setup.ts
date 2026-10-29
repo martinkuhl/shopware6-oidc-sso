@@ -119,12 +119,18 @@ export default async function globalSetup(): Promise<void> {
     await saveUserEntity(api, 'acl-role', {
         id: E2E_ROLE_ID,
         name: 'E2E editors',
-        // What the role editor saves for "SSO providers: viewer": the role
-        // key, its expanded privileges (acl/index.js) and core's defaults
-        // (privileges.service getRequiredPrivileges()), else the pages' own
-        // requests get 403s.
+        // What the role editor saves for "SSO providers: viewer" plus
+        // "Update own profile" (the passkey profile tab's route privilege):
+        // the role keys, their expanded privileges (acl/index.js, core's
+        // sw-profile acl) and core's defaults (privileges.service
+        // getRequiredPrivileges()), else the pages' own requests get 403s.
         privileges: [
             'sw6oidc_provider.viewer',
+            'user.update_profile',
+            'user_change_me',
+            'user_config:read',
+            'user_config:update',
+            'user_config:create',
             'sw6oidc_provider:read',
             'sw6oidc_attribute_mapping:read',
             'sw6oidc_role_mapping:read',

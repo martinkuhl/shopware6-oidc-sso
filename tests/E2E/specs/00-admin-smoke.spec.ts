@@ -21,6 +21,12 @@ function collectErrors(page: Page): string[] {
     const errors: string[] = [];
 
     page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+    // The console only says "Failed to load resource"; name the request.
+    page.on('response', (response) => {
+        if (response.status() >= 400) {
+            errors.push(`response: ${response.status()} ${response.request().method()} ${response.url()}`);
+        }
+    });
     page.on('console', (message) => {
         if (message.type() === 'error') {
             errors.push(`console: ${message.text()}`);
