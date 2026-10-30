@@ -56,7 +56,8 @@ class BackChannelLogoutController extends AbstractController
 
         try {
             $logoutToken = $this->logoutToken($request);
-            $provider = $this->resolveProvider($logoutToken);
+            $providers = $this->resolveProviders($logoutToken);
+            $provider = $providers[0];
         } catch (InvalidJwtException $exception) {
             // Malformed or not addressed to any provider of this shop. Such a
             // token can never be valid here, so once the address's budget is
@@ -110,12 +111,17 @@ class BackChannelLogoutController extends AbstractController
         }
 
         try {
-            $this->logoutHandler->logout(
-                $provider->getId(),
-                \is_string($claims['sub'] ?? null) ? $claims['sub'] : null,
-                \is_string($claims['sid'] ?? null) ? $claims['sid'] : null,
-                Sw6OidcSessionActivityDefinition::LOGOUT_REASON_BACKCHANNEL,
-            );
+            // Every provider for this issuer and audience: a customer and an
+            // admin provider may share one IdP client, and the session to end
+            // is registered under the one it logged in through (R8-M10).
+            foreach ($providers as $matching) {
+                $this->logoutHandler->logout(
+                    $matching->getId(),
+                    \is_string($claims['sub'] ?? null) ? $claims['sub'] : null,
+                    \is_string($claims['sid'] ?? null) ? $claims['sid'] : null,
+                    Sw6OidcSessionActivityDefinition::LOGOUT_REASON_BACKCHANNEL,
+                );
+            }
         } catch (\Throwable $exception) {
             // Not done: forget the token, so the IdP's retry is processed
             // instead of being taken for a replay (R3-M19).
@@ -147,24 +153,32 @@ class BackChannelLogoutController extends AbstractController
     }
 
     /**
-     * The unverified `iss`/`aud` only pick which provider's keys verify the
-     * token; several providers may share an issuer, so the audience decides.
+     * The providers the token is addressed to: same issuer, client id in
+     * `aud`. The unverified claims only pick candidates; the first one's keys
+     * and client id verify the token (they share the issuer, so its keys).
+     *
+     * @return non-empty-list<Sw6OidcProviderEntity>
      *
      * @throws InvalidJwtException
      */
-    private function resolveProvider(string $logoutToken): Sw6OidcProviderEntity
+    private function resolveProviders(string $logoutToken): array
     {
         $unverified = $this->jwtVerifier->decodeUnverified($logoutToken) ?? [];
         $issuer = \is_string($unverified['iss'] ?? null) ? $unverified['iss'] : '';
         $audiences = (array) ($unverified['aud'] ?? []);
+        $matching = [];
 
         foreach ($this->providerResolver->findByIssuer($issuer, Context::createDefaultContext()) as $candidate) {
             if (\in_array($candidate->getClientId(), $audiences, true)) {
-                return $candidate;
+                $matching[] = $candidate;
             }
         }
 
-        throw new InvalidJwtException('No active provider matches the logout token issuer/audience.');
+        if ($matching === []) {
+            throw new InvalidJwtException('No active provider matches the logout token issuer/audience.');
+        }
+
+        return $matching;
     }
 
     /**

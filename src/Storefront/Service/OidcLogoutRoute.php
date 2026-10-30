@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Storefront\Service;
 
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use MartinKuhl\Sw6Oidc\Service\Oidc\LogoutContext;
 use MartinKuhl\Sw6Oidc\Service\Oidc\PostLogoutState;
@@ -63,11 +64,12 @@ class OidcLogoutRoute extends AbstractLogoutRoute
             return $response;
         }
 
-        // The session is over locally: a later Back-/Front-Channel Logout has
-        // nothing left to end for it.
-        $session = $this->sessionRegistry->findBySessionKey(Sw6OidcSession::USER_TYPE_CUSTOMER, $customerId, $preLogoutToken);
+        // The context token is over locally, and with it every SSO login that
+        // shared it (logins on several devices get the same token, R8-M9): a
+        // later Back-/Front-Channel Logout has nothing left to end for them.
+        $sessions = $this->sessionRegistry->findAllBySessionKey(Sw6OidcSession::USER_TYPE_CUSTOMER, $customerId, $preLogoutToken);
 
-        if ($session instanceof Sw6OidcSession) {
+        foreach ($sessions as $session) {
             $this->sessionRegistry->remove($session);
         }
 
@@ -76,29 +78,39 @@ class OidcLogoutRoute extends AbstractLogoutRoute
             $customerId,
             Sw6OidcSessionActivityDefinition::LOGOUT_REASON_LOGOUT,
             $preLogoutToken,
-            $session?->id,
+            $sessions[0]->id ?? null,
         );
 
-        if (!$session instanceof Sw6OidcSession) {
+        if ($sessions === []) {
             $this->logger->debug('sw6oidc: no OIDC session registered for this customer session, skipping RP-initiated logout.');
 
             return $response;
         }
 
-        $logoutContext = new LogoutContext($session->providerId, $session->idToken, $session->idpAccessToken, $session->idpRefreshToken);
+        $providers = [];
 
-        try {
-            $provider = $this->providerResolver->getActiveById($logoutContext->providerId, LoginType::Customer->value, $context->getContext());
-        } catch (ProviderNotFoundException $exception) {
-            $this->logger->warning('sw6oidc: RP-initiated logout skipped, provider no longer active.', [
-                'providerId' => $logoutContext->providerId,
-                'exception' => $exception->getMessage(),
-            ]);
+        foreach ($sessions as $index => $session) {
+            try {
+                $providers[$index] = $this->providerResolver->getActiveById($session->providerId, LoginType::Customer->value, $context->getContext());
+            } catch (ProviderNotFoundException $exception) {
+                $this->logger->warning('sw6oidc: token revocation skipped, provider no longer active.', [
+                    'providerId' => $session->providerId,
+                    'exception' => $exception->getMessage(),
+                ]);
 
-            return $response;
+                continue;
+            }
+
+            $this->rpInitiatedLogoutService->revokeTokens($providers[$index], $this->logoutContextOf($session));
         }
 
-        $this->rpInitiatedLogoutService->revokeTokens($provider, $logoutContext);
+        // The IdP logout is for the newest login: the one most likely made in this browser.
+        $logoutContext = $this->logoutContextOf($sessions[0]);
+        $provider = $providers[0] ?? null;
+
+        if (!$provider instanceof Sw6OidcProviderEntity) {
+            return $response;
+        }
 
         $logoutUrl = $this->rpInitiatedLogoutService->buildLogoutUrl(
             $provider,
@@ -117,5 +129,10 @@ class OidcLogoutRoute extends AbstractLogoutRoute
         // Store API clients (headless) get the IdP logout URL in the response
         // body's redirectUrl, since they aren't redirected by the Storefront.
         return $logoutUrl !== null ? new ContextTokenResponse($response->getToken(), $logoutUrl) : $response;
+    }
+
+    private function logoutContextOf(Sw6OidcSession $session): LogoutContext
+    {
+        return new LogoutContext($session->providerId, $session->idToken, $session->idpAccessToken, $session->idpRefreshToken);
     }
 }

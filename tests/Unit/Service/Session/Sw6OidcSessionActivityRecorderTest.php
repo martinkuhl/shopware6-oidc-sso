@@ -59,6 +59,21 @@ final class Sw6OidcSessionActivityRecorderTest extends TestCase
         self::assertSame(['ctx-a' => 'logout', 'ctx-b' => null], $this->reasons());
     }
 
+    /**
+     * R8-M9: core gives a customer's logins on several devices the same
+     * context token; the logout ends all of them, so all rows close.
+     */
+    public function testLogoutClosesEveryLoginThatSharedTheSessionKey(): void
+    {
+        $this->login('ctx-shared', 'reg-phone', '-2 minutes');
+        $this->login('ctx-shared', 'reg-laptop', '-1 minute');
+        $this->login('ctx-other', 'reg-other');
+
+        $this->recorder->recordLogout('customer', 'c1', 'logout', 'ctx-shared', 'reg-laptop');
+
+        self::assertCount(1, array_filter($this->store->rows, static fn (array $row): bool => ($row['loggedOutAt'] ?? null) === null));
+    }
+
     public function testLogoutMatchesByRegistrySessionId(): void
     {
         $this->login('ctx-a', 'reg-a');

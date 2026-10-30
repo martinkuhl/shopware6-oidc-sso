@@ -67,6 +67,7 @@
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Cache\DatabaseAtomicCache" />
             <argument type="service" id="sw6oidc.logger" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor" />
+            <tag name="kernel.reset" method="reset" />
         </service>
         <service id="MartinKuhl\Sw6Oidc\Service\Cache\AtomicCacheInterface" alias="MartinKuhl\Sw6Oidc\Service\Cache\RedisAtomicCache" />
 
@@ -853,6 +854,7 @@
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyCredentialRepository" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig" />
             <argument type="service" id="Shopware\Core\Checkout\Customer\SalesChannel\LogoutRoute" />
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextPersister" />
             <call method="setContainer">
                 <argument type="service" id="service_container" />
             </call>

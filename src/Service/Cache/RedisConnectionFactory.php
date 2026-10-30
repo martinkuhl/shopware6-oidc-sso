@@ -121,6 +121,15 @@ class RedisConnectionFactory
         return \is_int($markedAt) && time() - $markedAt < self::DOWN_MARKER_TTL_SECONDS;
     }
 
+    /**
+     * A command on a working connection failed: treat Redis as down on this
+     * node for DOWN_MARKER_TTL_SECONDS, like a failed connect.
+     */
+    public function reportFailure(): void
+    {
+        $this->markDown();
+    }
+
     private function markDown(): void
     {
         if (\function_exists('apcu_enabled') && apcu_enabled()) {

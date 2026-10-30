@@ -177,6 +177,29 @@ final class RedisAtomicCacheTest extends TestCase
         $cache->getAndDelete('b');
     }
 
+    /**
+     * R8-L19: a failing command marks Redis down and drops the connection, so
+     * the next call resolves again (and finds it down) instead of waiting for
+     * the read timeout; kernel.reset makes long-running workers resolve anew.
+     */
+    public function testACommandFailureMarksRedisDownAndResetResolvesAgain(): void
+    {
+        $redis = $this->createMock(\Redis::class);
+        $redis->method('setex')->willThrowException(new \RedisException('read timeout'));
+
+        $factory = $this->createMock(RedisConnectionFactory::class);
+        $factory->expects(self::exactly(3))->method('create')->willReturnOnConsecutiveCalls($redis, null, null);
+        $factory->expects(self::once())->method('reportFailure');
+
+        $cache = new RedisAtomicCache($factory, new InMemoryAtomicCache(), new NullLogger(), self::encryptor());
+        $cache->save('a', '1', 60);
+
+        self::assertSame(RedisAtomicCache::BACKEND_DATABASE, $cache->backend());
+
+        $cache->reset();
+        self::assertSame(RedisAtomicCache::BACKEND_DATABASE, $cache->backend());
+    }
+
     private function factoryReturning(\Redis $redis): RedisConnectionFactory
     {
         $factory = $this->createMock(RedisConnectionFactory::class);

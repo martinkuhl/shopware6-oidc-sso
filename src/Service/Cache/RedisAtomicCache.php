@@ -4,6 +4,7 @@ namespace MartinKuhl\Sw6Oidc\Service\Cache;
 
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 use Psr\Log\LoggerInterface;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * The AtomicCacheInterface implementation the plugin always wires. Selects its
@@ -28,7 +29,7 @@ use Psr\Log\LoggerInterface;
  * back-channel logout must never be mistaken for a replay. This Redis must
  * not evict keys (`maxmemory-policy noeviction`).
  */
-class RedisAtomicCache implements AtomicCacheInterface
+class RedisAtomicCache implements AtomicCacheInterface, ResetInterface
 {
     public const BACKEND_REDIS = 'redis';
     public const BACKEND_DATABASE = 'database';
@@ -76,6 +77,7 @@ class RedisAtomicCache implements AtomicCacheInterface
                 throw new \RuntimeException($this->takeLastError($redis) ?? 'SETEX failed');
             }
         } catch (\Throwable $exception) {
+            $this->dropConnection();
             $this->logger->warning('sw6oidc: Redis save failed; using the database store for this token.', [
                 'exceptionClass' => $exception::class,
             ]);
@@ -99,6 +101,7 @@ class RedisAtomicCache implements AtomicCacheInterface
                 throw new \RuntimeException($error);
             }
         } catch (\Throwable $exception) {
+            $this->dropConnection();
             $this->logger->warning('sw6oidc: Redis getAndDelete failed; trying the database store.', [
                 'exceptionClass' => $exception::class,
             ]);
@@ -139,6 +142,7 @@ class RedisAtomicCache implements AtomicCacheInterface
 
             throw new \RuntimeException($error);
         } catch (\Throwable $exception) {
+            $this->dropConnection();
             $this->logger->warning('sw6oidc: Redis addIfAbsent failed; using the database store.', [
                 'exceptionClass' => $exception::class,
             ]);
@@ -186,6 +190,7 @@ class RedisAtomicCache implements AtomicCacheInterface
             try {
                 $redis->del($this->prefixedKey($key));
             } catch (\Throwable $exception) {
+                $this->dropConnection();
                 $this->logger->warning('sw6oidc: Redis delete failed.', ['exceptionClass' => $exception::class]);
             }
         }
@@ -217,6 +222,27 @@ class RedisAtomicCache implements AtomicCacheInterface
         $redis->clearLastError();
 
         return $error;
+    }
+
+    /**
+     * Long-running workers (messenger, FrankenPHP/RoadRunner) pick the
+     * backend again for the next request (kernel.reset, R8-L19).
+     */
+    public function reset(): void
+    {
+        $this->redis = null;
+        $this->resolved = false;
+    }
+
+    /**
+     * A command failed (timeout, error reply): mark Redis down on this node
+     * for a while and forget the connection, so the following calls use the
+     * database store instead of waiting for the read timeout each (R8-L19).
+     */
+    private function dropConnection(): void
+    {
+        $this->connectionFactory->reportFailure();
+        $this->reset();
     }
 
     private function redis(): ?\Redis

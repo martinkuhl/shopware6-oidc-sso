@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Storefront\Service;
 
+use Doctrine\DBAL\Connection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
@@ -129,6 +130,37 @@ final class OidcLogoutRouteTest extends TestCase
         self::assertStringStartsWith('https://idp.example/oidc/end-session?', (string) $response->getRedirectUrl());
         self::assertSame('fresh-token', $response->getToken());
         self::assertSame([['idp-refresh', 'refresh_token'], ['idp-access', 'access_token']], $revoked);
+    }
+
+    /**
+     * R8-M9: core hands a customer's logins on two devices the same context
+     * token. The logout ends both: every entry is removed and every login's
+     * tokens are revoked; the IdP logout is for the newest login.
+     */
+    public function testLogoutEndsEveryLoginThatSharedTheContextToken(): void
+    {
+        $phone = $this->registry->register('a1000000000000000000000000000001', 'sub', 'sid-phone', 'customer', self::CUSTOMER_ID, self::PRE_LOGOUT_TOKEN, null, 'phone-id-token', 'phone-access', 'phone-refresh');
+        $connection = (new \ReflectionProperty($this->registry, 'connection'))->getValue($this->registry);
+        \assert($connection instanceof Connection);
+        $connection->update('sw6oidc_session', ['created_at' => '2026-01-01 00:00:00.000'], ['id' => $phone->id]);
+        $this->registry->register('a1000000000000000000000000000001', 'sub', 'sid-laptop', 'customer', self::CUSTOMER_ID, self::PRE_LOGOUT_TOKEN, null, 'laptop-id-token', 'laptop-access', 'laptop-refresh');
+        $provider = $this->provider('https://idp.example/oidc/end-session');
+        $provider->setRevocationEndpoint('https://idp.example/oidc/revoke');
+        $provider->setPublicClient(true);
+        $provider->setClientId('shop');
+
+        $revoked = [];
+        $httpClient = $this->createMock(OidcHttpClient::class);
+        $httpClient->method('postFormIgnoringResponseBody')->willReturnCallback(static function (string $url, array $params) use (&$revoked): void {
+            $revoked[] = $params['token'];
+        });
+
+        $response = $this->route($provider, null, $httpClient)->logout($this->context(), new RequestDataBag());
+
+        self::assertSame([], SqliteSessionRegistry::sessionsOf($this->registry, 'customer', self::CUSTOMER_ID));
+        self::assertSame(['laptop-refresh', 'laptop-access', 'phone-refresh', 'phone-access'], $revoked);
+        parse_str((string) parse_url((string) $response->getRedirectUrl(), \PHP_URL_QUERY), $query);
+        self::assertSame('laptop-id-token', $query['id_token_hint'] ?? null);
     }
 
     private function route(?Sw6OidcProviderEntity $provider, ?AbstractLogoutRoute $decorated = null, ?OidcHttpClient $httpClient = null): OidcLogoutRoute

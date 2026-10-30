@@ -9,6 +9,7 @@ use Shopware\Core\Checkout\Customer\CustomerEntity;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractLogoutRoute;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
 use Shopware\Core\PlatformRequest;
+use Shopware\Core\System\SalesChannel\Context\SalesChannelContextPersister;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Shopware\Storefront\Controller\StorefrontController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -36,6 +37,7 @@ class AccountPasskeyController extends StorefrontController
         // (OidcLogoutRoute), so only the abstract type fits: the concrete
         // type hint made this controller fail to build (R7-H1).
         private readonly AbstractLogoutRoute $logoutRoute,
+        private readonly SalesChannelContextPersister $contextPersister,
     ) {
     }
 
@@ -71,18 +73,12 @@ class AccountPasskeyController extends StorefrontController
             return $this->redirectToRoute('frontend.account.passkey.page');
         }
 
-        $session = $request->getSession();
-
-        // If the credential that just got deleted is the exact one that
-        // authenticated this browser session (set by
-        // PasskeyController::loginVerify()), staying logged in under a
-        // since-revoked passkey would be wrong - log out immediately and
-        // send the customer back to the login page, rather than leaving
-        // them on an account page they arguably shouldn't still have access
-        // to. Deleting some OTHER, unrelated passkey of theirs (or one that
-        // didn't log in this particular session) never triggers this.
-        if ($session->get(PasskeyController::SESSION_KEY_LOGIN_CREDENTIAL_ID) === $credentialId) {
-            $session->remove(PasskeyController::SESSION_KEY_LOGIN_CREDENTIAL_ID);
+        // Deleting a passkey ends the sessions it logged in
+        // (PasskeyDeletionSubscriber, R3-M6). If that included this one, its
+        // context token is gone: finish the logout here instead of leaving
+        // the customer on an account page. Deleting another key, or one that
+        // didn't log in this session, never triggers this (R8-L13).
+        if ($this->contextPersister->load($context->getToken(), $context->getSalesChannelId(), $customer->getId()) === []) {
             $this->logoutRoute->logout($context, new RequestDataBag());
             $request->attributes->set(PlatformRequest::ATTRIBUTE_CLEAR_SITE_DATA, true);
 

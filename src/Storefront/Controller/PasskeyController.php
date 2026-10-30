@@ -54,7 +54,7 @@ class PasskeyController extends StorefrontController
      * Shared with AccountPasskeyController::delete(), which checks whether
      * the credential being deleted matches this session-scoped marker.
      */
-    public const SESSION_KEY_LOGIN_CREDENTIAL_ID = 'sw6oidc_login_credential_id';
+
 
     public const REAUTH_WINDOW_SECONDS = SessionAuthenticationClock::DEFAULT_WINDOW_SECONDS;
 
@@ -283,11 +283,6 @@ class PasskeyController extends StorefrontController
             $request,
             passkeyCredentialHash: $resolved['credentialIdHash'],
         );
-
-        // Remembered for the lifetime of this browser session so
-        // AccountPasskeyController::delete() can tell "deleted the passkey
-        // authenticating this session" from "deleted another passkey".
-        $request->getSession()->set(self::SESSION_KEY_LOGIN_CREDENTIAL_ID, $resolved['credentialId']);
 
         return new JsonResponse(['status' => true]);
     }

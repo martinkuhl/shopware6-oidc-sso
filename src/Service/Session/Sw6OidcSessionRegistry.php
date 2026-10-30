@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Session;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 use Psr\Log\LoggerInterface;
@@ -36,6 +37,10 @@ class Sw6OidcSessionRegistry
 
     /** Entries younger than this are never pruned for liveness (an admin login between callback and token exchange). */
     private const LIVENESS_GRACE_SECONDS = 3600;
+
+    private const PRUNE_BATCH_SIZE = 1000;
+
+    private const PRUNE_TIME_BUDGET_SECONDS = 30;
 
     private readonly int $customerContextLifetimeSeconds;
 
@@ -134,16 +139,29 @@ class Sw6OidcSessionRegistry
 
 
     /**
-     * The account's session created with this session key (context token /
-     * first jti), if still registered.
+     * The account's newest session registered with this session key (context
+     * token / first jti), if any.
      */
     public function findBySessionKey(string $userType, string $userId, string $sessionKey): ?Sw6OidcSession
     {
-        return $this->fetch('`user_type` = :userType AND `user_id` = :userId AND `session_key_hash` = :hash', [
+        return $this->findAllBySessionKey($userType, $userId, $sessionKey)[0] ?? null;
+    }
+
+    /**
+     * Every session registered with this session key, newest first. Core
+     * hands a customer's further logins in a sales channel the existing
+     * context token (CartRestorer), so logins on several devices share one
+     * key and end together (R8-M9).
+     *
+     * @return list<Sw6OidcSession>
+     */
+    public function findAllBySessionKey(string $userType, string $userId, string $sessionKey): array
+    {
+        return array_reverse($this->fetch('`user_type` = :userType AND `user_id` = :userId AND `session_key_hash` = :hash', [
             'userType' => $userType,
             'userId' => Uuid::fromHexToBytes($userId),
             'hash' => self::hashSessionKey($sessionKey),
-        ])[0] ?? null;
+        ]));
     }
 
     /**
@@ -201,38 +219,38 @@ class Sw6OidcSessionRegistry
 
     /**
      * Deletes entries past their hard upper bound and entries whose session
-     * core no longer has (R3-H5); returns how many.
+     * core no longer has (R3-H5); returns how many. In batches within a time
+     * budget, like the other cleanups, so a backlog never holds long locks
+     * on the table every login writes to (R8-L20).
      */
     public function prune(): int
     {
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $nowValue = $now->format(Defaults::STORAGE_DATE_TIME_FORMAT);
         $graceCutoff = $now->modify(sprintf('-%d seconds', self::LIVENESS_GRACE_SECONDS))->format(Defaults::STORAGE_DATE_TIME_FORMAT);
+        $deadline = microtime(true) + (float) self::PRUNE_TIME_BUDGET_SECONDS;
 
-        $deleted = (int) $this->connection->executeStatement(
-            'DELETE FROM `sw6oidc_session` WHERE `expires_at` <= :now',
-            ['now' => $now->format(Defaults::STORAGE_DATE_TIME_FORMAT)],
-        );
+        $deleted = $this->pruneWhere('`expires_at` <= :now', ['now' => $nowValue], $deadline);
 
         // Admins: a session lives as long as one of the admin's refresh tokens.
-        $deleted += (int) $this->connection->executeStatement(
+        $deleted += $this->pruneWhere(
             <<<'SQL'
-                DELETE FROM `sw6oidc_session`
-                WHERE `user_type` = 'admin'
+                `user_type` = 'admin'
                   AND `created_at` < :graceCutoff
                   AND NOT EXISTS (
                       SELECT 1 FROM `refresh_token`
                       WHERE `refresh_token`.`user_id` = `sw6oidc_session`.`user_id` AND `refresh_token`.`expires_at` > :now
                   )
             SQL,
-            ['graceCutoff' => $graceCutoff, 'now' => $now->format(Defaults::STORAGE_DATE_TIME_FORMAT)],
+            ['graceCutoff' => $graceCutoff, 'now' => $nowValue],
+            $deadline,
         );
 
         // Customers: core keeps one context per customer and sales channel; it
         // counts while it was used within the context lifetime.
-        $deleted += (int) $this->connection->executeStatement(
+        $deleted += $this->pruneWhere(
             <<<'SQL'
-                DELETE FROM `sw6oidc_session`
-                WHERE `user_type` = 'customer'
+                `user_type` = 'customer'
                   AND `created_at` < :graceCutoff
                   AND NOT EXISTS (
                       SELECT 1 FROM `sales_channel_api_context`
@@ -245,7 +263,42 @@ class Sw6OidcSessionRegistry
                 'graceCutoff' => $graceCutoff,
                 'contextCutoff' => $now->modify(sprintf('-%d seconds', $this->customerContextLifetimeSeconds))->format(Defaults::STORAGE_DATE_TIME_FORMAT),
             ],
+            $deadline,
         );
+
+        return $deleted;
+    }
+
+    /**
+     * Ids first, then a delete by primary key: portable (no DELETE … LIMIT)
+     * and each statement locks one small batch.
+     *
+     * @param array<string, string> $parameters
+     */
+    private function pruneWhere(string $condition, array $parameters, float $deadline): int
+    {
+        $deleted = 0;
+
+        while (microtime(true) < $deadline) {
+            $ids = $this->connection->fetchFirstColumn(
+                sprintf('SELECT `id` FROM `sw6oidc_session` WHERE %s LIMIT %d', $condition, self::PRUNE_BATCH_SIZE),
+                $parameters,
+            );
+
+            if ($ids === []) {
+                break;
+            }
+
+            $deleted += (int) $this->connection->executeStatement(
+                'DELETE FROM `sw6oidc_session` WHERE `id` IN (:ids)',
+                ['ids' => $ids],
+                ['ids' => ArrayParameterType::STRING],
+            );
+
+            if (\count($ids) < self::PRUNE_BATCH_SIZE) {
+                break;
+            }
+        }
 
         return $deleted;
     }

@@ -80,9 +80,10 @@ class Sw6OidcSessionActivityRecorder
     }
 
     /**
-     * Closes the open login row of exactly one session (by registry entry or
-     * session key). Nothing matching means nothing is closed — guessing
-     * "the newest row" would mark another device's session as logged out.
+     * Closes the open login rows of one session: its registry entry, and
+     * every login made under the same session key. Nothing matching means
+     * nothing is closed — guessing "the newest row" would mark another
+     * session as logged out.
      */
     public function recordLogout(
         string $userType,
@@ -106,8 +107,15 @@ class Sw6OidcSessionActivityRecorder
         }
 
         try {
-            // One indexed lookup instead of scanning the account's open rows (R3-L31).
-            $this->close($this->openActivities($userType, $userId, new MultiFilter(MultiFilter::CONNECTION_OR, $identifiers), 1), $reason);
+            // Indexed lookups instead of scanning the account's open rows (R3-L31).
+            // Every login that shared the session key ends with it: core gives
+            // a customer's logins in a channel the same context token (R8-M9).
+            $filter = new MultiFilter(MultiFilter::CONNECTION_OR, $identifiers);
+
+            do {
+                $batch = $this->openActivities($userType, $userId, $filter, self::CLOSE_BATCH_SIZE);
+                $this->close($batch, $reason);
+            } while (\count($batch) === self::CLOSE_BATCH_SIZE);
         } catch (\Throwable $exception) {
             $this->logger->warning('sw6oidc: could not record session logout.', ['exception' => $exception->getMessage()]);
         }

@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`email` and `email_verified` are taken as a pair** from the same source (R8-L4).
 - Storefront Connect SSO and re-authentication starts are rate-limited per customer (R8-L3).
 
+### Fixed (code review, revision 8)
+
+- **A customer logged in on two devices is logged out cleanly** (R8-M9): core gives both logins the same context token; the logout now ends every SSO login registered under it, revokes each one's IdP tokens and closes all their activity rows (before: the oldest only, the other refresh token stayed valid).
+- **Back-channel logout reaches every provider** of the token's issuer and audience (R8-M10), e.g. separate customer and admin providers for one IdP client.
+- Deleting a passkey on *My account > Passkeys* logs the customer out only if it ended this very session (R8-L13).
+- Redis failures in long-running workers no longer cost the read timeout on every call (R8-L19); the session-registry cleanup runs in batches (R8-L20).
+
 ### Added (code review, revision 8)
 
 - **`auth_time` is requested as an essential claim** for re-authentication when the IdP advertises `claims_parameter_supported` (new read-only provider field, set by discovery). A re-authentication the IdP doesn't confirm shows its own message and no longer counts against the callback rate limit (R8-L32).

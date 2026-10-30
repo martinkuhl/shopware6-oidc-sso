@@ -43,6 +43,9 @@ final class BackChannelLogoutControllerTest extends TestCase
 
     private bool $failNextDestroy = false;
 
+    /** @var list<string> further providers with the same issuer and client id */
+    private array $sameClientProviderIds = [];
+
     protected function setUp(): void
     {
         $this->signer = new JwtTestSigner();
@@ -62,6 +65,21 @@ final class BackChannelLogoutControllerTest extends TestCase
         self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         self::assertSame(['ctx-1'], array_map(static fn (Sw6OidcSession $s): string => $s->sessionKey, $this->destroyed));
         self::assertCount(1, $this->registry->resolve('a1000000000000000000000000000001', 'user-1'));
+    }
+
+    /**
+     * R8-M10: a customer and an admin provider may share one IdP client; the
+     * session lives under the provider it logged in through, whichever that is.
+     */
+    public function testEveryProviderOfTheIssuerAndAudienceIsLoggedOut(): void
+    {
+        $this->sameClientProviderIds = ['a1000000000000000000000000000002'];
+        $this->registry->register('a1000000000000000000000000000002', 'user-1', 'sid-1', 'customer', 'c1000000000000000000000000000001', 'ctx-via-second', '5c000000000000000000000000000001');
+
+        $response = $this->post($this->token(['sid' => 'sid-1']));
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(['ctx-via-second'], array_map(static fn (Sw6OidcSession $s): string => $s->sessionKey, $this->destroyed));
     }
 
     public function testValidTokenWithSubOnlyEndsAllSessionsOfTheSubject(): void
@@ -231,11 +249,16 @@ final class BackChannelLogoutControllerTest extends TestCase
         $signer = $this->signer;
         $verifier = new JwtVerifier(new MockHttpClient(static fn (): MockResponse => new MockResponse($signer->jwksJson())), new ArrayAdapter(), new NullLogger());
 
-        $provider = new Sw6OidcProviderEntity();
-        $provider->assign(['id' => 'a1000000000000000000000000000001', 'clientId' => 'client-1', 'issuer' => self::ISSUER, 'jwksEndpoint' => 'https://idp.example/jwks', 'jwksCacheTtl' => 60, 'httpTimeout' => 5]);
+        $providers = [];
+
+        foreach (['a1000000000000000000000000000001', ...$this->sameClientProviderIds] as $id) {
+            $provider = new Sw6OidcProviderEntity();
+            $provider->assign(['id' => $id, 'clientId' => 'client-1', 'issuer' => self::ISSUER, 'jwksEndpoint' => 'https://idp.example/jwks', 'jwksCacheTtl' => 60, 'httpTimeout' => 5]);
+            $providers[] = $provider;
+        }
 
         $resolver = $this->createStub(ProviderResolver::class);
-        $resolver->method('findByIssuer')->willReturnCallback(static fn (string $issuer): array => $issuer === self::ISSUER ? [$provider] : []);
+        $resolver->method('findByIssuer')->willReturnCallback(static fn (string $issuer): array => $issuer === self::ISSUER ? $providers : []);
 
         $destruction = $this->createStub(Sw6OidcSessionDestructionService::class);
         $destruction->method('destroy')->willReturnCallback(function (Sw6OidcSession $session): void {
