@@ -212,6 +212,31 @@ final class PasskeyCeremonyTest extends TestCase
         self::assertSame([], $this->store->rows, 'nothing was planted on the victim account (N-M2)');
     }
 
+    /**
+     * R8-L15: two tabs, two assertions, the higher counter processed first.
+     * The lower one is refused, but the key stays usable.
+     */
+    public function testAConcurrentLowerCounterIsRefusedWithoutDisablingTheKey(): void
+    {
+        $this->register();
+        $handle = hash('sha256', 'admin:' . $this->userId, true);
+
+        $first = $this->authentication->buildRequestOptions([], $this->rp(), 'storefront-login:test');
+        $this->authentication->verifyAssertion($first['nonce'], $this->authenticator->assert(json_decode($first['optionsJson'], true, 512, \JSON_THROW_ON_ERROR), $handle), 'shop.example', 'storefront-login:test');
+        $this->authenticator->rewindCounter(0);
+
+        $second = $this->authentication->buildRequestOptions([], $this->rp(), 'storefront-login:test');
+
+        try {
+            $this->authentication->verifyAssertion($second['nonce'], $this->authenticator->assert(json_decode($second['optionsJson'], true, 512, \JSON_THROW_ON_ERROR), $handle), 'shop.example', 'storefront-login:test');
+            self::fail('Expected PasskeyCeremonyException');
+        } catch (PasskeyCeremonyException $exception) {
+            self::assertStringContainsString('just used', $exception->getMessage());
+        }
+
+        self::assertNull(array_values($this->store->rows)[0]['disabledAt'] ?? null, 'not taken for a clone');
+    }
+
     public function testCounterGoingBackwardsDisablesTheCredential(): void
     {
         $this->register();
@@ -220,6 +245,8 @@ final class PasskeyCeremonyTest extends TestCase
         $first = $this->authentication->buildRequestOptions([], $this->rp(), 'storefront-login:test');
         $this->authentication->verifyAssertion($first['nonce'], $this->authenticator->assert(json_decode($first['optionsJson'], true, 512, \JSON_THROW_ON_ERROR), $handle), 'shop.example', 'storefront-login:test');
         $this->authenticator->rewindCounter(0);
+        // The clone shows up later, not in the same minute as the real key.
+        $this->backdateLastUse('-1 hour');
 
         $second = $this->authentication->buildRequestOptions([], $this->rp(), 'storefront-login:test');
 
@@ -274,5 +301,12 @@ final class PasskeyCeremonyTest extends TestCase
     {
         $options = $this->creationOptions($nonce);
         $this->registration->verifyAndPersist((string) $nonce, $this->authenticator->register($options), 'shop.example', 'My key', 'admin', $this->userId);
+    }
+
+    private function backdateLastUse(string $modifier): void
+    {
+        foreach (array_keys($this->store->rows) as $id) {
+            $this->store->rows[$id]['updatedAt'] = new \DateTimeImmutable($modifier);
+        }
     }
 }

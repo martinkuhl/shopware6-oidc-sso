@@ -181,7 +181,7 @@ class StepUpService
      */
     private function passkeyDescriptors(string $userId): array
     {
-        $userHandle = hash('sha256', Sw6OidcUserProviderEntity::USER_TYPE_ADMIN . ':' . $userId, true);
+        $userHandle = PasskeyCredentialRepository::userHandle(Sw6OidcUserProviderEntity::USER_TYPE_ADMIN, $userId);
 
         return array_values(array_map(
             static fn (CredentialRecord $record): PublicKeyCredentialDescriptor => $record->getPublicKeyCredentialDescriptor(),

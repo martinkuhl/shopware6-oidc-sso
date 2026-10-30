@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Controller\Api;
 
+use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\AdminTokenIssuer;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\StepUpService;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig;
@@ -105,7 +106,7 @@ class StepUpController extends AbstractController
             return new JsonResponse(['error' => 'step_up_unavailable'], Response::HTTP_NOT_FOUND);
         }
 
-        return new JsonResponse(['sessionId' => $options['nonce'], 'options' => json_decode($options['optionsJson'], true)]);
+        return CeremonyResponse::options($options);
     }
 
     #[Route(path: '/api/sw6oidc/admin/step-up/passkey/verify', name: 'api.action.sw6oidc.admin.step-up.passkey-verify', methods: ['POST'])]

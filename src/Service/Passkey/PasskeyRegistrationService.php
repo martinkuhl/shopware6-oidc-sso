@@ -124,7 +124,7 @@ class PasskeyRegistrationService
      */
     private function assertBelowLimit(string $userType, string $userId): void
     {
-        if ($this->credentialRepository->countForUserHandle(hash('sha256', $userType . ':' . $userId, true)) >= self::MAX_CREDENTIALS_PER_ACCOUNT) {
+        if ($this->credentialRepository->countForUserHandle(PasskeyCredentialRepository::userHandle($userType, $userId)) >= self::MAX_CREDENTIALS_PER_ACCOUNT) {
             throw new PasskeyLimitReachedException(sprintf('This account already has %d passkeys.', self::MAX_CREDENTIALS_PER_ACCOUNT));
         }
     }
@@ -138,7 +138,7 @@ class PasskeyRegistrationService
         string $rpName,
         string $challenge,
     ): PublicKeyCredentialCreationOptions {
-        $userHandle = hash('sha256', $userType . ':' . $userId, true);
+        $userHandle = PasskeyCredentialRepository::userHandle($userType, $userId);
         $userEntity = new PublicKeyCredentialUserEntity($username, $userHandle, $displayName);
 
         $excludeCredentials = array_map(

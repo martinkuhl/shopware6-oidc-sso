@@ -51,7 +51,7 @@ final class InMemoryPasskeyCredentialStore
                 return 0;
             }
 
-            $this->rows[$id] = ['publicKey' => $params['publicKey'], 'signCount' => $params['counter']] + $row;
+            $this->rows[$id] = ['publicKey' => $params['publicKey'], 'signCount' => $params['counter'], 'updatedAt' => new \DateTimeImmutable((string) $params['now'])] + $row;
 
             return 1;
         });

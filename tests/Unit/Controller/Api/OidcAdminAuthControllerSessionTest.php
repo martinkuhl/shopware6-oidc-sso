@@ -29,7 +29,7 @@ final class OidcAdminAuthControllerSessionTest extends TestCase
         $registry = SqliteSessionRegistry::create();
         $pending = $registry->register('a1000000000000000000000000000001', 'sub-1', 'sid-1', 'admin', self::USER_ID, 'pending:abc', null, 'id.token', ttlSeconds: 600);
         $nonces = new AdminLoginNonceService(new InMemoryAtomicCache(), new BrowserBinding(new RequestStack()));
-        $nonce = $nonces->createNonce(self::USER_ID, 'a1000000000000000000000000000001', $pending->id);
+        $nonce = $nonces->createNonce(self::USER_ID, 'a1000000000000000000000000000001', $pending->id, null);
 
         $response = $this->exchange($nonces, $registry, $nonce, $this->jwt(['jti' => 'jti-123', 'sub' => self::USER_ID]));
 
@@ -49,7 +49,7 @@ final class OidcAdminAuthControllerSessionTest extends TestCase
         $registry = SqliteSessionRegistry::create();
         $nonces = new AdminLoginNonceService(new InMemoryAtomicCache(), new BrowserBinding(new RequestStack()));
 
-        $this->exchange($nonces, $registry, $nonces->createNonce(self::USER_ID), $this->jwt(['jti' => 'jti-1']));
+        $this->exchange($nonces, $registry, $nonces->createNonce(self::USER_ID, null, null, null), $this->jwt(['jti' => 'jti-1']));
 
         self::assertSame([], SqliteSessionRegistry::sessionsOf($registry, 'admin', self::USER_ID));
     }

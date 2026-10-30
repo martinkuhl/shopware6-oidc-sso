@@ -39,6 +39,9 @@ class PasskeyAuthenticationService
         return 'storefront-login:' . $salesChannelId;
     }
 
+    /** A counter raised this recently by the key itself is a parallel login, not a clone. */
+    private const CONCURRENT_ASSERTION_WINDOW_SECONDS = 60;
+
     public static function adminStepUpPurpose(string $userId): string
     {
         return 'admin-stepup:' . $userId;
@@ -157,6 +160,19 @@ class PasskeyAuthenticationService
                 $options->allowCredentials !== [] ? $record->userHandle : null,
             );
         } catch (CounterException $exception) {
+            // Two tabs, two assertions, the higher counter processed first:
+            // the lower one is refused, but a counter this key raised moments
+            // ago is no sign of a clone (R8-L15).
+            $lastUse = $entity->getUpdatedAt();
+
+            if ($lastUse instanceof \DateTimeInterface && $lastUse->getTimestamp() >= time() - self::CONCURRENT_ASSERTION_WINDOW_SECONDS) {
+                $this->logger?->notice('sw6oidc: passkey assertion refused, a concurrent one already used a higher signature counter.', [
+                    'credentialId' => $entity->getId(),
+                ]);
+
+                throw new PasskeyCeremonyException('This passkey was just used by another login; please try again.', $exception);
+            }
+
             $this->credentialRepository->disable(base64_encode($rawId));
             $this->logger?->warning('sw6oidc: passkey signature counter did not increase — possible cloned authenticator; the credential was disabled.', [
                 'credentialId' => $entity->getId(),

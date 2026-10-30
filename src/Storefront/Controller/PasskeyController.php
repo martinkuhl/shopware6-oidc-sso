@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Storefront\Controller;
 
+use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Core\Content\SessionActivity\Sw6OidcSessionActivityDefinition;
 use MartinKuhl\Sw6Oidc\Event\PasskeyRegisteredEvent;
 use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyLimitReachedException;
@@ -121,7 +122,7 @@ class PasskeyController extends StorefrontController
             return PublicError::response($this->logger, 'sw6oidc: passkey registration could not start.', $exception, 'passkey_unavailable', Response::HTTP_BAD_REQUEST);
         }
 
-        return new JsonResponse(['sessionId' => $result['nonce'], 'options' => json_decode($result['optionsJson'], true)]);
+        return CeremonyResponse::options($result);
     }
 
     #[Route(
@@ -211,7 +212,7 @@ class PasskeyController extends StorefrontController
             return PublicError::response($this->logger, 'sw6oidc: passkey login could not start.', $exception, 'passkey_unavailable', Response::HTTP_BAD_REQUEST);
         }
 
-        return new JsonResponse(['sessionId' => $result['nonce'], 'options' => json_decode($result['optionsJson'], true)]);
+        return CeremonyResponse::options($result);
     }
 
     #[Route(

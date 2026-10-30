@@ -18,7 +18,7 @@ final class AdminLoginNonceServiceTest extends TestCase
     {
         $cache = new InMemoryAtomicCache();
         $service = new AdminLoginNonceService($cache, new BrowserBinding(new RequestStack()));
-        $nonce = $service->createNonce('user-1', 'provider-1', 'registry-1');
+        $nonce = $service->createNonce('user-1', 'provider-1', 'registry-1', null);
 
         self::assertStringNotContainsString('token', implode('', $cache->items), 'no id_token copies (N-L10)');
         self::assertEquals(new AdminLoginNonce('user-1', 'provider-1', 'registry-1'), $service->redeemNonce($nonce));
@@ -29,7 +29,7 @@ final class AdminLoginNonceServiceTest extends TestCase
     {
         $service = new AdminLoginNonceService(new InMemoryAtomicCache(), new BrowserBinding(new RequestStack()));
 
-        self::assertEquals(new AdminLoginNonce('user-1'), $service->redeemNonce($service->createNonce('user-1')));
+        self::assertEquals(new AdminLoginNonce('user-1'), $service->redeemNonce($service->createNonce('user-1', null, null, null)));
     }
 
     public function testMalformedEntryIsRejected(): void

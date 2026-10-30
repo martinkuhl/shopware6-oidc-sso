@@ -55,15 +55,18 @@ class BrowserBinding
 
     /**
      * Whether the current request comes from the browser a stored hash was
-     * bound to. A null hash (flow started outside a request) always matches.
+     * bound to. A null hash (state created outside a request: CLI, tests)
+     * matches only outside a request too — redeemed in a browser it is
+     * refused, so state minted without a binding can't be handed to any
+     * browser (R8-L14).
      */
     public function matchesCurrentBrowser(?string $storedHash): bool
     {
-        if ($storedHash === null) {
-            return true;
-        }
-
         $request = $this->requestStack->getCurrentRequest();
+
+        if ($storedHash === null) {
+            return !$request instanceof Request;
+        }
         $value = $request instanceof Request ? $this->currentValue($request) : null;
 
         return $value !== null && hash_equals($storedHash, $this->hash($value));

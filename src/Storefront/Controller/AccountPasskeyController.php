@@ -49,7 +49,7 @@ class AccountPasskeyController extends StorefrontController
     )]
     public function index(SalesChannelContext $context, CustomerEntity $customer): Response
     {
-        $credentials = $this->passkeyCredentialRepository->findAllForOwner(LoginType::Customer->value, $customer->getId(), $context->getContext());
+        $credentials = $this->passkeyCredentialRepository->findAllForOwner(LoginType::Customer->value, $customer->getId());
 
         return $this->renderStorefront('@Sw6Oidc/storefront/page/account/passkey/index.html.twig', [
             'sw6oidcCredentials' => $credentials,
@@ -65,7 +65,7 @@ class AccountPasskeyController extends StorefrontController
     )]
     public function delete(string $credentialId, Request $request, SalesChannelContext $context, CustomerEntity $customer): RedirectResponse
     {
-        $deleted = $this->passkeyCredentialRepository->deleteOwnedByUser($credentialId, LoginType::Customer->value, $customer->getId(), $context->getContext());
+        $deleted = $this->passkeyCredentialRepository->deleteOwnedByUser($credentialId, LoginType::Customer->value, $customer->getId());
 
         if (!$deleted) {
             $this->addFlash(self::DANGER, $this->trans('sw6oidc.passkey.deleteError'));

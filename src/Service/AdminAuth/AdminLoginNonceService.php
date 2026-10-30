@@ -29,7 +29,11 @@ class AdminLoginNonceService
     ) {
     }
 
-    public function createNonce(string $userId, ?string $providerId = null, ?string $registrySessionId = null, ?string $browserBinding = null): string
+    /**
+     * @param string|null $browserBinding the hash of the browser that logged in (AuthorizationFlowContext::$browserBinding);
+     *                                    required, so no caller can forget it and mint a nonce any browser redeems (R8-L14)
+     */
+    public function createNonce(string $userId, ?string $providerId, ?string $registrySessionId, ?string $browserBinding): string
     {
         $nonce = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
 

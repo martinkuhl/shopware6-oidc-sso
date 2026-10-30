@@ -3,13 +3,18 @@
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Passkey;
 
 use Doctrine\DBAL\Connection;
+use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyCredentialRepository;
 use MartinKuhl\Sw6Oidc\Service\Passkey\WebauthnCeremonyFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Shopware\Core\Framework\Api\Context\AdminApiSource;
+use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
 use Shopware\Core\Framework\Uuid\Uuid;
 use Webauthn\CredentialRecord;
 use Webauthn\TrustPath\EmptyTrustPath;
@@ -37,6 +42,37 @@ final class PasskeyCredentialRepositoryTest extends TestCase
             new NullLogger(),
             $this->store->connection($this->createMock(Connection::class)),
         );
+    }
+
+    /**
+     * R8-M8: "My passkeys" needs only "update own profile"; the owner check
+     * is the authorisation, so the DAL calls must not run with the caller's
+     * ACL (core would demand sw6oidc_passkey_credential:read/delete).
+     */
+    public function testSelfServiceCallsRunWithoutTheCallersAcl(): void
+    {
+        $id = Uuid::randomHex();
+        $userId = Uuid::randomHex();
+        $notAnAdminSource = self::callback(static fn (Context $context): bool => !$context->getSource() instanceof AdminApiSource);
+
+        $entity = new Sw6OidcPasskeyCredentialEntity();
+        $entity->setId($id);
+        $dal = $this->createMock(EntityRepository::class);
+        $dal->expects(self::exactly(2))->method('search')->with(self::anything(), $notAnAdminSource)
+            ->willReturnCallback(static fn (Criteria $criteria, Context $context): EntitySearchResult => new EntitySearchResult(
+                'sw6oidc_passkey_credential',
+                1,
+                new Sw6OidcPasskeyCredentialCollection([$entity]),
+                null,
+                $criteria,
+                $context,
+            ));
+        $dal->expects(self::once())->method('delete')->with([['id' => $id]], $notAnAdminSource);
+
+        $repository = new PasskeyCredentialRepository($dal, new WebauthnCeremonyFactory(), new NullLogger(), $this->createMock(Connection::class));
+
+        self::assertCount(1, $repository->findAllForOwner('admin', $userId));
+        self::assertTrue($repository->deleteOwnedByUser($id, 'admin', $userId));
     }
 
     public function testLegacy4xStoredCredentialDeserializes(): void

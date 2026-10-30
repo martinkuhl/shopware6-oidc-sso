@@ -61,7 +61,9 @@ final class BrowserBindingTest extends TestCase
         $this->requests->push(Request::create('https://shop.example/sw6oidc/callback', cookies: [BrowserBinding::SECURE_COOKIE_NAME => str_repeat('a', 64)]));
         self::assertFalse($this->binding->matchesCurrentBrowser($hash), 'another browser');
 
-        self::assertTrue($this->binding->matchesCurrentBrowser(null), 'flows started outside a request are not bound');
+        // R8-L14: unbound state (created outside a request) matches only outside a request.
+        self::assertFalse($this->binding->matchesCurrentBrowser(null), 'unbound state redeemed in a browser');
+        self::assertTrue((new BrowserBinding(new RequestStack()))->matchesCurrentBrowser(null), 'unbound state outside a request');
     }
 
     public function testAnExistingCookieIsReusedForParallelFlows(): void

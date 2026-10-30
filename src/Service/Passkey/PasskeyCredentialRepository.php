@@ -32,6 +32,15 @@ use Webauthn\CredentialRecord;
 class PasskeyCredentialRepository
 {
     /**
+     * The WebAuthn user handle of an account: opaque, stable, the same for
+     * registration, login and step-up.
+     */
+    public static function userHandle(string $userType, string $userId): string
+    {
+        return hash('sha256', $userType . ':' . $userId, true);
+    }
+
+    /**
      * @param EntityRepository<Sw6OidcPasskeyCredentialCollection> $passkeyCredentialRepository
      */
     public function __construct(
@@ -162,11 +171,14 @@ class PasskeyCredentialRepository
      * profile page — deliberately separate from findAllForUserHandle(),
      * which takes the library's opaque WebAuthn user handle; this one is
      * keyed by our own userType/userId so callers never need to recompute
-     * that handle just to list what a user already owns.
+     * that handle just to list what a user already owns. Like
+     * deleteOwnedByUser(), it runs without the caller's ACL: the owner check
+     * is the authorisation, and "update own profile" carries no privilege on
+     * the credential entity (R8-M8).
      *
      * @return Sw6OidcPasskeyCredentialEntity[]
      */
-    public function findAllForOwner(string $userType, string $userId, Context $context): array
+    public function findAllForOwner(string $userType, string $userId): array
     {
         $criteria = new Criteria();
         $criteria->addFilter(new EqualsFilter('userType', $userType));
@@ -174,7 +186,7 @@ class PasskeyCredentialRepository
         $criteria->addSorting(new FieldSorting('createdAt', FieldSorting::DESCENDING));
 
         return array_values(array_filter(
-            iterator_to_array($this->passkeyCredentialRepository->search($criteria, $context)->getEntities()),
+            iterator_to_array($this->passkeyCredentialRepository->search($criteria, $this->context())->getEntities()),
             static fn (\Shopware\Core\Framework\DataAbstractionLayer\Entity $entity): bool => $entity instanceof Sw6OidcPasskeyCredentialEntity,
         ));
     }
@@ -202,9 +214,11 @@ class PasskeyCredentialRepository
      * passkey merely by guessing/enumerating an id, so ownership is checked
      * here rather than trusting the caller (unlike the cross-user recovery
      * grid in Settings, which is gated on the entity's own ACL privilege
-     * instead).
+     * instead). The ownership check is the authorisation, so search and
+     * delete don't run with the caller's ACL: an admin with only "update own
+     * profile" must be able to revoke a lost key (R8-M8).
      */
-    public function deleteOwnedByUser(string $id, string $userType, string $userId, Context $context): bool
+    public function deleteOwnedByUser(string $id, string $userType, string $userId): bool
     {
         // A malformed id from the request is "not found", not a Criteria error (R3-L16).
         if (!Uuid::isValid($id)) {
@@ -215,11 +229,11 @@ class PasskeyCredentialRepository
         $criteria->addFilter(new EqualsFilter('userType', $userType));
         $criteria->addFilter(new EqualsFilter('userId', $userId));
 
-        if ($this->passkeyCredentialRepository->search($criteria, $context)->first() === null) {
+        if ($this->passkeyCredentialRepository->search($criteria, $this->context())->first() === null) {
             return false;
         }
 
-        $this->passkeyCredentialRepository->delete([['id' => $id]], $context);
+        $this->passkeyCredentialRepository->delete([['id' => $id]], $this->context());
 
         return true;
     }

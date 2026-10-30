@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Placeholder addresses can't reach an order through the Store API or headless checkouts** (R8-M5): a blocking cart error covers every order path, not only the Storefront confirm page. The placeholder flag is cleared only when street and city are both real (R8-M6).
 
+- **Administration users without the passkey recovery privilege can delete their own passkeys** (R8-M8); two near-simultaneous passkey logins no longer disable the key as cloned (R8-L15); state without a browser binding is never redeemed in a browser (R8-L14).
+
 ### Added (code review, revision 8)
 
 - **`auth_time` is requested as an essential claim** for re-authentication when the IdP advertises `claims_parameter_supported` (new read-only provider field, set by discovery). A re-authentication the IdP doesn't confirm shows its own message and no longer counts against the callback rate limit (R8-L32).

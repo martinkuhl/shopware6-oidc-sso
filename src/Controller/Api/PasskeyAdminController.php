@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Controller\Api;
 
+use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\SessionActivity\Sw6OidcSessionActivityDefinition;
 use MartinKuhl\Sw6Oidc\Event\PasskeyRegisteredEvent;
@@ -98,7 +99,7 @@ class PasskeyAdminController extends AbstractController
             return PublicError::response($this->logger, 'sw6oidc: admin passkey registration could not start.', $exception, 'passkey_unavailable', Response::HTTP_BAD_REQUEST);
         }
 
-        return new JsonResponse(['sessionId' => $result['nonce'], 'options' => json_decode($result['optionsJson'], true)]);
+        return CeremonyResponse::options($result);
     }
 
     #[Route(path: '/api/sw6oidc/admin/passkey/registration-verify', name: 'api.action.sw6oidc.admin.passkey.registration-verify', methods: ['POST'])]
@@ -152,7 +153,7 @@ class PasskeyAdminController extends AbstractController
     {
         $user = $this->currentUser($context);
 
-        $credentials = $this->passkeyCredentialRepository->findAllForOwner(LoginType::Admin->value, $user->getId(), $context);
+        $credentials = $this->passkeyCredentialRepository->findAllForOwner(LoginType::Admin->value, $user->getId());
 
         return new JsonResponse([
             'credentials' => array_map(static fn (Sw6OidcPasskeyCredentialEntity $credential): array => [
@@ -178,7 +179,7 @@ class PasskeyAdminController extends AbstractController
         $user = $this->currentUser($context);
         $id = (string) $request->request->get('id');
 
-        if ($id === '' || !$this->passkeyCredentialRepository->deleteOwnedByUser($id, LoginType::Admin->value, $user->getId(), $context)) {
+        if ($id === '' || !$this->passkeyCredentialRepository->deleteOwnedByUser($id, LoginType::Admin->value, $user->getId())) {
             return new JsonResponse(['status' => false, 'error' => 'not_found'], 404);
         }
 
@@ -205,7 +206,7 @@ class PasskeyAdminController extends AbstractController
             return PublicError::response($this->logger, 'sw6oidc: admin passkey login could not start.', $exception, 'passkey_unavailable', Response::HTTP_BAD_REQUEST);
         }
 
-        return new JsonResponse(['sessionId' => $result['nonce'], 'options' => json_decode($result['optionsJson'], true)]);
+        return CeremonyResponse::options($result);
     }
 
     #[Route(path: '/api/sw6oidc/admin/passkey/login-verify', name: 'api.action.sw6oidc.admin.passkey.login-verify', defaults: ['auth_required' => false], methods: ['POST'])]
