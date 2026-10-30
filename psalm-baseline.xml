@@ -692,6 +692,11 @@
       <code><![CDATA[OidcLogoutRoute]]></code>
     </UnusedClass>
   </file>
+  <file src="src/Storefront/Service/PasswordLoginGuardConvertGuestRoute.php">
+    <UnusedClass>
+      <code><![CDATA[PasswordLoginGuardConvertGuestRoute]]></code>
+    </UnusedClass>
+  </file>
   <file src="src/Storefront/Service/PasswordLoginGuardLoginRoute.php">
     <UnusedClass>
       <code><![CDATA[PasswordLoginGuardLoginRoute]]></code>
@@ -756,9 +761,10 @@
     </UnusedClass>
   </file>
   <file src="src/Subscriber/ProviderTrustGuardSubscriber.php">
-    <UnusedClass>
-      <code><![CDATA[ProviderTrustGuardSubscriber]]></code>
-    </UnusedClass>
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+      <code><![CDATA[validate]]></code>
+    </PossiblyUnusedMethod>
   </file>
   <file src="src/Subscriber/SessionActivityWriteGuardSubscriber.php">
     <UnusedClass>

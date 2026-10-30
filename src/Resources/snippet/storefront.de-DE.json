@@ -42,7 +42,8 @@
             "ssoConnect": "Mit %name% verbinden",
             "ssoConnected": "Ihr Konto ist mit %name% verbunden.",
             "linkSuccess": "Single Sign-on wurde mit Ihrem Konto verbunden.",
-            "reauthRequired": "Bitte melden Sie sich zu Ihrer Sicherheit erneut an, um einen Passkey hinzuzufügen."
+            "reauthRequired": "Bitte melden Sie sich zu Ihrer Sicherheit erneut an, um einen Passkey hinzuzufügen.",
+            "notWhileImitating": "Passkeys und Single Sign-on können nicht eingerichtet werden, solange Sie aus der Administration als dieser Kunde angemeldet sind."
         }
     }
 }

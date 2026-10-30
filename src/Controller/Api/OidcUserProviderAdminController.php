@@ -7,7 +7,11 @@ use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
 use MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionDestructionService;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
 use MartinKuhl\Sw6Oidc\Service\Security\UserVerifiedScope;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;
@@ -52,6 +56,9 @@ class OidcUserProviderAdminController extends AbstractController
         private readonly UserProviderBindingService $bindingService,
         private readonly LoggerInterface $logger,
         private readonly SsoOnlyInvariant $ssoOnlyInvariant,
+        private readonly Connection $connection,
+        private readonly Sw6OidcSessionRegistry $sessionRegistry,
+        private readonly Sw6OidcSessionDestructionService $sessionDestruction,
     ) {
     }
 
@@ -122,6 +129,12 @@ class OidcUserProviderAdminController extends AbstractController
                 return new JsonResponse(['error' => 'user_verification_required'], 403);
             }
 
+            // Disconnecting a superadmin can lock them out of an SSO-only
+            // Administration: only another superadmin may do it (R8-L5).
+            if (!$this->actingAsSuperadmin($context) && $this->isSuperadmin($userId)) {
+                return new JsonResponse(['error' => 'superadmin_required'], 403);
+            }
+
             if (!$this->ssoOnlyInvariant->holds(unboundUserIds: [$userId]) && $this->ssoOnlyInvariant->holds()) {
                 return new JsonResponse([
                     'error' => 'last_sso_admin',
@@ -135,6 +148,15 @@ class OidcUserProviderAdminController extends AbstractController
         $context->scope(Context::SYSTEM_SCOPE, fn (Context $systemContext) => $this->bindingService->unbind($userType, $userId, $systemContext));
 
         $source = $context->getSource();
+
+        // The SSO sessions of someone else's account end with the binding
+        // (e.g. an IdP account that must no longer get in); disconnecting
+        // your own keeps your current session.
+        if (!$source instanceof AdminApiSource || $userType !== Sw6OidcUserProviderEntity::USER_TYPE_ADMIN || $source->getUserId() !== $userId) {
+            $this->sessionRegistry->removeAllForUser($userType, $userId);
+            $this->sessionDestruction->destroyAllForUser($userType, $userId);
+        }
+
         $this->logger->info('sw6oidc: unlinked account from its OIDC provider via the Administration.', [
             'userType' => $userType,
             'userId' => $userId,
@@ -142,6 +164,22 @@ class OidcUserProviderAdminController extends AbstractController
         ]);
 
         return new Response(null, Response::HTTP_NO_CONTENT);
+    }
+
+    private function actingAsSuperadmin(Context $context): bool
+    {
+        $source = $context->getSource();
+
+        return $source instanceof AdminApiSource && $source->isAdmin();
+    }
+
+    private function isSuperadmin(string $userId): bool
+    {
+        return (bool) $this->connection->fetchOne(
+            'SELECT `admin` FROM `user` WHERE `id` = :id',
+            ['id' => Uuid::fromHexToBytes($userId)],
+            ['id' => ParameterType::BINARY],
+        );
     }
 
     private function isAllowed(Context $context, string $privilege): bool

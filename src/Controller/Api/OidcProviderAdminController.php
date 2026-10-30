@@ -16,6 +16,7 @@ use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use MartinKuhl\Sw6Oidc\Service\Security\OidcSecurityHelper;
 use MartinKuhl\Sw6Oidc\Service\Security\PublicError;
 use MartinKuhl\Sw6Oidc\Service\Security\SsrfUrlValidator;
+use MartinKuhl\Sw6Oidc\Subscriber\ProviderTrustGuardSubscriber;
 use MartinKuhl\Sw6Oidc\Subscriber\Sw6OidcProviderWriteGuardSubscriber;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Defaults;
@@ -92,6 +93,8 @@ class OidcProviderAdminController extends AbstractController
         return new JsonResponse([
             'postLogoutLandingUrls' => $this->postLogoutLandingUrls(),
             'webhookConfigured' => $provider instanceof Sw6OidcProviderEntity && (string) $provider->getHealthAlertWebhookUrl() !== '',
+            // What a non-superadmin may change; the page disables the rest (R8-H1).
+            'editorFields' => array_values(ProviderTrustGuardSubscriber::EDITOR_FIELDS),
         ]);
     }
 

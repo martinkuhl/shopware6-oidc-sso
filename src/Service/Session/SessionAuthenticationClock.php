@@ -18,6 +18,11 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * core gives every login of a customer in a sales channel the same context
  * token (CartRestorer reuses the existing context), so a stamp on the
  * context would be shared with whoever else holds that token.
+ *
+ * An Administration user imitating the customer ("login as customer") is
+ * never freshly authenticated as the customer (R8-H2): otherwise they could
+ * attach their own passkey or IdP identity and keep a way in after losing
+ * the imitation privilege.
  */
 class SessionAuthenticationClock
 {
@@ -37,12 +42,17 @@ class SessionAuthenticationClock
         }
     }
 
+    public static function isImitated(SalesChannelContext $context): bool
+    {
+        return $context->getImitatingUserId() !== null;
+    }
+
     public function isFresh(SalesChannelContext $context, int $windowSeconds = self::DEFAULT_WINDOW_SECONDS): bool
     {
         $request = $this->requestStack->getMainRequest();
         $customerId = $context->getCustomer()?->getId();
 
-        if ($customerId === null || !$request instanceof Request || !$request->hasSession()) {
+        if ($customerId === null || self::isImitated($context) || !$request instanceof Request || !$request->hasSession()) {
             return false;
         }
 

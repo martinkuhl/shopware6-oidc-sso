@@ -11,6 +11,9 @@ use MartinKuhl\Sw6Oidc\Core\Content\RoleMapping\Sw6OidcRoleMappingDefinition;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\AssociationField;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\WriteProtected;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\StorageAware;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\DeleteCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\InsertCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\UpdateCommand;
@@ -25,12 +28,14 @@ use Symfony\Component\Validator\ConstraintViolationList;
 /**
  * Who may change what a provider trusts (R3-H4). Whoever controls the
  * endpoints, the issuer, the scope or the superadmin mapping of a provider
- * can log in as any account bound to it, superadmins included. So changes
- * to those settings need a superadmin (or an admin integration), the CLI or
- * system scope; the `sw6oidc_provider` editor role can change everything
- * else. Covered:
+ * can log in as any account bound to it, superadmins included; the role and
+ * password-login flags decide who keeps superadmin and who can log in at
+ * all. So the `sw6oidc_provider` editor role may change only the fields on
+ * an allow-list (EDITOR_FIELDS); every other column needs a superadmin (or
+ * an admin integration), the CLI or system scope. Deny by default (R8-H1): a
+ * new column is protected until someone puts it on the list. Covered:
  *
- * - the provider's trust fields (TRUST_FIELDS), on insert and update;
+ * - every provider column not in EDITOR_FIELDS, on insert and update;
  * - role mapping rows that grant Administration roles or superadmin;
  * - email/username attribute mappings and access-control rules of providers
  *   that serve Administration logins.
@@ -42,28 +47,39 @@ class ProviderTrustGuardSubscriber implements EventSubscriberInterface
 {
     public const CODE_SUPERADMIN_REQUIRED = 'SW6OIDC_SUPERADMIN_REQUIRED';
 
-    /** storage name => property name */
-    public const TRUST_FIELDS = [
-        'well_known_config_url' => 'wellKnownConfigUrl',
-        'authorize_endpoint' => 'authorizeEndpoint',
-        'access_token_endpoint' => 'accessTokenEndpoint',
-        'user_info_endpoint' => 'userInfoEndpoint',
-        'jwks_endpoint' => 'jwksEndpoint',
-        'revocation_endpoint' => 'revocationEndpoint',
-        'end_session_endpoint' => 'endSessionEndpoint',
-        'issuer' => 'issuer',
-        'client_id' => 'clientId',
-        'scope' => 'scope',
-        'public_client' => 'publicClient',
-        'login_type' => 'loginType',
-        'allow_superadmin_group_mapping' => 'allowSuperadminGroupMapping',
-        'auto_create_admin' => 'autoCreateAdmin',
-        'default_acl_role_id' => 'defaultAclRoleId',
-        'link_existing_accounts' => 'linkExistingAccounts',
-        'require_email_verified' => 'requireEmailVerified',
-        'base64_claims' => 'base64Claims',
-        'group_attribute' => 'groupAttribute',
+    /**
+     * Provider columns the editor role may change: presentation, customer
+     * provisioning, operations, the secret (re-entry only — the URLs it is
+     * sent to are protected), and the live test's bookkeeping.
+     * storage name => property name
+     */
+    public const EDITOR_FIELDS = [
+        'app_name' => 'appName',
+        'display_name' => 'displayName',
+        'is_active' => 'isActive',
+        'sort_order' => 'sortOrder',
+        'show_customer_link' => 'showCustomerLink',
+        'show_admin_link' => 'showAdminLink',
+        'client_secret' => 'clientSecret',
+        'post_logout_url' => 'postLogoutUrl',
+        'auto_create_customer' => 'autoCreateCustomer',
+        'default_customer_group_id' => 'defaultCustomerGroupId',
+        'disable_non_oidc_customer_login' => 'disableNonOidcCustomerLogin',
+        'sync_customer_profile_on_sso' => 'syncCustomerProfileOnSso',
+        'sync_customer_address_on_sso' => 'syncCustomerAddressOnSso',
+        'sync_customer_group_on_sso' => 'syncCustomerGroupOnSso',
+        'http_timeout' => 'httpTimeout',
+        'jwks_cache_ttl' => 'jwksCacheTtl',
+        'health_alert_webhook_url' => 'healthAlertWebhookUrl',
+        'health_alert_failure_threshold' => 'healthAlertFailureThreshold',
+        'health_alert_notify_on_recovery' => 'healthAlertNotifyOnRecovery',
+        'last_test_status' => 'lastTestStatus',
+        'last_test_at' => 'lastTestAt',
+        'last_test_claims' => 'lastTestClaims',
     ];
+
+    /** Bookkeeping the DAL writes itself. */
+    private const IGNORED_COLUMNS = ['id', 'created_at', 'updated_at'];
 
     private const ADMIN_MAPPING_TYPES = [
         Sw6OidcRoleMappingDefinition::MAPPING_TYPE_ADMIN_ROLE,
@@ -78,10 +94,44 @@ class ProviderTrustGuardSubscriber implements EventSubscriberInterface
 
     private const JSON_FIELDS = ['base64_claims'];
 
+    /** @var array<string, string>|null storage name => property name */
+    private ?array $trustFields = null;
+
     public function __construct(
         private readonly Connection $connection,
         private readonly LoggerInterface $logger,
+        private readonly Sw6OidcProviderDefinition $providerDefinition,
     ) {
+    }
+
+    /**
+     * Every writable provider column that isn't on the editor allow-list.
+     *
+     * @return array<string, string> storage name => property name
+     */
+    public function trustFields(): array
+    {
+        if ($this->trustFields !== null) {
+            return $this->trustFields;
+        }
+
+        $fields = [];
+
+        foreach ($this->providerDefinition->getFields() as $field) {
+            if (
+                !$field instanceof StorageAware
+                || $field instanceof AssociationField
+                || $field->is(WriteProtected::class)
+                || \in_array($field->getStorageName(), self::IGNORED_COLUMNS, true)
+                || \array_key_exists($field->getStorageName(), self::EDITOR_FIELDS)
+            ) {
+                continue;
+            }
+
+            $fields[$field->getStorageName()] = $field->getPropertyName();
+        }
+
+        return $this->trustFields = $fields;
     }
 
     public static function getSubscribedEvents(): array
@@ -175,7 +225,7 @@ class ProviderTrustGuardSubscriber implements EventSubscriberInterface
         $payload = $command->getPayload();
         $changed = [];
 
-        foreach (self::TRUST_FIELDS as $storageName => $propertyName) {
+        foreach ($this->trustFields() as $storageName => $propertyName) {
             if (!\array_key_exists($storageName, $payload)) {
                 continue;
             }
@@ -268,7 +318,7 @@ class ProviderTrustGuardSubscriber implements EventSubscriberInterface
     private function currentProviderRow(WriteCommand $command): ?array
     {
         $row = $this->connection->fetchAssociative(
-            \sprintf('SELECT `%s` FROM `sw6oidc_provider` WHERE `id` = :id', implode('`, `', array_keys(self::TRUST_FIELDS))),
+            \sprintf('SELECT `%s` FROM `sw6oidc_provider` WHERE `id` = :id', implode('`, `', array_keys($this->trustFields()))),
             ['id' => $command->getPrimaryKey()['id'] ?? null],
             ['id' => ParameterType::BINARY],
         );

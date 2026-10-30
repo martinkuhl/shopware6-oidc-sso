@@ -19,6 +19,8 @@ use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
 use Shopware\Core\Framework\Uuid\Uuid;
 use Symfony\Component\HttpFoundation\Request;
 use MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionDestructionService;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSsoSchema;
 use Shopware\Core\PlatformRequest;
 
@@ -161,6 +163,49 @@ final class OidcUserProviderAdminControllerTest extends TestCase
         self::assertSame(409, $response->getStatusCode());
     }
 
+    /**
+     * R8-L5: `user:update` alone must not disconnect a superadmin, and the
+     * target's sessions end with the binding.
+     */
+    public function testOnlyASuperadminMayUnlinkASuperadminAndTheTargetIsLoggedOut(): void
+    {
+        $db = new SqliteSsoSchema();
+        $superadmin = $db->admin(superadmin: true);
+
+        $refused = $this->createMock(UserProviderBindingService::class);
+        $refused->expects(self::never())->method('unbind');
+        $response = $this->controller($this->createMock(EntityRepository::class), $refused, $db)
+            ->unlink($this->verifiedRequest(['userType' => 'admin', 'userId' => $superadmin]), $this->context(['user:update']));
+        self::assertSame(403, $response->getStatusCode());
+        self::assertStringContainsString('superadmin_required', (string) $response->getContent());
+
+        $destruction = $this->createMock(Sw6OidcSessionDestructionService::class);
+        $destruction->expects(self::once())->method('destroyAllForUser')->with('admin', $superadmin);
+        $registry = $this->createMock(Sw6OidcSessionRegistry::class);
+        $registry->expects(self::once())->method('removeAllForUser')->with('admin', $superadmin);
+        $allowed = $this->createMock(UserProviderBindingService::class);
+        $allowed->expects(self::once())->method('unbind');
+
+        $response = $this->controller($this->createMock(EntityRepository::class), $allowed, $db, $registry, $destruction)
+            ->unlink($this->verifiedRequest(['userType' => 'admin', 'userId' => $superadmin]), $this->context(['user:update'], true));
+        self::assertSame(204, $response->getStatusCode());
+    }
+
+    public function testUnlinkingYourOwnBindingKeepsYourSession(): void
+    {
+        $db = new SqliteSsoSchema();
+        $me = $db->admin();
+        $destruction = $this->createMock(Sw6OidcSessionDestructionService::class);
+        $destruction->expects(self::never())->method('destroyAllForUser');
+
+        $source = new AdminApiSource($me);
+        $source->setPermissions(['user:update']);
+
+        $response = $this->controller($this->createMock(EntityRepository::class), null, $db, null, $destruction)
+            ->unlink($this->verifiedRequest(['userType' => 'admin', 'userId' => $me]), new Context($source));
+        self::assertSame(204, $response->getStatusCode());
+    }
+
     public function testUnlinkDeniesSourceWithOnlyReadPrivilege(): void
     {
         $bindingService = $this->createMock(UserProviderBindingService::class);
@@ -180,13 +225,23 @@ final class OidcUserProviderAdminControllerTest extends TestCase
         self::assertSame(400, $response->getStatusCode());
     }
 
-    private function controller(EntityRepository $repository, ?UserProviderBindingService $bindingService = null, ?SqliteSsoSchema $db = null): OidcUserProviderAdminController
-    {
+    private function controller(
+        EntityRepository $repository,
+        ?UserProviderBindingService $bindingService = null,
+        ?SqliteSsoSchema $db = null,
+        ?Sw6OidcSessionRegistry $registry = null,
+        ?Sw6OidcSessionDestructionService $destruction = null,
+    ): OidcUserProviderAdminController {
+        $db ??= new SqliteSsoSchema();
+
         return new OidcUserProviderAdminController(
             $repository,
             $bindingService ?? $this->createMock(UserProviderBindingService::class),
             new NullLogger(),
-            new SsoOnlyInvariant(($db ?? new SqliteSsoSchema())->connection),
+            new SsoOnlyInvariant($db->connection),
+            $db->connection,
+            $registry ?? $this->createMock(Sw6OidcSessionRegistry::class),
+            $destruction ?? $this->createMock(Sw6OidcSessionDestructionService::class),
         );
     }
 

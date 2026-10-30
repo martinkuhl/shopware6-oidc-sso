@@ -9,11 +9,14 @@ use MartinKuhl\Sw6Oidc\Service\Security\PasswordLoginPolicy;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Repositories\UserRepositoryInterface;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\PasswordLoginGuardUserRepository;
+use MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardConvertGuestRoute;
 use MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardLoginRoute;
 use MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardRegisterConfirmRoute;
 use MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardRegisterRoute;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
+use Shopware\Core\Checkout\Customer\CustomerEntity;
+use Shopware\Core\Checkout\Customer\SalesChannel\AbstractConvertGuestRoute;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractRegisterConfirmRoute;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractRegisterRoute;
 use MartinKuhl\Sw6Oidc\Subscriber\AdminPasswordLoginGuardSubscriber;
@@ -22,6 +25,7 @@ use PHPUnit\Framework\TestCase;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractLoginRoute;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
 use Shopware\Core\System\SalesChannel\ContextTokenResponse;
+use Shopware\Core\System\SalesChannel\SuccessResponse;
 use Shopware\Core\Test\Generator;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
@@ -34,6 +38,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 #[CoversClass(PasswordLoginGuardUserRepository::class)]
 #[CoversClass(PasswordLoginGuardRegisterRoute::class)]
 #[CoversClass(PasswordLoginGuardRegisterConfirmRoute::class)]
+#[CoversClass(PasswordLoginGuardConvertGuestRoute::class)]
 final class PasswordLoginEnforcementTest extends TestCase
 {
     public function testPolicyIsOnWhenAnyActiveProviderSetsTheFlag(): void
@@ -202,6 +207,29 @@ final class PasswordLoginEnforcementTest extends TestCase
 
         (new PasswordLoginGuardRegisterConfirmRoute($inner, new PasswordLoginPolicy($this->resolverWith([$this->provider(false, true)]))))
             ->confirm(new RequestDataBag(), Generator::generateSalesChannelContext());
+    }
+
+    /**
+     * R8-M11: converting a guest gives the account a password, so it is
+     * registration by another door; guest checkout itself stays allowed.
+     */
+    public function testGuestConversionIsRefusedWhileDisabledAndPassesOtherwise(): void
+    {
+        $blocked = $this->createMock(AbstractConvertGuestRoute::class);
+        $blocked->expects(self::never())->method('convertGuest');
+
+        try {
+            (new PasswordLoginGuardConvertGuestRoute($blocked, new PasswordLoginPolicy($this->resolverWith([$this->provider(false, true)]))))
+                ->convertGuest(new RequestDataBag(), Generator::generateSalesChannelContext(), new CustomerEntity());
+            self::fail('Expected PasswordLoginDisabledException');
+        } catch (PasswordLoginDisabledException) {
+        }
+
+        $allowed = $this->createMock(AbstractConvertGuestRoute::class);
+        $allowed->expects(self::once())->method('convertGuest')->willReturn(new SuccessResponse());
+
+        (new PasswordLoginGuardConvertGuestRoute($allowed, new PasswordLoginPolicy($this->resolverWith([$this->provider(true, false)]))))
+            ->convertGuest(new RequestDataBag(), Generator::generateSalesChannelContext(), new CustomerEntity());
     }
 
     /**

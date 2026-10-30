@@ -238,6 +238,10 @@ class OidcCallbackController extends StorefrontController
             throw new InvalidStateException('The "Connect SSO" flow was started by a different customer session.');
         }
 
+        if (SessionAuthenticationClock::isImitated($context)) {
+            throw new InvalidStateException('"Connect SSO" is not available while an administrator is logged in as this customer.');
+        }
+
         // A channel-bound customer is bound in its channel's scope (R3-M14).
         $this->identityResolver->linkExplicitly(
             Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER,
@@ -274,6 +278,10 @@ class OidcCallbackController extends StorefrontController
 
         if (!$customer instanceof \Shopware\Core\Checkout\Customer\CustomerEntity || $customer->getId() !== $result->flow->expectedUserId) {
             throw new InvalidStateException('The re-authentication was started by a different customer session.');
+        }
+
+        if (SessionAuthenticationClock::isImitated($context)) {
+            throw new InvalidStateException('Re-authentication is not available while an administrator is logged in as this customer.');
         }
 
         AuthTimeValidator::assertFresh($result);

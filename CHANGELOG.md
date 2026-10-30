@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **One schema migration.** The 21 migrations are replaced by `Migration1790900000CreateSchema`, which holds the final schema. There is no upgrade path from earlier development versions: reinstall the plugin (export the providers with `sw6oidc:config:export`, uninstall, install, import). Code that only read pre-migration data is gone: `sw6oidc_v1:` envelopes and plaintext secrets are no longer read, subject-less (legacy) bindings are no longer upgraded by email, and Redis values must be encrypted.
 - **The encryptor requires a purpose** on every call; `isEncrypted()` is replaced by the static `isEnvelope()`.
+- **Provider trust fields are deny-by-default** (R8-H1): the `sw6oidc_provider` editor role may change only an allow-list of fields (`ProviderTrustGuardSubscriber::EDITOR_FIELDS`); every other column needs a superadmin. Before, the editor role could turn on superadmin revocation and switch off Administration password login.
+- **Guest conversion is refused in customer SSO-only mode** (R8-M11). **Unlinking a superadmin needs a superadmin**, and unlinking someone else ends their sessions (R8-L5).
+
+### Security (code review, revision 8)
+
+- **"Login as customer" no longer counts as a fresh login** (R8-H2): an administrator imitating a customer can no longer register a passkey or connect an SSO identity to that customer account.
 
 ### Breaking changes (code review, revision 7)
 

@@ -436,6 +436,8 @@ The unreleased version changes security-relevant behavior. Check these points be
 16. **Session activity permissions**: force logout needs the new *force logout* permission of the sessions module; provider, passkey and session privileges can now be granted to normal roles. Force-logging-out an admin needs a superadmin.
 17. **Inactive accounts can't log in through SSO.** An inactive admin is refused before any sync; a customer who can't log in (inactive, guest, other sales channel) sees "account unavailable" instead of an error page.
 18. **Plugin-internal changes for extensions:** the plugin's exceptions extend `Sw6OidcException` (Shopware `HttpException`, stable `SW6OIDC_*` codes), its logger service is `sw6oidc.logger`, and `OidcCustomerLoginRoute` is gone (customer logins use Shopware's `AccountService::loginById()`).
+19. **Provider editors (not superadmins) can change less.** They keep the name, activation, sort order, button visibility, customer provisioning and sync, timeouts, health alerting, the post-logout URL and the client secret. Everything else on a provider (endpoints, client authentication, logout style, admin provisioning, role sync, superadmin revocation, Administration password login, …) needs a superadmin, also for settings added in future versions.
+20. **Guest accounts can't be converted while customer SSO-only mode is on**, and unlinking a superadmin's SSO binding needs a superadmin; unlinking someone else's binding ends their sessions.
 
 ---
 

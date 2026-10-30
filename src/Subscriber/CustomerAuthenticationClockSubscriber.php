@@ -8,7 +8,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * Every customer login (password, OIDC, passkey: all dispatch core's
- * CustomerLoginEvent) starts a freshly authenticated session (R3-M5).
+ * CustomerLoginEvent) starts a freshly authenticated session (R3-M5) —
+ * except an Administration user's "login as customer" (R8-H2).
  */
 class CustomerAuthenticationClockSubscriber implements EventSubscriberInterface
 {
@@ -23,6 +24,10 @@ class CustomerAuthenticationClockSubscriber implements EventSubscriberInterface
 
     public function onLogin(CustomerLoginEvent $event): void
     {
+        if (SessionAuthenticationClock::isImitated($event->getSalesChannelContext())) {
+            return;
+        }
+
         $this->clock->markAuthenticated($event->getCustomer()->getId());
     }
 }

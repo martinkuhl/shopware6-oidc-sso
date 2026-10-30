@@ -42,9 +42,9 @@
 
             {#
                 Every field passes its own :disabled (R3-F14): viewers can't
-                edit anything, and non-superadmins can't edit the settings
-                ProviderTrustGuardSubscriber reserves for superadmins (canEditTrust,
-                plan F-2). Saving is refused by the server either way.
+                edit anything, and non-superadmins only the fields on the
+                server's editor allow-list (canEditField, R8-H1). Saving is
+                refused by the server either way.
             #}
             <mt-card
                 class="sw6oidc-bold-field-labels"
@@ -58,13 +58,13 @@
                     <mt-text-field
                         v-model="provider.appName"
                         :label="$t('sw6oidc.provider.detail.appName')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('appName')"
                         required
                     />
                     <mt-text-field
                         v-model="provider.displayName"
                         :label="$t('sw6oidc.provider.detail.displayName')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('displayName')"
                     />
                 </sw-container>
                 <sw-container
@@ -76,13 +76,13 @@
                         :label="$t('sw6oidc.provider.detail.loginType.label')"
                         :options="loginTypeOptions"
                         :error="providerLoginTypeError"
-                        :disabled="!canEditTrust || undefined"
+                        :disabled="!canEditField('loginType') || undefined"
                     />
                     <mt-number-field
                         v-model="provider.sortOrder"
                         number-type="int"
                         :label="$t('sw6oidc.provider.detail.sortOrder')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('sortOrder')"
                     />
                 </sw-container>
                 <sw-container
@@ -92,17 +92,17 @@
                     <mt-switch
                         v-model="provider.isActive"
                         :label="$t('sw6oidc.provider.detail.isActive')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('isActive')"
                     />
                     <mt-switch
                         v-model="provider.showCustomerLink"
                         :label="$t('sw6oidc.provider.detail.showCustomerLink')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('showCustomerLink')"
                     />
                     <mt-switch
                         v-model="provider.showAdminLink"
                         :label="$t('sw6oidc.provider.detail.showAdminLink')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('showAdminLink')"
                     />
                 </sw-container>
             </mt-card>
@@ -121,7 +121,7 @@
                         :error="providerClientIdError"
                         :label="$t('sw6oidc.provider.detail.clientId')"
                         :help-text="$t('sw6oidc.provider.detail.clientIdHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('clientId')"
                         required
                     />
                     <mt-password-field
@@ -131,7 +131,7 @@
                         :help-text="$t('sw6oidc.provider.detail.clientSecretHelp')"
                         :placeholder="isNewProvider ? '' : $t('sw6oidc.provider.detail.clientSecretStoredPlaceholder')"
                         :required="isNewProvider && !provider.publicClient"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('clientSecret')"
                     />
                 </sw-container>
                 <mt-text-field
@@ -139,7 +139,7 @@
                     :error="providerWellKnownConfigUrlError"
                     :label="$t('sw6oidc.provider.detail.wellKnownConfigUrl')"
                     :help-text="$t('sw6oidc.provider.detail.wellKnownConfigUrlHelp')"
-                    :disabled="!canEditTrust"
+                    :disabled="!canEditField('wellKnownConfigUrl')"
                 />
 
                 {% block sw6oidc_provider_detail_discovery_actions %}
@@ -153,7 +153,7 @@
                         variant="secondary"
                         size="small"
                         :is-loading="isLoadingConfiguration"
-                        :disabled="!provider.wellKnownConfigUrl || !canEditTrust"
+                        :disabled="!provider.wellKnownConfigUrl || !canEditField('wellKnownConfigUrl')"
                         @click="onClickLoadConfiguration"
                     >
                         {{ $t('sw6oidc.provider.detail.buttonLoadConfiguration') }}
@@ -205,21 +205,21 @@
                         :error="providerAuthorizeEndpointError"
                         :label="$t('sw6oidc.provider.detail.authorizeEndpoint')"
                         :help-text="$t('sw6oidc.provider.detail.authorizeEndpointHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('authorizeEndpoint')"
                     />
                     <mt-text-field
                         v-model="provider.accessTokenEndpoint"
                         :error="providerAccessTokenEndpointError"
                         :label="$t('sw6oidc.provider.detail.accessTokenEndpoint')"
                         :help-text="$t('sw6oidc.provider.detail.accessTokenEndpointHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('accessTokenEndpoint')"
                     />
                     <sw-single-select
                         v-model:value="provider.tokenEndpointAuthMethod"
                         :label="$t('sw6oidc.provider.detail.tokenEndpointAuthMethod.label')"
                         :help-text="$t('sw6oidc.provider.detail.tokenEndpointAuthMethod.help')"
                         :options="clientAuthMethodOptions"
-                        :disabled="!canEdit || provider.publicClient || undefined"
+                        :disabled="!canEditField('tokenEndpointAuthMethod') || provider.publicClient || undefined"
                     />
                 </sw-container>
                 <sw-container
@@ -231,14 +231,14 @@
                         :error="providerUserInfoEndpointError"
                         :label="$t('sw6oidc.provider.detail.userInfoEndpoint')"
                         :help-text="$t('sw6oidc.provider.detail.userInfoEndpointHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('userInfoEndpoint')"
                     />
                     <mt-text-field
                         v-model="provider.jwksEndpoint"
                         :error="providerJwksEndpointError"
                         :label="$t('sw6oidc.provider.detail.jwksEndpoint')"
                         :help-text="$t('sw6oidc.provider.detail.jwksEndpointHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('jwksEndpoint')"
                     />
                 </sw-container>
                 <sw-container
@@ -250,14 +250,14 @@
                         :error="providerEndSessionEndpointError"
                         :label="$t('sw6oidc.provider.detail.endSessionEndpoint')"
                         :help-text="$t('sw6oidc.provider.detail.endSessionEndpointHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('endSessionEndpoint')"
                     />
                     <sw-single-select
                         v-model:value="provider.logoutStyle"
                         :label="$t('sw6oidc.provider.detail.logoutStyle.label')"
                         :help-text="$t('sw6oidc.provider.detail.logoutStyle.help')"
                         :options="logoutStyleOptions"
-                        :disabled="!canEdit || undefined"
+                        :disabled="!canEditField('logoutStyle') || undefined"
                     />
                     <mt-text-field
                         v-model="provider.postLogoutUrl"
@@ -265,27 +265,27 @@
                         :label="$t('sw6oidc.provider.detail.postLogoutUrl')"
                         :help-text="$t('sw6oidc.provider.detail.postLogoutUrlHelp')"
                         :placeholder="postLogoutLandingUrl"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('postLogoutUrl')"
                     />
                     <mt-text-field
                         v-model="provider.revocationEndpoint"
                         :error="providerRevocationEndpointError"
                         :label="$t('sw6oidc.provider.detail.revocationEndpoint')"
                         :help-text="$t('sw6oidc.provider.detail.revocationEndpointHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('revocationEndpoint')"
                     />
                     <sw-single-select
                         v-model:value="provider.revocationEndpointAuthMethod"
                         :label="$t('sw6oidc.provider.detail.revocationEndpointAuthMethod.label')"
                         :help-text="$t('sw6oidc.provider.detail.revocationEndpointAuthMethod.help')"
                         :options="clientAuthMethodOptions"
-                        :disabled="!canEdit || provider.publicClient || undefined"
+                        :disabled="!canEditField('revocationEndpointAuthMethod') || provider.publicClient || undefined"
                     />
                     <mt-switch
                         v-model="provider.frontchannelAdminLogout"
                         :label="$t('sw6oidc.provider.detail.frontchannelAdminLogout')"
                         :help-text="$t('sw6oidc.provider.detail.frontchannelAdminLogoutHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('frontchannelAdminLogout')"
                     />
                 </sw-container>
                 <sw-container
@@ -297,21 +297,21 @@
                         :error="providerIssuerError"
                         :label="$t('sw6oidc.provider.detail.issuer')"
                         :help-text="$t('sw6oidc.provider.detail.issuerHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('issuer')"
                     />
                     <mt-text-field
                         v-model="provider.scope"
                         :error="providerScopeError"
                         :label="$t('sw6oidc.provider.detail.scope')"
                         :help-text="$t('sw6oidc.provider.detail.scopeHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('scope')"
                     />
                     <mt-text-field
                         v-model="provider.groupAttribute"
                         :error="providerGroupAttributeError"
                         :label="$t('sw6oidc.provider.detail.groupAttribute')"
                         :help-text="$t('sw6oidc.provider.detail.groupAttributeHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('groupAttribute')"
                     />
                 </sw-container>
                 <sw-container
@@ -323,7 +323,7 @@
                         :label="$t('sw6oidc.provider.detail.pkceFlow')"
                         :help-text="$t('sw6oidc.provider.detail.pkceFlowHelp')"
                         :options="pkceFlowOptions"
-                        :disabled="!canEdit || undefined"
+                        :disabled="!canEditField('pkceFlow') || undefined"
                     />
                     <sw-multi-tag-select
                         v-model:value="base64Claims"
@@ -331,7 +331,7 @@
                         :help-text="$t('sw6oidc.provider.detail.base64ClaimsHelp')"
                         :placeholder="$t('sw6oidc.provider.detail.base64ClaimsPlaceholder')"
                         :error="providerBase64ClaimsError"
-                        :disabled="!canEditTrust || undefined"
+                        :disabled="!canEditField('base64Claims') || undefined"
                     />
                 </sw-container>
                 {# Own row: next to the label-on-top selects, the switch sat
@@ -341,7 +341,7 @@
                     :error="providerPublicClientError"
                     :label="$t('sw6oidc.provider.detail.publicClient')"
                     :help-text="$t('sw6oidc.provider.detail.publicClientHelp')"
-                    :disabled="!canEditTrust"
+                    :disabled="!canEditField('publicClient')"
                 />
                 <sw-container
                     columns="1fr 1fr"
@@ -352,14 +352,14 @@
                         number-type="int"
                         :label="$t('sw6oidc.provider.detail.httpTimeout')"
                         :help-text="$t('sw6oidc.provider.detail.httpTimeoutHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('httpTimeout')"
                     />
                     <mt-number-field
                         v-model="provider.jwksCacheTtl"
                         number-type="int"
                         :label="$t('sw6oidc.provider.detail.jwksCacheTtl')"
                         :help-text="$t('sw6oidc.provider.detail.jwksCacheTtlHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('jwksCacheTtl')"
                     />
                 </sw-container>
 
@@ -443,14 +443,14 @@
                         v-model="provider.autoCreateCustomer"
                         :label="$t('sw6oidc.provider.detail.autoCreateCustomer')"
                         :help-text="$t('sw6oidc.provider.detail.autoCreateCustomerHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('autoCreateCustomer')"
                     />
                     <mt-switch
                         v-model="provider.autoCreateAdmin"
                         :error="providerAutoCreateAdminError"
                         :label="$t('sw6oidc.provider.detail.autoCreateAdmin')"
                         :help-text="$t('sw6oidc.provider.detail.autoCreateAdminHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('autoCreateAdmin')"
                     />
                 </sw-container>
                 <sw-container
@@ -464,7 +464,7 @@
                         :label="$t('sw6oidc.provider.detail.defaultCustomerGroupId')"
                         :placeholder="$t('sw6oidc.provider.detail.targetPlaceholderGroup')"
                         :help-text="$t('sw6oidc.provider.detail.defaultCustomerGroupIdHelp')"
-                        :disabled="!canEdit || undefined"
+                        :disabled="!canEditField('defaultCustomerGroupId') || undefined"
                     />
                     <sw-entity-single-select
                         v-model:value="provider.defaultAclRoleId"
@@ -474,7 +474,7 @@
                         :placeholder="$t('sw6oidc.provider.detail.targetPlaceholderRole')"
                         :help-text="$t('sw6oidc.provider.detail.defaultAclRoleIdHelp')"
                         :error="providerDefaultAclRoleIdError"
-                        :disabled="!canEditTrust || undefined"
+                        :disabled="!canEditField('defaultAclRoleId') || undefined"
                     />
                 </sw-container>
                 <mt-banner
@@ -498,14 +498,14 @@
                         :error="providerDisableNonOidcCustomerLoginError"
                         :label="$t('sw6oidc.provider.detail.disableNonOidcCustomerLogin')"
                         :help-text="$t('sw6oidc.provider.detail.disableNonOidcCustomerLoginHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('disableNonOidcCustomerLogin')"
                     />
                     <mt-switch
                         v-model="provider.disableNonOidcAdminLogin"
                         :error="providerDisableNonOidcAdminLoginError"
                         :label="$t('sw6oidc.provider.detail.disableNonOidcAdminLogin')"
                         :help-text="$t('sw6oidc.provider.detail.disableNonOidcAdminLoginHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('disableNonOidcAdminLogin')"
                     />
                 </sw-container>
             </mt-card>
@@ -522,19 +522,19 @@
                         v-model="provider.syncCustomerProfileOnSso"
                         :label="$t('sw6oidc.provider.detail.syncCustomerProfileOnSso')"
                         :help-text="$t('sw6oidc.provider.detail.syncCustomerProfileOnSsoHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('syncCustomerProfileOnSso')"
                     />
                     <mt-switch
                         v-model="provider.syncCustomerAddressOnSso"
                         :label="$t('sw6oidc.provider.detail.syncCustomerAddressOnSso')"
                         :help-text="$t('sw6oidc.provider.detail.syncCustomerAddressOnSsoHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('syncCustomerAddressOnSso')"
                     />
                     <mt-switch
                         v-model="provider.syncCustomerGroupOnSso"
                         :label="$t('sw6oidc.provider.detail.syncCustomerGroupOnSso')"
                         :help-text="$t('sw6oidc.provider.detail.syncCustomerGroupOnSsoHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('syncCustomerGroupOnSso')"
                     />
                 </sw-container>
                 <sw-container
@@ -545,13 +545,13 @@
                         v-model="provider.syncAdminProfileOnSso"
                         :label="$t('sw6oidc.provider.detail.syncAdminProfileOnSso')"
                         :help-text="$t('sw6oidc.provider.detail.syncAdminProfileOnSsoHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('syncAdminProfileOnSso')"
                     />
                     <mt-switch
                         v-model="provider.syncAdminRoleOnSso"
                         :label="$t('sw6oidc.provider.detail.syncAdminRoleOnSso')"
                         :help-text="$t('sw6oidc.provider.detail.syncAdminRoleOnSsoHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('syncAdminRoleOnSso')"
                     />
                 </sw-container>
             </mt-card>
@@ -909,14 +909,14 @@
                         :error="providerRequireEmailVerifiedError"
                         :label="$t('sw6oidc.provider.detail.requireEmailVerified')"
                         :help-text="$t('sw6oidc.provider.detail.requireEmailVerifiedHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('requireEmailVerified')"
                     />
                     <mt-switch
                         v-model="provider.linkExistingAccounts"
                         :error="providerLinkExistingAccountsError"
                         :label="$t('sw6oidc.provider.detail.linkExistingAccounts')"
                         :help-text="$t('sw6oidc.provider.detail.linkExistingAccountsHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('linkExistingAccounts')"
                     />
                 </sw-container>
                 <mt-banner
@@ -940,11 +940,11 @@
                         :error="providerAllowSuperadminGroupMappingError"
                         :label="$t('sw6oidc.provider.detail.allowSuperadminGroupMapping')"
                         :help-text="$t('sw6oidc.provider.detail.allowSuperadminGroupMappingHelp')"
-                        :disabled="!canEditTrust"
+                        :disabled="!canEditField('allowSuperadminGroupMapping')"
                     />
                     <mt-switch
                         v-model="provider.revokeSuperadminOnSso"
-                        :disabled="!canEdit || !provider.syncAdminRoleOnSso"
+                        :disabled="!canEditField('revokeSuperadminOnSso') || !provider.syncAdminRoleOnSso"
                         :label="$t('sw6oidc.provider.detail.revokeSuperadminOnSso')"
                         :help-text="$t('sw6oidc.provider.detail.revokeSuperadminOnSsoHelp')"
                     />
@@ -974,13 +974,13 @@
                         :max="1000"
                         :label="$t('sw6oidc.provider.detail.healthAlertFailureThreshold')"
                         :help-text="$t('sw6oidc.provider.detail.healthAlertFailureThresholdHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('healthAlertFailureThreshold')"
                     />
                     <mt-switch
                         v-model="provider.healthAlertNotifyOnRecovery"
                         :label="$t('sw6oidc.provider.detail.healthAlertNotifyOnRecovery')"
                         :help-text="$t('sw6oidc.provider.detail.healthAlertNotifyOnRecoveryHelp')"
-                        :disabled="!canEdit"
+                        :disabled="!canEditField('healthAlertNotifyOnRecovery')"
                     />
                 </sw-container>
                 <mt-password-field
@@ -989,7 +989,7 @@
                     :label="$t('sw6oidc.provider.detail.healthAlertWebhookUrl')"
                     :help-text="$t('sw6oidc.provider.detail.healthAlertWebhookUrlHelp')"
                     :placeholder="webhookConfigured ? $t('sw6oidc.provider.detail.clientSecretStoredPlaceholder') : 'https://hooks.example.com/…'"
-                    :disabled="!canEdit"
+                    :disabled="!canEditField('healthAlertWebhookUrl')"
                 />
                 <mt-button
                     v-if="webhookConfigured && canEdit"

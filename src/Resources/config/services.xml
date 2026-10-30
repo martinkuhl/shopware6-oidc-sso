@@ -653,6 +653,9 @@
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService" />
             <argument type="service" id="sw6oidc.logger" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant" />
+            <argument type="service" id="Doctrine\DBAL\Connection" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionDestructionService" />
             <call method="setContainer">
                 <argument type="service" id="service_container" />
             </call>
@@ -673,6 +676,7 @@
         <service id="MartinKuhl\Sw6Oidc\Subscriber\ProviderTrustGuardSubscriber">
             <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument type="service" id="sw6oidc.logger" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition" />
             <tag name="kernel.event_subscriber" />
         </service>
 
@@ -715,6 +719,12 @@
 
         <service id="MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardRegisterConfirmRoute"
                  decorates="Shopware\Core\Checkout\Customer\SalesChannel\RegisterConfirmRoute">
+            <argument type="service" id=".inner" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\PasswordLoginPolicy" />
+        </service>
+
+        <service id="MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardConvertGuestRoute"
+                 decorates="Shopware\Core\Checkout\Customer\SalesChannel\ConvertGuestRoute">
             <argument type="service" id=".inner" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\PasswordLoginPolicy" />
         </service>

@@ -116,7 +116,7 @@ Component.register('sw6oidc-provider-detail', () => {
                 /** Live test popup, to verify where results come from (F-M9) */
                 liveTestPopup: null,
                 /** GET provider/form-context */
-                formContext: { postLogoutLandingUrls: [], webhookConfigured: false },
+                formContext: { postLogoutLandingUrls: [], webhookConfigured: false, editorFields: [] },
                 /** "Remove webhook" was clicked: save sends null (F-N6) */
                 removeWebhook: false,
                 /** OidcDiagnosticsController response for this provider */
@@ -245,13 +245,6 @@ Component.register('sw6oidc-provider-detail', () => {
                 return Shopware.Store.get('session').currentUser?.admin === true;
             },
 
-            /**
-             * The fields of ProviderTrustGuardSubscriber::TRUST_FIELDS: only a
-             * superadmin may change them (plan F-2).
-             */
-            canEditTrust() {
-                return this.canEdit && this.isSuperadmin;
-            },
 
             /** ProviderTrustGuardSubscriber::servesAdmins(): every login type but "customer". */
             servesAdmins() {
@@ -402,6 +395,15 @@ Component.register('sw6oidc-provider-detail', () => {
 
         methods: {
             /**
+             * A non-superadmin may change only the fields on the server's
+             * editor allow-list (ProviderTrustGuardSubscriber::EDITOR_FIELDS,
+             * R8-H1); everything else needs a superadmin.
+             */
+            canEditField(property) {
+                return this.canEdit && (this.isSuperadmin || this.formContext.editorFields.includes(property));
+            },
+
+            /**
              * Translated message for a connection-test check / live-test step:
              * fixed outcomes carry a messageKey (+ params), while dynamic ones
              * (exception messages from the IdP/HTTP layer) only have the
@@ -507,7 +509,7 @@ Component.register('sw6oidc-provider-detail', () => {
 
             async loadFormContext(providerId) {
                 const requestId = ++this.formContextRequestId;
-                let formContext = { postLogoutLandingUrls: [], webhookConfigured: false };
+                let formContext = { postLogoutLandingUrls: [], webhookConfigured: false, editorFields: [] };
 
                 try {
                     const context = await this.sw6oidcApiService.get('_action/sw6oidc/provider/form-context', {
@@ -516,6 +518,7 @@ Component.register('sw6oidc-provider-detail', () => {
                     formContext = {
                         postLogoutLandingUrls: Array.isArray(context.postLogoutLandingUrls) ? context.postLogoutLandingUrls : [],
                         webhookConfigured: !!context.webhookConfigured,
+                        editorFields: Array.isArray(context.editorFields) ? context.editorFields : [],
                     };
                 } catch {
                     // Defaults above.

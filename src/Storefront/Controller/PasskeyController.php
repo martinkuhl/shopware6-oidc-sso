@@ -99,6 +99,10 @@ class PasskeyController extends StorefrontController
             return $this->rateLimited();
         }
 
+        if (SessionAuthenticationClock::isImitated($context)) {
+            return $this->notWhileImitating();
+        }
+
         if (!$this->authenticationClock->isFresh($context, self::REAUTH_WINDOW_SECONDS)) {
             return $this->reauthenticationRequired();
         }
@@ -134,6 +138,10 @@ class PasskeyController extends StorefrontController
 
         if ($this->isCrossOrigin($request)) {
             return $this->crossOrigin();
+        }
+
+        if (SessionAuthenticationClock::isImitated($context)) {
+            return $this->notWhileImitating();
         }
 
         if (!$this->authenticationClock->isFresh($context, self::REAUTH_WINDOW_SECONDS)) {
@@ -282,6 +290,15 @@ class PasskeyController extends StorefrontController
         $request->getSession()->set(self::SESSION_KEY_LOGIN_CREDENTIAL_ID, $resolved['credentialId']);
 
         return new JsonResponse(['status' => true]);
+    }
+
+    /**
+     * An Administration user logged in as this customer must not add a
+     * permanent way into the account (R8-H2).
+     */
+    private function notWhileImitating(): JsonResponse
+    {
+        return new JsonResponse(['error' => 'not_available_while_imitating'], Response::HTTP_FORBIDDEN);
     }
 
     private function reauthenticationRequired(): JsonResponse

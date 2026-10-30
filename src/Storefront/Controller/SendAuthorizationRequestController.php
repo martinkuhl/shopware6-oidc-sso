@@ -112,6 +112,10 @@ class SendAuthorizationRequestController extends StorefrontController
         $customer = $context->getCustomer();
         \assert($customer instanceof \Shopware\Core\Checkout\Customer\CustomerEntity);
 
+        if (SessionAuthenticationClock::isImitated($context)) {
+            return $this->notWhileImitating();
+        }
+
         if (!$this->authenticationClock->isFresh($context)) {
             return new RedirectResponse($this->generateUrl('frontend.sw6oidc.reauth', ['target' => 'profile']));
         }
@@ -155,6 +159,10 @@ class SendAuthorizationRequestController extends StorefrontController
         $customer = $context->getCustomer();
         \assert($customer instanceof \Shopware\Core\Checkout\Customer\CustomerEntity);
 
+        if (SessionAuthenticationClock::isImitated($context)) {
+            return $this->notWhileImitating();
+        }
+
         $targetRoute = self::REAUTH_TARGETS[(string) $request->query->get('target', '')] ?? self::REAUTH_TARGETS['passkey'];
         $providerId = $this->bindingService->getBoundProviderId(LoginType::Customer->value, $customer->getId(), $context->getContext());
 
@@ -185,5 +193,16 @@ class SendAuthorizationRequestController extends StorefrontController
         $this->addFlash(self::INFO, $this->trans('sw6oidc.account.reauthRequired'));
 
         return new RedirectResponse($this->generateUrl('frontend.account.login.page', ['redirectTo' => $targetRoute]));
+    }
+
+    /**
+     * An Administration user logged in as this customer must not attach an
+     * IdP identity or prove a fresh login for them (R8-H2).
+     */
+    private function notWhileImitating(): RedirectResponse
+    {
+        $this->addFlash(self::DANGER, $this->trans('sw6oidc.account.notWhileImitating'));
+
+        return new RedirectResponse($this->generateUrl('frontend.account.profile.page'));
     }
 }

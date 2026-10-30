@@ -1,0 +1,8 @@
+{% sw_extends '@Storefront/storefront/page/checkout/finish/finish-details.html.twig' %}
+
+{# Converting a guest gives the account a password: not offered while SSO-only mode is on (R8-M11). #}
+{% block page_checkout_finish_create_account %}
+    {% if not sw6oidc_storefront_password_login_disabled(context) %}
+        {{ parent() }}
+    {% endif %}
+{% endblock %}

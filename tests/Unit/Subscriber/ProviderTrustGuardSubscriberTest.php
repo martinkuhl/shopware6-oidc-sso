@@ -13,16 +13,25 @@ use MartinKuhl\Sw6Oidc\Subscriber\ProviderTrustGuardSubscriber;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
+use Psr\Log\NullLogger;
+use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupDefinition;
+use Shopware\Core\Framework\Api\Acl\Role\AclRoleDefinition;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\AssociationField;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\WriteProtected;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\StorageAware;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\DeleteCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\InsertCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\UpdateCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\WriteCommand;
+use Shopware\Core\Framework\DataAbstractionLayer\Write\EntityWriteGatewayInterface;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Validation\PreWriteValidationEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\WriteContext;
 use Shopware\Core\Framework\Uuid\Uuid;
 use Shopware\Core\Framework\Validation\WriteConstraintViolationException;
+use Shopware\Core\Test\Stub\DataAbstractionLayer\StaticDefinitionInstanceRegistry;
+use Symfony\Component\Validator\Validation;
 
 /**
  * R3-H4: whoever controls a provider's endpoints, scope or superadmin
@@ -43,7 +52,8 @@ final class ProviderTrustGuardSubscriberTest extends TestCase
     protected function setUp(): void
     {
         $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $columns = implode(', ', array_map(static fn (string $column): string => \sprintf('`%s` TEXT NULL', $column), array_keys(ProviderTrustGuardSubscriber::TRUST_FIELDS)));
+        $guard = new ProviderTrustGuardSubscriber($this->connection, new NullLogger(), self::providerDefinition());
+        $columns = implode(', ', array_map(static fn (string $column): string => \sprintf('`%s` TEXT NULL', $column), array_keys($guard->trustFields())));
         $this->connection->executeStatement(\sprintf('CREATE TABLE `sw6oidc_provider` (`id` BLOB PRIMARY KEY, %s)', $columns));
         $this->connection->executeStatement('CREATE TABLE `sw6oidc_role_mapping` (`id` BLOB PRIMARY KEY, `provider_id` BLOB, `mapping_type` TEXT)');
         $this->connection->executeStatement('CREATE TABLE `sw6oidc_attribute_mapping` (`id` BLOB PRIMARY KEY, `provider_id` BLOB, `attribute_type` TEXT)');
@@ -72,6 +82,42 @@ final class ProviderTrustGuardSubscriberTest extends TestCase
             'base64_claims' => '["groups","roles"]',
         ])], $this->editor())));
         self::assertSame([], $this->logged);
+    }
+
+    /**
+     * R8-H1: the flags that decide who keeps superadmin and who can log in
+     * to the Administration at all were editable by the editor role.
+     */
+    public function testEditorCannotChangeTheAdminLoginAndRoleFlags(): void
+    {
+        $exceptions = $this->validate([$this->command(UpdateCommand::class, Sw6OidcProviderDefinition::ENTITY_NAME, $this->adminProvider, [
+            'revoke_superadmin_on_sso' => 1,
+            'sync_admin_role_on_sso' => 1,
+            'disable_non_oidc_admin_login' => 1,
+            'token_endpoint_auth_method' => 'client_secret_post',
+        ])], $this->editor());
+
+        self::assertSame(['/tokenEndpointAuthMethod', '/disableNonOidcAdminLogin', '/syncAdminRoleOnSso', '/revokeSuperadminOnSso'], $this->paths($exceptions), 'in definition order');
+    }
+
+    public function testEveryEditorFieldIsAProviderColumnAndEverythingElseIsATrustField(): void
+    {
+        $guard = new ProviderTrustGuardSubscriber($this->connection, new NullLogger(), self::providerDefinition());
+        $columns = [];
+
+        foreach (self::providerDefinition()->getFields() as $field) {
+            if ($field instanceof StorageAware && !$field instanceof AssociationField && !$field->is(WriteProtected::class)) {
+                $columns[] = $field->getStorageName();
+            }
+        }
+
+        self::assertSame([], array_values(array_diff(array_keys(ProviderTrustGuardSubscriber::EDITOR_FIELDS), $columns)), 'unknown editor fields');
+        self::assertSame(
+            [],
+            array_values(array_diff($columns, array_keys(ProviderTrustGuardSubscriber::EDITOR_FIELDS), array_keys($guard->trustFields()), ['id', 'created_at', 'updated_at'])),
+            'unclassified columns',
+        );
+        self::assertArrayHasKey('revoke_superadmin_on_sso', $guard->trustFields());
     }
 
     public function testEditorCannotCreateProviders(): void
@@ -121,6 +167,19 @@ final class ProviderTrustGuardSubscriberTest extends TestCase
         self::assertSame(['/attributeType', '/claimKey'], $this->paths($this->validate([$adminEmail, $adminName, $customerEmail, $adminRule, $customerRule], $this->editor())));
     }
 
+    private static function providerDefinition(): Sw6OidcProviderDefinition
+    {
+        $registry = new StaticDefinitionInstanceRegistry(
+            [Sw6OidcProviderDefinition::class, AclRoleDefinition::class, CustomerGroupDefinition::class],
+            Validation::createValidator(),
+            (new self('registry'))->createStub(EntityWriteGatewayInterface::class),
+        );
+        $definition = $registry->getByEntityName(Sw6OidcProviderDefinition::ENTITY_NAME);
+        \assert($definition instanceof Sw6OidcProviderDefinition);
+
+        return $definition;
+    }
+
     private function editor(): Context
     {
         $source = new AdminApiSource(Uuid::randomHex());
@@ -162,7 +221,7 @@ final class ProviderTrustGuardSubscriberTest extends TestCase
         };
 
         $event = new PreWriteValidationEvent(WriteContext::createFromContext($context), $commands);
-        (new ProviderTrustGuardSubscriber($this->connection, $logger))->validate($event);
+        (new ProviderTrustGuardSubscriber($this->connection, $logger, self::providerDefinition()))->validate($event);
 
         return $event->getExceptions()->getExceptions();
     }

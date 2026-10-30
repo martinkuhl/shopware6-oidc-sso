@@ -38,7 +38,7 @@ final class SqliteSsoSchema
                 `issuer` VARCHAR(1024) NULL
             )
         SQL);
-        $this->connection->executeStatement('CREATE TABLE `user` (`id` BLOB NOT NULL PRIMARY KEY, `active` INTEGER NOT NULL DEFAULT 1)');
+        $this->connection->executeStatement('CREATE TABLE `user` (`id` BLOB NOT NULL PRIMARY KEY, `active` INTEGER NOT NULL DEFAULT 1, `admin` INTEGER NOT NULL DEFAULT 0)');
         $this->connection->executeStatement(<<<'SQL'
             CREATE TABLE `sw6oidc_attribute_mapping` (
                 `id` BLOB NOT NULL PRIMARY KEY,
@@ -87,10 +87,10 @@ final class SqliteSsoSchema
         return $id;
     }
 
-    public function admin(bool $active = true): string
+    public function admin(bool $active = true, bool $superadmin = false): string
     {
         $id = Uuid::randomHex();
-        $this->connection->insert('user', ['id' => Uuid::fromHexToBytes($id), 'active' => (int) $active], ['id' => ParameterType::BINARY]);
+        $this->connection->insert('user', ['id' => Uuid::fromHexToBytes($id), 'active' => (int) $active, 'admin' => (int) $superadmin], ['id' => ParameterType::BINARY]);
 
         return $id;
     }
