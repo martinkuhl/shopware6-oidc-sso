@@ -67,7 +67,7 @@ SHOPWARE_ADMIN_BUILD_ONLY_EXTENSIONS=1 ./bin/build-administration.sh   # plugins
 ./bin/build-storefront.sh
 ```
 
-The plugin's database schema is created by a migration, not an install hook — it runs automatically as part of `plugin:install`. If you ever need to run it explicitly (or re-run after a manual reset):
+The plugin's database schema is created by a single migration, not an install hook — it runs automatically as part of `plugin:install`. If you ever need to run it explicitly (or re-run after a manual reset):
 
 ```bash
 bin/console database:migrate Sw6Oidc --all
@@ -397,7 +397,7 @@ The plugin's unauthenticated endpoints are rate-limited **per client IP address*
 
 ### Client Secret Storage — Read This
 
-Client secrets and alert webhook URLs are **encrypted at rest** and are **write-only** in the Administration: after saving, the secret is never shown or returned by the Admin API again — leave the field empty to keep the stored value, or type a new one to replace it. The current envelope format (`sw6oidc_v2:`) uses XChaCha20-Poly1305 with a separate key per field, derived from Shopware's `APP_SECRET`. Existing plaintext secrets and older `sw6oidc_v1:` envelopes are re-encrypted by the plugin's migrations on `plugin:update`. The same encryption protects the plugin's stored session data and one-time tokens, in the database and in Redis.
+Client secrets and alert webhook URLs are **encrypted at rest** and are **write-only** in the Administration: after saving, the secret is never shown or returned by the Admin API again — leave the field empty to keep the stored value, or type a new one to replace it. The envelope format (`sw6oidc_v2:`) uses XChaCha20-Poly1305 with a separate key per field, derived from Shopware's `APP_SECRET`. The same encryption protects the plugin's stored session data and one-time tokens, in the database and in Redis.
 
 **Keep `APP_SECRET` stable.** Rotating it makes every stored client secret undecryptable; OIDC logins for those providers then fail with a "re-enter the client secret" error (and the health endpoint reports the provider as incomplete) until an admin saves each provider with its secret again. A database dump alone no longer exposes the secrets, but a dump *plus* the `APP_SECRET` does.
 
@@ -418,9 +418,9 @@ Client secrets and alert webhook URLs are **encrypted at rest** and are **write-
 
 The unreleased version changes security-relevant behavior. Check these points before updating a running shop (details in [CHANGELOG.md](CHANGELOG.md)):
 
-1. **Run the migrations** (`bin/console plugin:update Sw6Oidc`). They add the identity-binding columns, the session/one-time-token tables, re-encrypt stored secrets to the v2 envelope (needs the same `APP_SECRET`), and convert `claim_encoding = base64` to `base64_claims = ["*"]`. `bin/console database:migrate-destructive Sw6Oidc --all` drops the unused button label/color columns and the old `claim_encoding` column. Update the package first: `composer update martinkuhl/shopware6-oidc-sso` (the dependencies changed).
+1. **Reinstall the plugin.** The plugin is still in development: its schema lives in one migration, and there is no upgrade path from earlier development versions. Export the providers (`bin/console sw6oidc:config:export --keep-encrypted -o providers.json`), uninstall without keeping data, install, and import them again (`bin/console sw6oidc:config:import -i providers.json`). Account bindings and passkeys are not part of the export: users connect their accounts again. Update the package first: `composer update martinkuhl/shopware6-oidc-sso`.
 2. **`email_verified` is required.** Every provider now has **Require a verified email** on. Make sure the IdP sends `email_verified: true` (check with the live login test), or switch the setting off deliberately for an IdP that fully controls its users' email addresses.
-3. **Existing accounts are no longer linked by email.** A first SSO login for an email that already has a Shopware account is refused. Either let users connect their account with **Connect SSO** (customer: *My Account > Profile*; admin: *My profile*), or enable **Link existing accounts by verified email** on the provider. Superadmins can only be connected with Connect SSO. Accounts already bound to a provider keep working; their binding is upgraded with the IdP subject on the next login with a verified email.
+3. **Existing accounts are no longer linked by email.** A first SSO login for an email that already has a Shopware account is refused. Either let users connect their account with **Connect SSO** (customer: *My Account > Profile*; admin: *My profile*), or enable **Link existing accounts by verified email** on the provider. Superadmins can only be connected with Connect SSO. Accounts already bound to a provider keep working.
 4. **The `openid` scope requires an `id_token`.** A token response without one now fails the login.
 5. **Passkeys require user verification.** Authenticators without PIN/biometrics can no longer register or log in. The RP ID now defaults to the host of `APP_URL` (Administration) or the sales channel domain (Storefront) instead of the request host — check that registered passkeys still work if these differ.
 6. **Password confirmation in the Administration** is now done with Shopware's own dialog plus the SSO/passkey buttons (step-up). The former automatic "verified" session for SSO admins is gone.

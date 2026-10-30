@@ -3,6 +3,7 @@
 namespace MartinKuhl\Sw6Oidc\Service\Provisioning;
 
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
+use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\AccountLinkingRequiredException;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\EmailNotVerifiedException;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\ProviderMismatchException;
@@ -16,13 +17,10 @@ use Shopware\Core\Framework\Context;
  *
  * 1. the account bound to this provider + issuer + subject (in the sales
  *    channel's scope first, then globally);
- * 2. a legacy (pre-subject) binding of the email-matched account to this
- *    provider, backfilled with the subject — verified email only, and never
- *    for a privileged account, which has to connect explicitly (R3-M10);
- * 3. an unbound email-matched account, linked only if the provider allows
+ * 2. an unbound email-matched account, linked only if the provider allows
  *    linking, the email is verified and the account isn't privileged
  *    (superadmins are only ever linked explicitly, see linkExplicitly());
- * 4. no account at all: null, the caller may create one.
+ * 3. no account at all: null, the caller may create one.
  *
  * Anything else throws. The email claim alone is never proof of ownership
  * of an existing account.
@@ -73,49 +71,21 @@ class IdentityResolver
 
         $binding = $this->bindingService->getBinding($userType, $emailMatchedUserId, $context);
 
-        if ($binding instanceof \MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity) {
+        if ($binding instanceof Sw6OidcUserProviderEntity) {
             if ($binding->getProviderId() !== $identity->providerId) {
                 throw new ProviderMismatchException(sprintf('This %s account is bound to a different identity provider.', $userType));
             }
 
-            if ($binding->getSub() !== null) {
-                // Same provider, different subject or issuer: the email
-                // moved to another IdP account, or the provider now points
-                // at another tenant. Never hand the account over.
-                $this->logger->warning('sw6oidc: login refused, the email-matched account is bound to another identity of this provider.', [
-                    'providerId' => $identity->providerId,
-                    'userType' => $userType,
-                    'userId' => $emailMatchedUserId,
-                ]);
-
-                throw new AccountLinkingRequiredException('This account is linked to a different identity at this provider.');
-            }
-
-            if (!$identity->emailVerified) {
-                throw new AccountLinkingRequiredException('A legacy binding can only be upgraded with a verified email.');
-            }
-
-            if ($emailMatchIsPrivileged) {
-                // Whoever holds the email at the IdP *today* (a recycled
-                // address) must not inherit an admin account (R3-M10).
-                $this->logger->warning('sw6oidc: legacy binding of a privileged account not upgraded automatically; connect it explicitly.', [
-                    'providerId' => $identity->providerId,
-                    'userType' => $userType,
-                    'userId' => $emailMatchedUserId,
-                ]);
-
-                throw new AccountLinkingRequiredException('A legacy binding of a privileged account must be connected explicitly.');
-            }
-
-            $this->bindingService->backfillSubject($binding, $identity, $context);
-
-            $this->logger->warning('sw6oidc: legacy provider binding upgraded to subject binding by verified email.', [
+            // Same provider, different subject or issuer: the email moved to
+            // another IdP account, or the provider now points at another
+            // tenant. Never hand the account over.
+            $this->logger->warning('sw6oidc: login refused, the email-matched account is bound to another identity of this provider.', [
                 'providerId' => $identity->providerId,
                 'userType' => $userType,
                 'userId' => $emailMatchedUserId,
             ]);
 
-            return $emailMatchedUserId;
+            throw new AccountLinkingRequiredException('This account is linked to a different identity at this provider.');
         }
 
         if (!$provider->isLinkExistingAccounts() || !$identity->emailVerified || $emailMatchIsPrivileged) {
@@ -151,17 +121,13 @@ class IdentityResolver
 
         $binding = $this->bindingService->getBinding($userType, $userId, $context);
 
-        if ($binding instanceof \MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity) {
+        if ($binding instanceof Sw6OidcUserProviderEntity) {
             if (
                 $binding->getProviderId() !== $identity->providerId
-                || ($binding->getSub() !== null && $binding->getSub() !== $identity->subject)
-                || ($binding->getSub() !== null && $binding->getIssuerHash() !== UserProviderBindingService::issuerHash($identity->issuer))
+                || $binding->getSub() !== $identity->subject
+                || $binding->getIssuerHash() !== UserProviderBindingService::issuerHash($identity->issuer)
             ) {
                 throw new ProviderMismatchException(sprintf('This %s account is already bound to a different identity.', $userType));
-            }
-
-            if ($binding->getSub() === null) {
-                $this->bindingService->backfillSubject($binding, $identity, $context);
             }
 
             return;

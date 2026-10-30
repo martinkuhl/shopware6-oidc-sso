@@ -53,7 +53,7 @@ Several items in the `[Unreleased]` changelog section are **breaking** (HTTPS-on
 ```
 src/
 ├── Sw6Oidc.php                 # Plugin bootstrap; only uninstall() is custom (drops tables unless "keep data")
-├── Migration/                  # 19 migrations: schema is migration-driven, not install()-driven
+├── Migration/                  # one schema migration (CREATE TABLE IF NOT EXISTS); schema is migration-driven, not install()-driven
 ├── Core/Content/               # DAL entity definitions (Provider, AttributeMapping, RoleMapping,
 │                               #   AccessControlRule, UserProvider, PasskeyCredential, SessionActivity)
 │   └── Provider/Field/         #   Sw6OidcEncryptedField: transparent at-rest encryption for secrets
@@ -278,7 +278,7 @@ First logins create and bind the account in one transaction; two concurrent firs
 
 1. With `require_email_verified` (default on), the login is refused unless `email_verified` is `true` and the mapped email is the standard `email` claim. A transformed or custom-claim email mapping is refused at save time while verification is required.
 2. An account bound to this provider, issuer and subject logs in (in the sales channel's scope first for channel-bound customers, then globally).
-3. A legacy binding (from before subjects were stored) of the email-matched account to this provider is upgraded with the subject, only with a verified email and never for an Administration user.
+3. An email-matched account bound to another provider, or to another identity of this provider, is never taken over: the login is refused.
 4. An unbound account with the same email is linked only when the provider has `link_existing_accounts` on (default off), the email is verified and the account is not an Administration user. Otherwise the login is refused with "connect explicitly".
 5. No account: the caller may JIT-create one.
 
@@ -361,7 +361,7 @@ Auditing never blocks a login or logout: every recorder method swallows and logs
 ### Security hardening you get for free
 
 - **SSRF protection.** Every IdP URL is checked on save (HTTPS, public IPs only), and `NoPrivateNetworkHttpClient` re-checks every connection at runtime. The plugin's HTTP client follows no redirects by default; only GET requests are retried. Avatars are fetched through the same client. Changing an endpoint URL requires entering the client secret again.
-- **Encrypted secrets.** Client secrets, webhook URLs and stored security state are encrypted at rest. Envelope v2 (`sw6oidc_v2:`) is XChaCha20-Poly1305 with a key derived per purpose from `APP_SECRET` and the purpose as associated data; v1 envelopes are still read, and a migration re-encrypts stored provider secrets. Secrets are write-only over the Admin API, blanked in written events, and never sent to the IdP as an envelope.
+- **Encrypted secrets.** Client secrets, webhook URLs and stored security state are encrypted at rest. Envelope v2 (`sw6oidc_v2:`) is XChaCha20-Poly1305 with a key derived per purpose from `APP_SECRET` and the purpose as associated data; nothing else is read. Secrets are write-only over the Admin API, blanked in written events, and never sent to the IdP as an envelope.
 - **Browser binding.** An HttpOnly, SameSite=Lax cookie (`__Host-` on HTTPS) ties every flow and admin login nonce to the browser that started it, against login CSRF.
 - **Rate limiting.** Per client IP (IPv6 per /64), per endpoint scope. Endpoints that create state on success (flow start, passkey options) have a consuming budget of 30 requests per minute; redeem endpoints (callbacks with a valid state, nonce exchange, passkey verify, error tickets, step-up, logout tokens) count only failures, 10 per minute. Callbacks with an unknown state aren't counted. Behind a proxy or CDN, `framework.trusted_proxies` must be configured, or all clients share one budget.
 - **Logging.** `SensitiveDataProcessor` masks credential keys and sensitive query parameters; the log file rotates daily (14 files).

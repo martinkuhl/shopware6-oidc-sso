@@ -21,8 +21,7 @@ use Shopware\Core\Framework\DataAbstractionLayer\FieldCollection;
 /**
  * Binds a Shopware `user` (admin) or `customer` id to an IdP identity: the
  * provider plus the subject (`iss` + `sub`) it authenticated. Logins look
- * accounts up by that subject; `sub` is NULL only on legacy bindings created
- * before subject binding existed (backfilled on the next verified login).
+ * accounts up by that subject.
  *
  * A binding decides which account an IdP subject logs into, so every field
  * is writable in system scope only (R3-H3), and
@@ -61,9 +60,9 @@ class Sw6OidcUserProviderDefinition extends EntityDefinition
             (new StringField('user_type', 'userType', 16))->addFlags(new ApiAware(), new Required(), new Choice(self::USER_TYPES, true), new WriteProtected(Context::SYSTEM_SCOPE)),
             (new IdField('user_id', 'userId'))->addFlags(new ApiAware(), new Required(), new WriteProtected(Context::SYSTEM_SCOPE)),
             (new FkField('provider_id', 'providerId', Sw6OidcProviderDefinition::class))->addFlags(new ApiAware(), new Required(), new WriteProtected(Context::SYSTEM_SCOPE)),
-            (new StringField('issuer', 'issuer', 2048))->addFlags(new ApiAware(), new WriteProtected(Context::SYSTEM_SCOPE)),
-            (new StringField('sub', 'sub', 255))->addFlags(new ApiAware(), new WriteProtected(Context::SYSTEM_SCOPE)),
-            (new StringField('issuer_hash', 'issuerHash', 64))->addFlags(new WriteProtected(Context::SYSTEM_SCOPE)),
+            (new StringField('issuer', 'issuer', 2048))->addFlags(new ApiAware(), new Required(), new WriteProtected(Context::SYSTEM_SCOPE)),
+            (new StringField('sub', 'sub', 255))->addFlags(new ApiAware(), new Required(), new WriteProtected(Context::SYSTEM_SCOPE)),
+            (new StringField('issuer_hash', 'issuerHash', 64))->addFlags(new Required(), new WriteProtected(Context::SYSTEM_SCOPE)),
             (new IdField('binding_scope', 'bindingScope'))->addFlags(new ApiAware(), new WriteProtected(Context::SYSTEM_SCOPE)),
             new CreatedAtField(),
             new UpdatedAtField(),

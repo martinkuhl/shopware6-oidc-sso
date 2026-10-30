@@ -11,10 +11,6 @@ use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
  */
 class ProviderConfigInspector
 {
-    public function __construct(private readonly Sw6OidcEncryptor $encryptor)
-    {
-    }
-
     /**
      * @return list<string> machine-readable problem codes; [] = complete
      */
@@ -40,7 +36,7 @@ class ProviderConfigInspector
 
             if ($secret === '') {
                 $problems[] = 'client_secret_missing';
-            } elseif ($this->encryptor->isEncrypted($secret)) {
+            } elseif (Sw6OidcEncryptor::isEnvelope($secret)) {
                 // Hydration passes an undecryptable envelope through unchanged (APP_SECRET rotated).
                 $problems[] = 'client_secret_undecryptable';
             }

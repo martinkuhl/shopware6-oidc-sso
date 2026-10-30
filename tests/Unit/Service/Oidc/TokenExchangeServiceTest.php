@@ -131,7 +131,7 @@ final class TokenExchangeServiceTest extends TestCase
     public function testUndecryptableSecretFailsBeforeAnyRequest(): void
     {
         $provider = $this->buildProvider(publicClient: false);
-        $provider->setClientSecret((new Sw6OidcEncryptor('rotated-away'))->encrypt('the-secret'));
+        $provider->setClientSecret((new Sw6OidcEncryptor('rotated-away'))->encrypt('the-secret', 'sw6oidc_provider.client_secret'));
 
         $httpClient = $this->createMock(OidcHttpClient::class);
         $httpClient->expects(self::never())->method('postForm');

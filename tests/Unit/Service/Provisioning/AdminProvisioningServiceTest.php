@@ -256,10 +256,10 @@ final class AdminProvisioningServiceTest extends TestCase
     }
 
     /**
-     * R3-M10: whoever holds the email at the IdP today must not inherit an
-     * admin account through its legacy (pre-subject) binding.
+     * Whoever holds the email at the IdP today must not inherit an admin
+     * account bound to another identity of the same provider.
      */
-    public function testLegacyBindingOfAnAdminIsNotUpgradedAutomatically(): void
+    public function testAnAdminBoundToAnotherIdentityIsNotTakenOver(): void
     {
         $this->existingUser = $this->user('jane');
         $provider = $this->provider();

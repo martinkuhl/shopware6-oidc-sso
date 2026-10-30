@@ -142,8 +142,10 @@ final class CustomerProvisioningServiceTest extends TestCase
                     }
                 }
 
-                // The double holds legacy (subject-less) bindings only: a lookup by subject finds none.
-                if ($this->boundProviderId !== null && !\array_key_exists('sub', $filters)) {
+                // One binding of the first customer to $boundProviderId and this test's subject.
+                $bySubject = \array_key_exists('sub', $filters);
+
+                if ($this->boundProviderId !== null && (!$bySubject || ($filters['providerId'] ?? null) === $this->boundProviderId)) {
                     $binding = new Sw6OidcUserProviderEntity();
                     $binding->setId(Uuid::randomHex());
                     $binding->setUserType(Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER);
@@ -151,7 +153,7 @@ final class CustomerProvisioningServiceTest extends TestCase
                     \assert(\is_string($userId));
                     $binding->setUserId($userId);
                     $binding->setProviderId($this->boundProviderId);
-                    $binding->setSub(null);
+                    $binding->setSub($this->subject);
                     $entities[] = $binding;
                 }
 
@@ -215,7 +217,6 @@ final class CustomerProvisioningServiceTest extends TestCase
         $inactive->setActive(false);
         $active = $this->customer(Uuid::randomHex(), 'user@example.com');
         $this->existingCustomers = [$inactive, $active];
-        $this->boundProviderId = $provider->getId();
 
         $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
 
@@ -254,28 +255,6 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
     }
 
-    public function testLegacyBindingIsBackfilledWithTheSubject(): void
-    {
-        $provider = $this->provider();
-        $existing = $this->customer(Uuid::randomHex(), 'user@example.com');
-        $this->existingCustomers = [$existing];
-        $this->boundProviderId = $provider->getId();
-
-        $updates = [];
-        $this->userProviderRepository->method('update')->willReturnCallback(
-            function (array $payloads) use (&$updates): EntityWrittenContainerEvent {
-                array_push($updates, ...$payloads);
-
-                return EntityWrittenContainerEvent::createWithWrittenEvents([], $this->context, []);
-            },
-        );
-
-        $result = $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
-
-        self::assertSame($existing, $result);
-        self::assertCount(1, $updates);
-        self::assertSame($this->subject, $updates[0]['sub']);
-    }
 
     public function testLooksUpNonGuestCustomerByEmail(): void
     {

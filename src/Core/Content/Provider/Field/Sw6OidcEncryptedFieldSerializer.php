@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Core\Content\Provider\Field;
 
+use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\Field;
 use Shopware\Core\Framework\DataAbstractionLayer\Field\StorageAware;
@@ -44,7 +45,7 @@ class Sw6OidcEncryptedFieldSerializer implements FieldSerializerInterface
         $value = $data->getValue();
         $purpose = self::purpose($field);
 
-        if (\is_string($value) && $this->encryptor->isEncrypted($value)) {
+        if (\is_string($value) && Sw6OidcEncryptor::isEnvelope($value)) {
             if (!$this->encryptor->canDecrypt($value, $purpose)) {
                 $violations = new ConstraintViolationList([new ConstraintViolation(
                     'The encrypted secret cannot be decrypted with this installation\'s APP_SECRET. Provide the plaintext secret instead.',
@@ -79,6 +80,6 @@ class Sw6OidcEncryptedFieldSerializer implements FieldSerializerInterface
      */
     public static function purpose(Field $field): string
     {
-        return 'sw6oidc_provider.' . ($field instanceof StorageAware ? $field->getStorageName() : $field->getPropertyName());
+        return Sw6OidcProviderDefinition::encryptionPurpose($field instanceof StorageAware ? $field->getStorageName() : $field->getPropertyName());
     }
 }

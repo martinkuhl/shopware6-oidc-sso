@@ -63,6 +63,11 @@ class Sw6OidcAccessControlRuleDefinition extends EntityDefinition
         return Sw6OidcAccessControlRuleCollection::class;
     }
 
+    public function getDefaults(): array
+    {
+        return ['sortOrder' => 0];
+    }
+
     protected function defineFields(): FieldCollection
     {
         return new FieldCollection([
@@ -72,7 +77,7 @@ class Sw6OidcAccessControlRuleDefinition extends EntityDefinition
             (new StringField('operator', 'operator', 16))->addFlags(new ApiAware(), new Required(), new Choice(self::OPERATORS, true)),
             (new StringField('value', 'value', 1024))->addFlags(new ApiAware()),
             (new StringField('error_message', 'errorMessage', 1024))->addFlags(new ApiAware()),
-            (new IntField('sort_order', 'sortOrder'))->addFlags(new ApiAware()),
+            (new IntField('sort_order', 'sortOrder'))->addFlags(new ApiAware(), new Required()),
             new CreatedAtField(),
             new UpdatedAtField(),
 

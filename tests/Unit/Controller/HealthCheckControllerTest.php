@@ -146,7 +146,7 @@ final class HealthCheckControllerTest extends TestCase
 
         $response = (new HealthCheckController(
             $repository,
-            new ProviderConfigInspector(new Sw6OidcEncryptor('app-secret')),
+            new ProviderConfigInspector(),
             $infrastructure,
             new ArrayAdapter(),
             null,

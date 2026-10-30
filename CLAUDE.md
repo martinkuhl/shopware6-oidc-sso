@@ -33,10 +33,9 @@ bin/console plugin:install --activate Sw6Oidc
 bin/console plugin:update Sw6Oidc
 bin/console cache:clear
 ```
-Schema is **migration-driven**, not `install()`-driven — `Sw6Oidc.php` has no custom `install()`/`activate()`/`deactivate()`, only `uninstall()`. Table creation happens the first time migrations run (automatically during `plugin:install`, or explicitly via):
+Schema is **migration-driven**, not `install()`-driven — `Sw6Oidc.php` has no custom `install()`/`activate()`/`deactivate()`, only `uninstall()`. The one schema migration runs during `plugin:install`, or explicitly via:
 ```bash
 bin/console database:migrate Sw6Oidc --all
-bin/console database:migrate-destructive Sw6Oidc --all   # drops removed columns (sync_on_sso, button_label/button_color)
 ```
 
 ### Provider config export/import (`Console/`, logic in `Service/Config/OidcConfigTransfer`)
@@ -45,7 +44,7 @@ bin/console sw6oidc:config:export [--provider-id=<id>] [-o file.json [--force]] 
 bin/console sw6oidc:config:import -i file.json|- [--dry-run] [--overwrite] [--skip-unresolved]
 ```
 - Versioned JSON (`version: 1`): provider fields + attribute/role mappings + access-control rules; `last_test_*`/timestamps, the health-alert webhook URL (secret) and health-alert state are left out. ACL roles/customer groups are exported as `{id, name}` and resolved on import by id, else unique name (otherwise the provider fails, or with `--skip-unresolved` the reference/row is dropped).
-- Client secret **omitted by default**; `--keep-encrypted` exports the stored envelope (only importable where `APP_SECRET` is identical — the field serializer rejects foreign envelopes; legacy plaintext rows are encrypted on the fly, never exported raw), `--plaintext` the decrypted value via `getUsableClientSecret()` (never an undecryptable envelope). An import without a secret keeps the stored one; a *new* confidential provider without one fails.
+- Client secret **omitted by default**; `--keep-encrypted` exports the stored envelope (only importable where `APP_SECRET` is identical — the field serializer rejects foreign envelopes), `--plaintext` the decrypted value via `getUsableClientSecret()` (never an undecryptable envelope). An import without a secret keeps the stored one; a *new* confidential provider without one fails.
 - `-o` creates the file `0600` with O_EXCL semantics (no following existing files/symlinks); an existing file is only replaced with `--force` (unlinked first).
 - Matches providers by `id`; existing ones are skipped unless `--overwrite`. Overwrite replaces only the child collections (`attributeMappings`/`roleMappings`/`accessControlRules`) and default references **present in the file**, warning about missing keys — a hand-edited file can never silently drop rules. Per-provider transaction. Writes go through the repository, so encryption and `Sw6OidcProviderWriteGuardSubscriber` apply (CLI writes count as lockout-confirmed). `--dry-run` wraps the whole import in a rolled-back transaction.
 
@@ -88,7 +87,7 @@ Both start routes resolve the provider via `ProviderResolver::getActiveById($id,
    - Admin Passkey login uses `AdminTokenIssuer` directly (same-page AJAX ceremony, no nonce).
 
 6. **Logout** — `RpInitiatedLogoutService`, shared:
-   - `buildLogoutUrl(provider, idToken, defaultPostLogoutRedirectUri, target)` returns `null` without `end_session_endpoint`. The provider's `post_logout_url` replaces the default redirect; `state` is `PostLogoutState::create(target)` (`customer`/`admin`, HMAC from `APP_SECRET`). The provider setting `logout_style` decides the format: `standard` (always `client_id`, `id_token_hint` when known, `post_logout_redirect_uri`, `state`) or `authelia_forward_auth` (`?rd=`). No URL guessing any more (R3-M3; migration 16 kept Authelia-shaped endpoints on the portal logout).
+   - `buildLogoutUrl(provider, idToken, defaultPostLogoutRedirectUri, target)` returns `null` without `end_session_endpoint`. The provider's `post_logout_url` replaces the default redirect; `state` is `PostLogoutState::create(target)` (`customer`/`admin`, HMAC from `APP_SECRET`). The provider setting `logout_style` decides the format: `standard` (always `client_id`, `id_token_hint` when known, `post_logout_redirect_uri`, `state`) or `authelia_forward_auth` (`?rd=`). No URL guessing any more (R3-M3).
    - **Shared landing** — `Controller/Oidc/PostLogoutController` (`GET /sw6oidc/postlogout`): valid `admin` state → `{APP_URL}/admin/`, else `frontend.account.login.page`. `post_logout_url` is validated by the write guard as an absolute http(s) URL (`SW6OIDC_REDIRECT_URL_INVALID`), not SSRF-checked.
    - `revokeTokens(provider, LogoutContext)` — RFC 7009 revocation of the login's IdP refresh token, then access token (M14); client authentication per the provider's own `revocation_endpoint_auth_method` (Authelia registers it separately from the token endpoint's); fire-and-forget, failures logged.
    - Storefront logout, two steps: `Storefront/Service/OidcLogoutRoute` decorates core `LogoutRoute`, captures the **pre-logout** context token + customer id, delegates, looks up the registry entry via `findBySessionKey()` and removes it, records the activity logout, revokes the IdP tokens, builds the logout URL and hands it to `PendingLogoutRedirect`; Store API clients get it as `redirectUrl` in the `ContextTokenResponse` (H11). Can't be a `CustomerLogoutEvent` listener (core swaps the context token first). `CustomerLogoutSubscriber` (`KernelEvents::RESPONSE`) turns it into a redirect only on `frontend.account.logout.page`.
@@ -160,18 +159,18 @@ Security state lives in the database, not in cache pools that `cache:clear`, dep
 
 Accounts are bound to the IdP **subject**, never looked up by the email claim alone (C2, H1).
 
-- **`sw6oidc_user_provider`** — `provider_id`, `issuer` + `issuer_hash` (sha256), `sub` (both `utf8mb4_bin`), `binding_scope` (the sales channel of a channel-bound customer, else 16 zero bytes = global), polymorphic `user_type`/`user_id`; unique per account and unique `(provider_id, user_type, issuer_hash, sub, binding_scope)` (R3-M9, R3-M14). Every field is `WriteProtected(system)`; inserts and deletes outside system scope are refused by `TrustEntityWriteGuardSubscriber` (R3-H3). Legacy rows have `sub = NULL`.
+- **`sw6oidc_user_provider`** — `provider_id`, `issuer` + `issuer_hash` (sha256), `sub` (both `utf8mb4_bin`), `binding_scope` (the sales channel of a channel-bound customer, else 16 zero bytes = global), polymorphic `user_type`/`user_id`; unique per account and unique `(provider_id, user_type, issuer_hash, sub, binding_scope)` (R3-M9, R3-M14). Every field is `WriteProtected(system)`; inserts and deletes outside system scope are refused by `TrustEntityWriteGuardSubscriber` (R3-H3). `issuer`, `issuer_hash` and `sub` are NOT NULL.
 - **`ExternalIdentity`** — provider id, `iss` + `sub`, email, `email_verified` (from `OidcCallbackResult::identity()`).
 - **`Service/Provisioning/IdentityResolver::resolve(userType, provider, identity, emailMatchedUserId, emailMatchIsPrivileged)`** — shared by customer and admin provisioning:
   0. `require_email_verified` (provider, default **on**) and no `email_verified` → `EmailNotVerifiedException` (applies to every login);
   1. account bound to this provider + issuer + subject (in the Storefront sales channel's scope first, then globally) → it;
-  2. email-matched account with a **legacy** binding to this provider → subject backfilled (verified email only and never for a privileged account — every admin — else `AccountLinkingRequiredException`, R3-M10); bound to another provider → `ProviderMismatchException`; bound to another subject of this provider → `AccountLinkingRequiredException`;
+  2. email-matched account bound to another provider → `ProviderMismatchException`; bound to another subject (or issuer) of this provider → `AccountLinkingRequiredException`;
   3. unbound email-matched account → linked only with `link_existing_accounts` (default **off**), a verified email and **never a superadmin**; else `AccountLinkingRequiredException`;
   4. nothing → null, the caller may JIT-create.
 - **`linkExplicitly(userType, userId, identity)`** — "Connect SSO": the owner proved the account (session + step-up) and the IdP identity (this round trip), so no email match is needed; the only way to bind a superadmin. `SubjectAlreadyLinkedException` / `ProviderMismatchException` on conflicts.
   - Storefront: `POST /sw6oidc/link` (`_loginRequired`, provider buttons on the account profile page via `sw6oidc_storefront_account_sso()`) needs a freshly authenticated browser session (`SessionAuthenticationClock`, else `/sw6oidc/reauth?target=profile`, R3-H6); `OidcCallbackController::completeLink()` binds only if the same customer is still logged in, in the customer's channel scope. Every explicit link dispatches `AccountSsoLinkedEvent` (Flow Builder trigger `sw6oidc.account.sso_linked`).
   - Admin: `POST /api/sw6oidc/admin/link/start` (auth required, **`user-verified` token required**) returns `{authorizeUrl}`; the callback's `completeLink()` binds and redirects to `#/sw/profile/index/general?sw6oidc_linked=1`. UI: `component/sw6oidc-connect-sso` on the own profile.
-- **`UserProviderBindingService`** — the only writer (always in system scope): `getBinding()`, `findBindingBySubject()`/`findUserIdBySubject(userType, identity, ctx, ?salesChannelId)`, `bind(…, ?bindingScope)` (unique-key race on concurrent first logins: re-reads and accepts only the identical binding, M21), `backfillSubject()`, `unbind()`, `issuerHash()`.
+- **`UserProviderBindingService`** — the only writer (always in system scope): `getBinding()`, `findBindingBySubject()`/`findUserIdBySubject(userType, identity, ctx, ?salesChannelId)`, `bind(…, ?bindingScope)` (unique-key race on concurrent first logins: re-reads and accepts only the identical binding, M21), `unbind()`, `issuerHash()`.
 - **Issuer change** (R3-M9): bindings no longer match after a provider's issuer changes. With bound accounts the save needs a superadmin's decision (`POST /api/_action/sw6oidc/provider/{id}/confirm-issuer-change` `{rebind}`, `user-verified`): re-bind them to the new issuer after commit, or leave them disconnected (CLI: disconnected).
 - Callback error codes: admin `sw6oidc_error=link_required|email_not_verified|provider_mismatch`; Storefront flash messages. Account-policy denials are not counted by the rate limiter.
 
@@ -274,35 +273,7 @@ Independent of OIDC; uses `web-auth/webauthn-lib` **^5.3** (no repository contra
 - `AdminPasswordLoginGuardSubscriber` — friendly 403 on `/api/oauth/token` for password grants and user-access-key `client_credentials` (enforcement for user access keys; for passwords the real enforcement is `PasswordLoginGuardUserRepository`).
 - `AttributeMappingWriteGuardSubscriber`, `SessionActivityWriteGuardSubscriber`, `ProviderSecretPayloadScrubber`, `BrowserBindingCookieSubscriber`, `BusinessEventSubscriber` (registers `PasskeyRegisteredEvent` as Flow Builder trigger), `UserProviderCleanupSubscriber`, `Sw6OidcCspSubscriber`.
 
-**`Migration/`**
-- `Migration1730000001CreateOidcSchema` — creates the initial 5 tables; `updateDestructive()` is a no-op.
-- `Migration1758000001AddProviderTestStatus` — adds `sw6oidc_provider.last_test_status`/`last_test_at`.
-- `Migration1789383427AddSuperadminGroupMapping` — adds `sw6oidc_provider.allow_superadmin_group_mapping`.
-- `Migration1789390512AddLastTestClaims` — adds `sw6oidc_provider.last_test_claims` (JSON; claim keys of the last live test, for the attribute-mapping picker).
-- `Migration1789470000AddUserProviderUpdatedAt` — adds the missing `sw6oidc_user_provider.updated_at`.
-- `Migration1790685361EncryptProviderClientSecrets` — widens `client_secret` to 2048 and encrypts existing plaintext rows (v1; needs `APP_SECRET`).
-- `Migration1790686535DropAttributeMappingSyncOnSso` — destructive step drops `sw6oidc_attribute_mapping.sync_on_sso`.
-- `Migration1790800001CreateAccessControlRuleSchema` — creates `sw6oidc_access_control_rule`.
-- `Migration1790800002AddProviderPostLogoutUrl` — adds `sw6oidc_provider.post_logout_url`.
-- `Migration1790800003CreateSessionActivitySchema` — creates `sw6oidc_session_activity`.
-- `Migration1790800004AddProviderHealthAlerting` — adds the `sw6oidc_provider.health_alert_*` columns.
-- `Migration1790800005AddUserProviderSubject` — adds `sw6oidc_user_provider.issuer`/`sub` + unique `(provider_id, user_type, sub)`, and `sw6oidc_provider.require_email_verified` (default 1) / `link_existing_accounts` (default 0).
-- `Migration1790800006CreateStateTables` — creates `sw6oidc_session`, `sw6oidc_one_time_token`, `sw6oidc_node_heartbeat`.
-- `Migration1790800007PasskeyCredentialHardening` — adds `disabled_at`, `credential_id_hash` (backfilled, unique; replaces the `credential_id` unique key), widens `credential_id` to 1400, indexes `user_handle`.
-- `Migration1790800008AddProviderFrontchannelAdminLogout` — adds `sw6oidc_provider.frontchannel_admin_logout` (default 0).
-- `Migration1790800009AddProviderRevokeSuperadminOnSso` — adds `sw6oidc_provider.revoke_superadmin_on_sso` (default 0).
-- `Migration1790800010ReencryptSecrets` — re-encrypts `client_secret`/`health_alert_webhook_url` from v1 to v2 envelopes (idempotent; undecryptable values left alone; skipped without `APP_SECRET`).
-- `Migration1790800011AddProviderBase64Claims` — adds `sw6oidc_provider.base64_claims` (JSON list); `claim_encoding = base64` rows get `["*"]`.
-- `Migration1790800012DropProviderButtonColumns` — destructive step drops the never-read `button_label`/`button_color`.
-- `Migration1790800013MakeClientSecretOptional` — `client_secret` nullable; empty public-client placeholders become NULL.
-- `Migration1790800014AddSessionActivityPasskeyCredential` — `sw6oidc_session_activity.passkey_credential_hash`.
-- `Migration1790800015SplitPasskeyRpId` — new `passkeyRpIdAdmin`, seeded from a fitting `passkeyRpId`.
-- `Migration1790800016AddProviderLogoutStyle` — `sw6oidc_provider.logout_style`.
-- `Migration1790800017BindingIdentityKey` — binding `issuer_hash`, `binding_scope`, binary `sub`/`issuer`, new unique key.
-- `Migration1790800018CreateManagedAclRole` — `sw6oidc_managed_acl_role`, seeded.
-- `Migration1790800019SessionProviderCascadeAndHashedSid` — orphans removed, then `sw6oidc_session.provider_id` FK `ON DELETE CASCADE`; activity `sid` stored as `sha256:<hex>`.
-- `Migration1790800020DropProviderClaimEncoding` — destructive step drops the unread `claim_encoding`.
-- `Migration1790800021AddProviderClientAuthMethods` — `sw6oidc_provider.token_endpoint_auth_method`/`revocation_endpoint_auth_method` (default `client_secret_basic`).
+**`Migration/`** — one migration, `Migration1790900000CreateSchema`: the whole schema as `CREATE TABLE IF NOT EXISTS` (a no-op on an install that has it), `statements()` public for `SchemaMatchesDefinitionsTest` (every definition field has its column and vice versa; every NOT NULL column the API can write is `Required`). The plugin is in development without installs to upgrade, so schema changes **edit this file**; an existing development install is altered by hand or reinstalled (`sw6oidc:config:export` → uninstall → install → import). The data conversions of the former 21 migrations (plaintext/v1 secrets, subject-less bindings, `claim_encoding`) are gone, and so is the code that read the old shapes.
 
 **`Twig/`**
 - `AdminEntrypointsExtension` — `sw6oidc_admin_scripts()`/`sw6oidc_admin_styles()`, reading the plugin's Vite `entrypoints.json` directly (parse failures degrade gracefully). Forces the plugin's admin JS onto the pre-auth login screen.
@@ -319,7 +290,7 @@ Independent of OIDC; uses `web-auth/webauthn-lib` **^5.3** (no repository contra
 
 **`Sw6Oidc.php`** — plugin bootstrap; `uninstall()` (unless "keep user data") drops every plugin table separately in FK-safe order and deletes `Sw6Oidc.config.*` system config and `sw6oidc.*` scheduled tasks (L16).
 
-## Database schema (`Migration1730000001CreateOidcSchema` + follow-up migrations)
+## Database schema (`Migration1790900000CreateSchema`)
 
 - **`sw6oidc_provider`** — one row per IdP: identity/OAuth fields (`app_name`, `client_id`, `client_secret`, `public_client`), endpoints (auto-fillable via discovery), `post_logout_url`, protocol knobs (`scope`, `pkce_flow` strict `S256`/`plain`, `token_endpoint_auth_method`/`revocation_endpoint_auth_method` strict `client_secret_basic`/`client_secret_post`, `base64_claims`, `group_attribute`), behavior flags (`auto_create_customer`/`auto_create_admin`, `disable_non_oidc_*_login`, `show_*_link`, `is_active`, `login_type`), identity policy (`require_email_verified`, `link_existing_accounts`), sync-on-SSO toggles, `allow_superadmin_group_mapping`, `revoke_superadmin_on_sso`, `frontchannel_admin_logout`, ops (`http_timeout` 1–60, `jwks_cache_ttl` 60–86400), health alerting, live-test bookkeeping (`last_test_status` strict `Choice`, L18), FK defaults (`default_customer_group_id`, `default_acl_role_id`).
 - **`sw6oidc_attribute_mapping`** — per-provider claim → field mapping (`attribute_type`, `attribute_name`, optional `transform_function`/`transform_params`).
@@ -355,7 +326,7 @@ All implement `ShopwareEvent` (have `getContext()`), dispatched via `event_dispa
 ## Architecture — Secrets at rest
 
 - `client_secret` and `health_alert_webhook_url` are `Sw6OidcEncryptedField`s (serializer encrypts with purpose `sw6oidc_provider.<column>`), write-only over the Admin API (no `ApiAware`), `ResetOnClone`.
-- **`Sw6OidcEncryptor`** — v2 envelope `sw6oidc_v2:` + base64(nonce ‖ ciphertext): XChaCha20-Poly1305 with a key derived per **purpose** (keyed BLAKE2b over an `APP_SECRET`-derived master key) and the purpose as associated data (N-L4); v1 (`sw6oidc_v1:`, secretbox) still readable, upgraded by `Migration1790800010`. `decrypt()` never throws (undecryptable envelopes are passed through and logged so hydration works); code about to *use* a value calls `decryptOrNull()`/`isEncrypted()`. `Sw6OidcProviderEntity::getUsableClientSecret()` = decrypted secret or null (N-L5) — used by token exchange, revocation, connection test and export. An envelope written back is accepted only if it decrypts with this installation's key.
+- **`Sw6OidcEncryptor`** — v2 envelope `sw6oidc_v2:` + base64(nonce ‖ ciphertext): XChaCha20-Poly1305 with a key derived per **purpose** (keyed BLAKE2b over an `APP_SECRET`-derived master key) and the purpose as associated data (N-L4); the purpose is a required argument, and provider columns build it with `Sw6OidcProviderDefinition::encryptionPurpose()`. `decrypt()` never throws (a value that doesn't decrypt is passed through and logged so hydration works); code about to *use* a value calls `decryptOrNull()` (null for anything that isn't a decryptable envelope) or `isEnvelope()`. `Sw6OidcProviderEntity::getUsableClientSecret()` = decrypted secret or null (N-L5) — used by token exchange, revocation, connection test and export. An envelope written back is accepted only if it decrypts with this installation's key.
 - Also used for one-time token values and registry session keys/tokens. Rotating `APP_SECRET` makes all of it undecryptable (secrets must be re-entered; registry/one-time entries are effectively dropped).
 - **`ProviderSecretPayloadScrubber`** — blanks `clientSecret`/`healthAlertWebhookUrl` in `sw6oidc_provider.written` payloads (core decodes written fields), so other listeners/webhooks never see plaintext (N-L6).
 
@@ -388,7 +359,7 @@ E2E-only: `SW6OIDC_E2E_SHOP_IMAGE`, `SW6OIDC_E2E_SHOP_URL` (see `tests/E2E/READM
 
 Do not assume the following are fully wired just because the schema or config UI suggests they are:
 
-- Back-/Front-Channel Logout and forced logouts end *all* sessions of an admin user (see State storage), and only know sessions registered in `sw6oidc_session` (logins before `Migration1790800006` lived in a cache pool and are not targetable). Passkey sessions are never in the registry.
+- Back-/Front-Channel Logout and forced logouts end *all* sessions of an admin user (see State storage), and only know sessions registered in `sw6oidc_session`. Passkey sessions are never in the registry.
 - Without Redis, multi-node setups are correct for one-time tokens (DB), but the rate limiter, JWKS cache and the other `cache.app` stores are per node unless Shopware's cache pools are shared; `InfrastructureInspector` warns (`multi_node_without_redis`).
 - OIDC step-up needs the IdP to return `auth_time`; the E2E OIDC step-up spec is skipped when Dex doesn't.
 - `UserProviderBindingService::unbind()` is called by the Administration unlink action and `UserProviderCleanupSubscriber`.

@@ -32,7 +32,6 @@ class ProviderHealthMonitor
         private readonly EntityRepository $providerRepository,
         private readonly ProviderReachabilityChecker $reachabilityChecker,
         private readonly WebhookNotifier $webhookNotifier,
-        private readonly Sw6OidcEncryptor $encryptor,
         private readonly Connection $connection,
         private readonly LoggerInterface $logger,
         private readonly string $shopUrl,
@@ -76,7 +75,7 @@ class ProviderHealthMonitor
     {
         $webhookUrl = (string) $provider->getHealthAlertWebhookUrl();
 
-        if ($this->encryptor->isEncrypted($webhookUrl)) {
+        if (Sw6OidcEncryptor::isEnvelope($webhookUrl)) {
             $this->logger->error('sw6oidc: health alert webhook URL cannot be decrypted (APP_SECRET changed?); re-enter it.', ['providerId' => $provider->getId()]);
 
             return false;

@@ -21,7 +21,7 @@ final class ProviderConfigInspectorTest extends TestCase
         self::assertSame(['jwks_endpoint_missing', 'issuer_missing'], $this->inspector()->problems($this->provider(['jwksEndpoint' => null, 'issuer' => ' '])));
         self::assertSame(['client_secret_missing'], $this->inspector()->problems($this->provider(['clientSecret' => ''])));
 
-        $foreignEnvelope = (new Sw6OidcEncryptor('other-secret'))->encrypt('s3cret');
+        $foreignEnvelope = (new Sw6OidcEncryptor('other-secret'))->encrypt('s3cret', 'sw6oidc_provider.client_secret');
         self::assertSame(['client_secret_undecryptable'], $this->inspector()->problems($this->provider(['clientSecret' => $foreignEnvelope])));
     }
 
@@ -32,7 +32,7 @@ final class ProviderConfigInspectorTest extends TestCase
 
     private function inspector(): ProviderConfigInspector
     {
-        return new ProviderConfigInspector(new Sw6OidcEncryptor('app-secret'));
+        return new ProviderConfigInspector();
     }
 
     /**

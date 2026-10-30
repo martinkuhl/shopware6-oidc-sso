@@ -107,7 +107,6 @@ class RedisAtomicCache implements AtomicCacheInterface
         }
 
         if (\is_string($value)) {
-            // Values written before encryption (at most one TTL ago) pass through.
             return $this->encryptor->decryptOrNull($value, DatabaseAtomicCache::VALUE_PURPOSE);
         }
 

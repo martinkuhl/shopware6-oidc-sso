@@ -8,37 +8,27 @@ use Symfony\Contracts\Service\ResetInterface;
 /**
  * Encrypts secrets and security state at rest, keyed from APP_SECRET.
  *
- * Format v2 ("sw6oidc_v2:" . base64(nonce . ciphertext)): XChaCha20-Poly1305
+ * Envelope "sw6oidc_v2:" . base64(nonce . ciphertext): XChaCha20-Poly1305
  * (AEAD) with a key derived per *purpose* (keyed BLAKE2b over a master key)
  * and the purpose as associated data — so an envelope written for one field
  * or table can't be swapped into another and still decrypt (N-L4). Callers
  * name the purpose, e.g. "sw6oidc_provider.client_secret" or
- * "one_time_token".
+ * "sw6oidc_one_time_token.value".
  *
- * Format v1 ("sw6oidc_v1:", secretbox, one key for everything) is still read;
- * Migration1790800010ReencryptSecrets upgrades stored provider secrets.
- *
- * decrypt() never throws: an unprefixed value is legacy plaintext and is
- * returned as-is; an envelope that doesn't decrypt (APP_SECRET rotated,
- * corrupted, wrong purpose) is also returned as-is and logged, so entity
- * hydration never breaks. Code about to *use* a value calls decryptOrNull()
- * or isEnvelope() instead, so ciphertext is never mistaken for the secret.
- *
- * Constructible from a plain string (no container) so a Migration can use it.
+ * decrypt() never throws: a value that doesn't decrypt (APP_SECRET rotated,
+ * corrupted, wrong purpose, not an envelope) is returned as-is and logged, so
+ * entity hydration never breaks. Code about to *use* a value calls
+ * decryptOrNull() or isEnvelope() instead, so ciphertext is never mistaken
+ * for the secret.
  */
 class Sw6OidcEncryptor implements ResetInterface
 {
+    public const PREFIX = 'sw6oidc_v2:';
+
     /** @var array<string, true> undecryptable values already reported in this request */
     private array $reported = [];
 
-    public const PREFIX = 'sw6oidc_v2:';
-    public const LEGACY_PREFIX = 'sw6oidc_v1:';
-
-    public const DEFAULT_PURPOSE = 'default';
-
     private readonly string $masterKey;
-
-    private readonly string $legacyKey;
 
     /** @var array<string, string> */
     private array $purposeKeys = [];
@@ -53,7 +43,6 @@ class Sw6OidcEncryptor implements ResetInterface
         }
 
         $this->masterKey = sodium_crypto_generichash($appSecret . "\0sw6oidc/master/v2", '', \SODIUM_CRYPTO_GENERICHASH_KEYBYTES);
-        $this->legacyKey = sodium_crypto_generichash($appSecret . "\0sw6oidc/client_secret/v1", '', \SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
     }
 
     /**
@@ -62,10 +51,10 @@ class Sw6OidcEncryptor implements ResetInterface
      */
     public static function isEnvelope(string $value): bool
     {
-        return str_starts_with($value, self::PREFIX) || str_starts_with($value, self::LEGACY_PREFIX);
+        return str_starts_with($value, self::PREFIX);
     }
 
-    public function encrypt(#[\SensitiveParameter] string $plaintext, string $purpose = self::DEFAULT_PURPOSE): string
+    public function encrypt(#[\SensitiveParameter] string $plaintext, string $purpose): string
     {
         $nonce = random_bytes(\SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES);
         $ciphertext = sodium_crypto_aead_xchacha20poly1305_ietf_encrypt($plaintext, $purpose, $nonce, $this->purposeKey($purpose));
@@ -73,13 +62,9 @@ class Sw6OidcEncryptor implements ResetInterface
         return self::PREFIX . base64_encode($nonce . $ciphertext);
     }
 
-    public function decrypt(string $value, string $purpose = self::DEFAULT_PURPOSE): string
+    public function decrypt(string $value, string $purpose): string
     {
-        if (!$this->isEncrypted($value)) {
-            return $value;
-        }
-
-        $plaintext = $this->tryDecrypt($value, $purpose);
+        $plaintext = $this->decryptOrNull($value, $purpose);
 
         if ($plaintext === null) {
             $this->reportUndecryptable($value, $purpose);
@@ -88,6 +73,43 @@ class Sw6OidcEncryptor implements ResetInterface
         }
 
         return $plaintext;
+    }
+
+    /**
+     * Like decrypt(), but a value that can't be decrypted yields null instead
+     * of the value itself (N-L5).
+     */
+    public function decryptOrNull(string $value, string $purpose): ?string
+    {
+        if (!self::isEnvelope($value)) {
+            return null;
+        }
+
+        $raw = base64_decode(substr($value, \strlen(self::PREFIX)), true);
+        $nonceLength = \SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES;
+
+        if ($raw === false || \strlen($raw) < $nonceLength + \SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_ABYTES) {
+            return null;
+        }
+
+        $plaintext = sodium_crypto_aead_xchacha20poly1305_ietf_decrypt(
+            substr($raw, $nonceLength),
+            $purpose,
+            substr($raw, 0, $nonceLength),
+            $this->purposeKey($purpose),
+        );
+
+        return $plaintext === false ? null : $plaintext;
+    }
+
+    public function canDecrypt(string $value, string $purpose): bool
+    {
+        return $this->decryptOrNull($value, $purpose) !== null;
+    }
+
+    public function reset(): void
+    {
+        $this->reported = [];
     }
 
     /**
@@ -108,79 +130,6 @@ class Sw6OidcEncryptor implements ResetInterface
         $this->logger?->error('sw6oidc: an encrypted value could not be decrypted (was APP_SECRET changed?). Re-enter the secret to fix this.', [
             'purpose' => $purpose,
         ]);
-    }
-
-    public function reset(): void
-    {
-        $this->reported = [];
-    }
-
-    /**
-     * Like decrypt(), but a value that can't be decrypted yields null instead
-     * of the envelope (N-L5). Unencrypted legacy values pass through.
-     */
-    public function decryptOrNull(string $value, string $purpose = self::DEFAULT_PURPOSE): ?string
-    {
-        if (!$this->isEncrypted($value)) {
-            return $value;
-        }
-
-        return $this->tryDecrypt($value, $purpose);
-    }
-
-    public function isEncrypted(string $value): bool
-    {
-        return self::isEnvelope($value);
-    }
-
-    public function canDecrypt(string $value, string $purpose = self::DEFAULT_PURPOSE): bool
-    {
-        return $this->isEncrypted($value) && $this->tryDecrypt($value, $purpose) !== null;
-    }
-
-    public function isLegacy(string $value): bool
-    {
-        return str_starts_with($value, self::LEGACY_PREFIX);
-    }
-
-    private function tryDecrypt(string $value, string $purpose): ?string
-    {
-        if ($this->isLegacy($value)) {
-            return $this->tryDecryptLegacy($value);
-        }
-
-        $raw = base64_decode(substr($value, \strlen(self::PREFIX)), true);
-        $nonceLength = \SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES;
-
-        if ($raw === false || \strlen($raw) < $nonceLength + \SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_ABYTES) {
-            return null;
-        }
-
-        $plaintext = sodium_crypto_aead_xchacha20poly1305_ietf_decrypt(
-            substr($raw, $nonceLength),
-            $purpose,
-            substr($raw, 0, $nonceLength),
-            $this->purposeKey($purpose),
-        );
-
-        return $plaintext === false ? null : $plaintext;
-    }
-
-    private function tryDecryptLegacy(string $value): ?string
-    {
-        $raw = base64_decode(substr($value, \strlen(self::LEGACY_PREFIX)), true);
-
-        if ($raw === false || \strlen($raw) < \SODIUM_CRYPTO_SECRETBOX_NONCEBYTES + \SODIUM_CRYPTO_SECRETBOX_MACBYTES) {
-            return null;
-        }
-
-        $plaintext = sodium_crypto_secretbox_open(
-            substr($raw, \SODIUM_CRYPTO_SECRETBOX_NONCEBYTES),
-            substr($raw, 0, \SODIUM_CRYPTO_SECRETBOX_NONCEBYTES),
-            $this->legacyKey,
-        );
-
-        return $plaintext === false ? null : $plaintext;
     }
 
     private function purposeKey(string $purpose): string

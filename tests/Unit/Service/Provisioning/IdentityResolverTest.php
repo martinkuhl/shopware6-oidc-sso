@@ -124,34 +124,12 @@ final class IdentityResolverTest extends TestCase
     public function testAccountBoundToAnotherSubjectOfTheSameProviderIsRefused(): void
     {
         $this->accountBinding = $this->binding($this->provider->getId(), 'someone-else');
-        $this->bindings->expects(self::never())->method('backfillSubject');
 
         $this->expectException(AccountLinkingRequiredException::class);
 
         $this->resolve('email-user');
     }
 
-    public function testLegacyBindingIsBackfilled(): void
-    {
-        $this->accountBinding = $this->binding($this->provider->getId(), null);
-        $this->bindings->expects(self::once())->method('backfillSubject');
-
-        self::assertSame('email-user', $this->resolve('email-user'));
-    }
-
-    /**
-     * R3-M10: whoever holds a (possibly recycled) email at the IdP today
-     * must not inherit a privileged account through its legacy binding.
-     */
-    public function testLegacyBindingOfAPrivilegedAccountIsNotUpgraded(): void
-    {
-        $this->accountBinding = $this->binding($this->provider->getId(), null);
-        $this->bindings->expects(self::never())->method('backfillSubject');
-
-        $this->expectException(AccountLinkingRequiredException::class);
-
-        $this->resolve('email-user', privileged: true);
-    }
 
     /**
      * R3-M9: a binding to this provider under another issuer (the provider

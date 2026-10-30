@@ -89,7 +89,6 @@ class OidcConfigTransfer
         private readonly EntityRepository $customerGroupRepository,
         private readonly Sw6OidcProviderDefinition $providerDefinition,
         private readonly Connection $connection,
-        private readonly Sw6OidcEncryptor $encryptor,
     ) {
     }
 
@@ -223,8 +222,7 @@ class OidcConfigTransfer
     }
 
     /**
-     * The stored column value as-is (already an envelope), or a legacy
-     * plaintext row encrypted on the fly — never the plaintext.
+     * The stored column value as-is: an envelope, never the plaintext.
      */
     private function storedSecretEnvelope(string $providerId): ?string
     {
@@ -237,7 +235,7 @@ class OidcConfigTransfer
             return null;
         }
 
-        return $this->encryptor->isEncrypted($stored) ? $stored : $this->encryptor->encrypt($stored, Sw6OidcProviderDefinition::CLIENT_SECRET_PURPOSE);
+        return Sw6OidcEncryptor::isEnvelope($stored) ? $stored : null;
     }
 
     /**

@@ -19,6 +19,9 @@ use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenEvent;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\BoolField;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\Flag\Required;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\IntField;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\DeleteCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\InsertCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\UpdateCommand;
@@ -96,28 +99,6 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
      */
     public const STATE_BINDING_LOSS_CONFIRMED = 'sw6oidc.provider_binding_loss_confirmed';
 
-    /** NOT NULL boolean columns: an explicit null is a 400, not a database 500 (R3-L43). */
-    private const NOT_NULL_BOOLEANS = [
-        'public_client' => 'publicClient',
-        'auto_create_customer' => 'autoCreateCustomer',
-        'auto_create_admin' => 'autoCreateAdmin',
-        'disable_non_oidc_admin_login' => 'disableNonOidcAdminLogin',
-        'disable_non_oidc_customer_login' => 'disableNonOidcCustomerLogin',
-        'show_customer_link' => 'showCustomerLink',
-        'show_admin_link' => 'showAdminLink',
-        'is_active' => 'isActive',
-        'sync_customer_profile_on_sso' => 'syncCustomerProfileOnSso',
-        'sync_customer_address_on_sso' => 'syncCustomerAddressOnSso',
-        'sync_customer_group_on_sso' => 'syncCustomerGroupOnSso',
-        'sync_admin_profile_on_sso' => 'syncAdminProfileOnSso',
-        'sync_admin_role_on_sso' => 'syncAdminRoleOnSso',
-        'allow_superadmin_group_mapping' => 'allowSuperadminGroupMapping',
-        'require_email_verified' => 'requireEmailVerified',
-        'link_existing_accounts' => 'linkExistingAccounts',
-        'frontchannel_admin_logout' => 'frontchannelAdminLogout',
-        'revoke_superadmin_on_sso' => 'revokeSuperadminOnSso',
-        'health_alert_notify_on_recovery' => 'healthAlertNotifyOnRecovery',
-    ];
 
     /**
      * URLs the client secret (or tokens) are sent to: changing one on an
@@ -191,6 +172,7 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
         private readonly LockoutConfirmationStore $confirmationStore,
         private readonly LoggerInterface $logger,
         private readonly IssuerChangeConfirmationStore $issuerChangeConfirmations,
+        private readonly Sw6OidcProviderDefinition $providerDefinition,
     ) {
     }
 
@@ -314,7 +296,7 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
 
         foreach (self::ENCRYPTED_FETCHED_URL_FIELDS as $storageName => $propertyName) {
             $value = $payload[$storageName] ?? null;
-            $urls[$propertyName] = \is_string($value) ? $this->encryptor->decrypt($value, 'sw6oidc_provider.' . $storageName) : null;
+            $urls[$propertyName] = \is_string($value) ? $this->encryptor->decrypt($value, Sw6OidcProviderDefinition::encryptionPurpose($storageName)) : null;
         }
 
         foreach ($urls as $propertyName => $url) {
@@ -737,13 +719,24 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
         return $row === false ? null : $row;
     }
 
+    /**
+     * An explicit null for a Required bool or int field is a 400, not a
+     * database 500 (R3-L43): core's serializers validate Required strings
+     * (NotBlank) but let null through for bools and ints. Derived from the
+     * definition, so a new NOT NULL field is covered once it is Required.
+     */
     private function validateNotNull(WriteCommand $command, ConstraintViolationList $violations): void
     {
         $payload = $command->getPayload();
 
-        foreach (self::NOT_NULL_BOOLEANS as $storageName => $propertyName) {
-            if (\array_key_exists($storageName, $payload) && $payload[$storageName] === null) {
-                $violations->add($this->violation('This value must be true or false.', $propertyName, null, self::CODE_VALUE_REQUIRED));
+        foreach ($this->providerDefinition->getFields() as $field) {
+            if (
+                ($field instanceof BoolField || $field instanceof IntField)
+                && $field->is(Required::class)
+                && \array_key_exists($field->getStorageName(), $payload)
+                && $payload[$field->getStorageName()] === null
+            ) {
+                $violations->add($this->violation('This value is required.', $field->getPropertyName(), null, self::CODE_VALUE_REQUIRED));
             }
         }
     }

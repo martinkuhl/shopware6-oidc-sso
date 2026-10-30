@@ -52,6 +52,11 @@ class Sw6OidcRoleMappingDefinition extends EntityDefinition
         return Sw6OidcRoleMappingCollection::class;
     }
 
+    public function getDefaults(): array
+    {
+        return ['sortOrder' => 0];
+    }
+
     protected function defineFields(): FieldCollection
     {
         return new FieldCollection([
@@ -61,7 +66,7 @@ class Sw6OidcRoleMappingDefinition extends EntityDefinition
             (new StringField('oidc_group', 'oidcGroup'))->addFlags(new ApiAware(), new Required()),
             (new FkField('acl_role_id', 'aclRoleId', AclRoleDefinition::class))->addFlags(new ApiAware()),
             (new FkField('customer_group_id', 'customerGroupId', CustomerGroupDefinition::class))->addFlags(new ApiAware()),
-            (new IntField('sort_order', 'sortOrder'))->addFlags(new ApiAware()),
+            (new IntField('sort_order', 'sortOrder'))->addFlags(new ApiAware(), new Required()),
             new CreatedAtField(),
             new UpdatedAtField(),
 

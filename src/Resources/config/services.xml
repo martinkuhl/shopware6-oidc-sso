@@ -782,6 +782,7 @@
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\LockoutConfirmationStore" />
             <argument type="service" id="sw6oidc.logger" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\IssuerChangeConfirmationStore" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition" />
             <tag name="kernel.event_subscriber" />
             <tag name="kernel.reset" method="reset" />
         </service>
@@ -913,9 +914,7 @@
         </service>
 
         <!-- Health checks, diagnostics and proactive alerting -->
-        <service id="MartinKuhl\Sw6Oidc\Service\Health\ProviderConfigInspector">
-            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor" />
-        </service>
+        <service id="MartinKuhl\Sw6Oidc\Service\Health\ProviderConfigInspector" />
 
         <service id="MartinKuhl\Sw6Oidc\Service\Health\ProviderReachabilityChecker">
             <argument type="service" id="sw6oidc.http_client" />
@@ -932,7 +931,6 @@
             <argument type="service" id="sw6oidc_provider.repository" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Health\ProviderReachabilityChecker" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Health\WebhookNotifier" />
-            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor" />
             <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument type="service" id="sw6oidc.logger" />
             <argument>%env(APP_URL)%</argument>
@@ -988,7 +986,6 @@
             <argument type="service" id="customer_group.repository" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition" />
             <argument type="service" id="Doctrine\DBAL\Connection" />
-            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor" />
         </service>
 
         <service id="MartinKuhl\Sw6Oidc\Console\ExportOidcConfigCommand">

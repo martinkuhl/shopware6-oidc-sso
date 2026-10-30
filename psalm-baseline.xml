@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<files psalm-version="6.19.1@e2ca44251c1f1aa2e35452d426895746b47de64e">
+<files psalm-version="6.20.4@e53db692e6600cf729c88190b892bcf96e1c550e">
   <file src="src/Console/ExportOidcConfigCommand.php">
     <UnusedClass>
       <code><![CDATA[ExportOidcConfigCommand]]></code>
@@ -266,144 +266,9 @@
       <code><![CDATA[getUserType]]></code>
     </PossiblyUnusedMethod>
   </file>
-  <file src="src/Migration/Migration1730000001CreateOidcSchema.php">
+  <file src="src/Migration/Migration1790900000CreateSchema.php">
     <UnusedClass>
-      <code><![CDATA[Migration1730000001CreateOidcSchema]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1758000001AddProviderTestStatus.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1758000001AddProviderTestStatus]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1789383427AddSuperadminGroupMapping.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1789383427AddSuperadminGroupMapping]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1789390512AddLastTestClaims.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1789390512AddLastTestClaims]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1789470000AddUserProviderUpdatedAt.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1789470000AddUserProviderUpdatedAt]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790685361EncryptProviderClientSecrets.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790685361EncryptProviderClientSecrets]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790686535DropAttributeMappingSyncOnSso.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790686535DropAttributeMappingSyncOnSso]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800001CreateAccessControlRuleSchema.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800001CreateAccessControlRuleSchema]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800002AddProviderPostLogoutUrl.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800002AddProviderPostLogoutUrl]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800003CreateSessionActivitySchema.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800003CreateSessionActivitySchema]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800004AddProviderHealthAlerting.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800004AddProviderHealthAlerting]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800005AddUserProviderSubject.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800005AddUserProviderSubject]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800006CreateStateTables.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800006CreateStateTables]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800007PasskeyCredentialHardening.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800007PasskeyCredentialHardening]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800008AddProviderFrontchannelAdminLogout.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800008AddProviderFrontchannelAdminLogout]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800009AddProviderRevokeSuperadminOnSso.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800009AddProviderRevokeSuperadminOnSso]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800010ReencryptSecrets.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800010ReencryptSecrets]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800011AddProviderBase64Claims.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800011AddProviderBase64Claims]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800012DropProviderButtonColumns.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800012DropProviderButtonColumns]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800013MakeClientSecretOptional.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800013MakeClientSecretOptional]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800014AddSessionActivityPasskeyCredential.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800014AddSessionActivityPasskeyCredential]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800015SplitPasskeyRpId.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800015SplitPasskeyRpId]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800016AddProviderLogoutStyle.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800016AddProviderLogoutStyle]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800017BindingIdentityKey.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800017BindingIdentityKey]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800018CreateManagedAclRole.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800018CreateManagedAclRole]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800019SessionProviderCascadeAndHashedSid.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800019SessionProviderCascadeAndHashedSid]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800020DropProviderClaimEncoding.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800020DropProviderClaimEncoding]]></code>
-    </UnusedClass>
-  </file>
-  <file src="src/Migration/Migration1790800021AddProviderClientAuthMethods.php">
-    <UnusedClass>
-      <code><![CDATA[Migration1790800021AddProviderClientAuthMethods]]></code>
+      <code><![CDATA[Migration1790900000CreateSchema]]></code>
     </UnusedClass>
   </file>
   <file src="src/ScheduledTask/HealthCheckAlertTaskHandler.php">
@@ -490,11 +355,6 @@
     </PossiblyUnusedMethod>
   </file>
   <file src="src/Service/Health/NodeHeartbeat.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="src/Service/Health/ProviderConfigInspector.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>

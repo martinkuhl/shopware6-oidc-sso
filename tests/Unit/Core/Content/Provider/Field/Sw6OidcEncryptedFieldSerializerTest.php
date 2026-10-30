@@ -35,7 +35,7 @@ final class Sw6OidcEncryptedFieldSerializerTest extends TestCase
 
         self::assertSame(['  my-secret  '], $this->innerSaw);
         self::assertSame('my-secret', $this->encryptor->decrypt($out['client_secret'], self::PURPOSE));
-        self::assertNull($this->encryptor->decryptOrNull($out['client_secret']), 'bound to its field');
+        self::assertNull($this->encryptor->decryptOrNull($out['client_secret'], 'sw6oidc_provider.health_alert_webhook_url'), 'bound to its field');
     }
 
     public function testEncodeKeepsNull(): void
@@ -59,7 +59,7 @@ final class Sw6OidcEncryptedFieldSerializerTest extends TestCase
 
     public function testForeignEnvelopeIsRejected(): void
     {
-        $foreign = (new Sw6OidcEncryptor('other-instance'))->encrypt('secret');
+        $foreign = (new Sw6OidcEncryptor('other-instance'))->encrypt('secret', self::PURPOSE);
 
         $this->expectException(WriteConstraintViolationException::class);
         $this->encode($foreign);
@@ -71,7 +71,7 @@ final class Sw6OidcEncryptedFieldSerializerTest extends TestCase
         $field = new Sw6OidcEncryptedField('client_secret', 'clientSecret');
 
         self::assertSame('abc', $serializer->decode($field, $this->encryptor->encrypt('abc', self::PURPOSE)));
-        self::assertSame('legacy', $serializer->decode($field, 'legacy'));
+        self::assertSame('not-an-envelope', $serializer->decode($field, 'not-an-envelope'), 'hydration never breaks');
         self::assertNull($serializer->decode($field, null));
     }
 

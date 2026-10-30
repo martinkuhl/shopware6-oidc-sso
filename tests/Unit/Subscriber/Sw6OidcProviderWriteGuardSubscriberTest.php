@@ -15,6 +15,8 @@ use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSsoSchema;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupDefinition;
+use Shopware\Core\Framework\Api\Acl\Role\AclRoleDefinition;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityWriteResult;
@@ -23,15 +25,18 @@ use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\DeleteCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\InsertCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\UpdateCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\WriteCommand;
+use Shopware\Core\Framework\DataAbstractionLayer\Write\EntityWriteGatewayInterface;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Validation\PreWriteValidationEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\WriteContext;
 use Shopware\Core\Framework\Uuid\Uuid;
 use Shopware\Core\Framework\Validation\WriteConstraintViolationException;
+use Shopware\Core\Test\Stub\DataAbstractionLayer\StaticDefinitionInstanceRegistry;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Validator\ConstraintViolationInterface;
+use Symfony\Component\Validator\Validation;
 
 #[CoversClass(Sw6OidcProviderWriteGuardSubscriber::class)]
 final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
@@ -428,6 +433,7 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
             $this->confirmations,
             new NullLogger(),
             $this->issuerChanges,
+            self::providerDefinition(),
         );
 
         $source = new AdminApiSource($this->actingAdmin);
@@ -493,6 +499,19 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
         $command->method('getPath')->willReturn('/0');
 
         return $command;
+    }
+
+    private static function providerDefinition(): Sw6OidcProviderDefinition
+    {
+        $registry = new StaticDefinitionInstanceRegistry(
+            [Sw6OidcProviderDefinition::class, AclRoleDefinition::class, CustomerGroupDefinition::class],
+            Validation::createValidator(),
+            (new self('registry'))->createStub(EntityWriteGatewayInterface::class),
+        );
+        $definition = $registry->getByEntityName(Sw6OidcProviderDefinition::ENTITY_NAME);
+        \assert($definition instanceof Sw6OidcProviderDefinition);
+
+        return $definition;
     }
 
     private function assertNoViolations(PreWriteValidationEvent $event): void

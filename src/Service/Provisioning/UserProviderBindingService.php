@@ -138,19 +138,6 @@ class UserProviderBindingService
         }
     }
 
-    /**
-     * Upgrades a legacy (pre-subject) binding to the identity that just
-     * authenticated through its provider.
-     */
-    public function backfillSubject(Sw6OidcUserProviderEntity $binding, ExternalIdentity $identity, Context $context): void
-    {
-        $this->asSystem($context, fn (Context $systemContext): EntityWrittenContainerEvent => $this->userProviderRepository->update([[
-            'id' => $binding->getId(),
-            'issuer' => $identity->issuer,
-            'issuerHash' => self::issuerHash($identity->issuer),
-            'sub' => $identity->subject,
-        ]], $systemContext));
-    }
 
     public function unbind(string $userType, string $userId, Context $context): void
     {

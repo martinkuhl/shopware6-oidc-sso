@@ -35,7 +35,7 @@ final class RedisAtomicCacheTest extends TestCase
         $redis->expects(self::never())->method('getdel');
         $redis->expects(self::once())->method('eval')
             ->with(self::stringContains("redis.call('GET'"), self::callback(static fn (array $keys): bool => str_starts_with($keys[0], 'sw6oidc:')), 1)
-            ->willReturn('v');
+            ->willReturn(self::encryptor()->encrypt('v', DatabaseAtomicCache::VALUE_PURPOSE));
 
         $cache = new RedisAtomicCache($this->factoryReturning($redis), new InMemoryAtomicCache(), new NullLogger(), self::encryptor());
 
@@ -196,12 +196,12 @@ final class RedisAtomicCacheTest extends TestCase
         (new RedisAtomicCache($this->factoryReturning($redis), new InMemoryAtomicCache(), new NullLogger(), self::encryptor()))->save('k', 'pkce-verifier', 60);
     }
 
-    public function testPlaintextFromBeforeTheUpdateIsStillRead(): void
+    public function testAValueThatIsNoEnvelopeIsNeverReturned(): void
     {
         $redis = $this->createMock(\Redis::class);
-        $redis->method('eval')->willReturn('legacy-plain');
+        $redis->method('eval')->willReturn('plain');
 
-        self::assertSame('legacy-plain', (new RedisAtomicCache($this->factoryReturning($redis), new InMemoryAtomicCache(), new NullLogger(), self::encryptor()))->getAndDelete('k'));
+        self::assertNull((new RedisAtomicCache($this->factoryReturning($redis), new InMemoryAtomicCache(), new NullLogger(), self::encryptor()))->getAndDelete('k'));
     }
 
     private static function encryptor(): Sw6OidcEncryptor

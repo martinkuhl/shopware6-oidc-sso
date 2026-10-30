@@ -112,11 +112,8 @@ final class OidcConfigTransferTest extends TestCase
         $this->exportOne(OidcConfigTransfer::SECRET_PLAINTEXT);
     }
 
-    public function testExportEncryptedKeepsEnvelopeAndEncryptsLegacyPlaintextRows(): void
+    public function testExportEncryptedKeepsTheStoredEnvelope(): void
     {
-        $this->storedSecret = 'legacy-plain';
-        self::assertSame('legacy-plain', $this->encryptor->decrypt($this->exportOne(OidcConfigTransfer::SECRET_ENCRYPTED)['clientSecret'], 'sw6oidc_provider.client_secret'));
-
         $this->storedSecret = $this->encryptor->encrypt('already', 'sw6oidc_provider.client_secret');
         self::assertSame($this->storedSecret, $this->exportOne(OidcConfigTransfer::SECRET_ENCRYPTED)['clientSecret']);
     }
@@ -296,7 +293,6 @@ final class OidcConfigTransferTest extends TestCase
             $this->referenceRepository('customer_group'),
             $this->definition,
             $connection,
-            $this->encryptor,
         );
     }
 

@@ -70,7 +70,7 @@ final class OidcDiagnosticsControllerTest extends TestCase
 
         return new OidcDiagnosticsController(
             $repository,
-            new ProviderConfigInspector(new Sw6OidcEncryptor('app-secret')),
+            new ProviderConfigInspector(),
             new ProviderReachabilityChecker(new MockHttpClient(new MockResponse('{"keys":[{"kty":"RSA"}]}')), new SsrfUrlValidator(false, static fn (): array => ['93.184.215.14'])),
             $this->infrastructure(),
         );

@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes (code review, revision 8)
+
+- **One schema migration.** The 21 migrations are replaced by `Migration1790900000CreateSchema`, which holds the final schema. There is no upgrade path from earlier development versions: reinstall the plugin (export the providers with `sw6oidc:config:export`, uninstall, install, import). Code that only read pre-migration data is gone: `sw6oidc_v1:` envelopes and plaintext secrets are no longer read, subject-less (legacy) bindings are no longer upgraded by email, and Redis values must be encrypted.
+- **The encryptor requires a purpose** on every call; `isEncrypted()` is replaced by the static `isEnvelope()`.
+
 ### Breaking changes (code review, revision 7)
 
 - **Requires Shopware 6.7.15 or newer** (`>=6.7.15.0 <6.8.0.0`): the plugin uses core APIs that older 6.7 releases lack (`ResetOnClone`, `Choice`, `PreWriteValidationEvent::getCommandsForEntity()`). The old `>=6.7.0.0` constraint was wrong; installs on older 6.7 releases failed at activation.

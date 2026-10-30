@@ -108,7 +108,6 @@ final class ProviderHealthMonitorTest extends TestCase
             $this->repository(),
             new ProviderReachabilityChecker($idp, $ssrf),
             new WebhookNotifier($hooks, $ssrf, new NullLogger()),
-            new Sw6OidcEncryptor('app-secret'),
             $this->connection(),
             new NullLogger(),
             'https://shop.example',
