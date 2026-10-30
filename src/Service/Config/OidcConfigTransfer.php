@@ -10,6 +10,7 @@ use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\RoleMapping\Sw6OidcRoleMappingCollection;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
+use MartinKuhl\Sw6Oidc\Subscriber\Sw6OidcProviderWriteGuardSubscriber;
 use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupCollection;
 use Shopware\Core\Checkout\Customer\Aggregate\CustomerGroup\CustomerGroupEntity;
 use Shopware\Core\Framework\Api\Acl\Role\AclRoleCollection;
@@ -127,6 +128,7 @@ class OidcConfigTransfer
 
         if ($dryRun) {
             $this->connection->beginTransaction();
+            $context->addState(Sw6OidcProviderWriteGuardSubscriber::STATE_DRY_RUN);
         }
 
         try {
@@ -150,6 +152,7 @@ class OidcConfigTransfer
         } finally {
             if ($dryRun) {
                 $this->connection->rollBack();
+                $context->removeState(Sw6OidcProviderWriteGuardSubscriber::STATE_DRY_RUN);
             }
         }
 

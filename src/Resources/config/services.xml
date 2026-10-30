@@ -785,6 +785,8 @@
         <!-- R3-M21: password-session revocation runs from the message queue. -->
         <service id="MartinKuhl\Sw6Oidc\Service\Security\Message\PasswordSessionRevocationHandler">
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\PasswordSessionRevoker" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\PasswordLoginPolicy" />
+            <argument type="service" id="sw6oidc.logger" />
             <tag name="messenger.message_handler" />
         </service>
 
@@ -804,6 +806,7 @@
             <argument type="service" id="sw6oidc.logger" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\IssuerChangeConfirmationStore" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig" />
             <tag name="kernel.event_subscriber" />
             <tag name="kernel.reset" method="reset" />
         </service>
@@ -956,13 +959,6 @@
             <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument type="service" id="sw6oidc.logger" />
             <argument>%env(APP_URL)%</argument>
-        </service>
-
-        <!-- R3-M8: a passkey RP ID must cover the hosts it applies to. -->
-        <service id="MartinKuhl\Sw6Oidc\Subscriber\PasskeyRpIdConfigValidator">
-            <argument type="service" id="Doctrine\DBAL\Connection" />
-            <argument>%env(APP_URL)%</argument>
-            <tag name="kernel.event_subscriber" />
         </service>
 
         <service id="MartinKuhl\Sw6Oidc\ScheduledTask\HealthCheckAlertTask">

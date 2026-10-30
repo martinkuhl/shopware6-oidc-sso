@@ -40,6 +40,22 @@ class IssuerChangeConfirmationStore
         return \in_array($decision, [self::DECISION_REBIND, self::DECISION_DISCONNECT], true) ? $decision : null;
     }
 
+    /**
+     * The decision, leaving it in place until the write commits (R8-L24).
+     *
+     * @return self::DECISION_*|null
+     */
+    public function peek(string $providerId, string $userId): ?string
+    {
+        $decision = $this->consume($providerId, $userId);
+
+        if ($decision !== null) {
+            $this->store->save($this->key($providerId, $userId), $decision, self::TTL_SECONDS);
+        }
+
+        return $decision;
+    }
+
     private function key(string $providerId, string $userId): string
     {
         return self::PREFIX . strtolower($providerId) . '_' . strtolower($userId);

@@ -34,6 +34,23 @@ class LockoutConfirmationStore
         return $this->store->getAndDelete($this->key($providerId, $userId)) !== null;
     }
 
+    /**
+     * Whether the confirmation exists, leaving it in place: validation must
+     * not use it up for a write that another violation then refuses (R8-L24).
+     */
+    public function peek(string $providerId, string $userId): bool
+    {
+        $value = $this->store->getAndDelete($this->key($providerId, $userId));
+
+        if ($value === null) {
+            return false;
+        }
+
+        $this->store->save($this->key($providerId, $userId), $value, self::TTL_SECONDS);
+
+        return true;
+    }
+
     private function key(string $providerId, string $userId): string
     {
         return self::PREFIX . strtolower($providerId) . '_' . strtolower($userId);

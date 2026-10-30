@@ -3,6 +3,7 @@
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Subscriber;
 
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
+use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig;
 use MartinKuhl\Sw6Oidc\Service\Security\IssuerChangeConfirmationStore;
 use MartinKuhl\Sw6Oidc\Service\Security\LockoutConfirmationStore;
 use MartinKuhl\Sw6Oidc\Service\Security\Message\PasswordSessionRevocationMessage;
@@ -53,6 +54,8 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
 
     /** @var list<object> */
     private array $dispatched = [];
+
+    private bool $adminPasskeysEnabled = false;
 
     private Sw6OidcProviderWriteGuardSubscriber $subscriber;
 
@@ -191,6 +194,23 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
         self::assertSame(Sw6OidcProviderWriteGuardSubscriber::CODE_CLIENT_SECRET_REQUIRED, $second->getCode());
     }
 
+    /**
+     * R8-M7: a dry-run import's writes are rolled back, so they queue no
+     * session revocation (with a Redis/AMQP transport it would outlive the
+     * rollback).
+     */
+    public function testADryRunWriteQueuesNoRevocation(): void
+    {
+        $id = $this->db->provider();
+        $this->db->bind($id, Uuid::randomHex(), 'customer');
+        $this->assertNoViolations($this->validate([$this->update($id, ['disable_non_oidc_customer_login' => 1])]));
+
+        $dryRun = Context::createDefaultContext();
+        $dryRun->addState(Sw6OidcProviderWriteGuardSubscriber::STATE_DRY_RUN);
+
+        self::assertSame([], $this->written($id, $dryRun));
+    }
+
     public function testEnablingCustomerFlagNeedsABoundCustomer(): void
     {
         $id = $this->db->provider();
@@ -220,6 +240,49 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
         $violation = $this->singleViolation($this->validate([$this->update($id, ['disable_non_oidc_admin_login' => 1])]));
 
         self::assertSame(Sw6OidcProviderWriteGuardSubscriber::CODE_LOCKOUT_GUARD, $violation->getCode());
+    }
+
+    /**
+     * R8-L25: an admin with an active passkey can still log in once password
+     * login is off, so the prompt doesn't count them as locked out.
+     */
+    public function testAdminsWithAPasskeyAreNotCountedAsLockedOut(): void
+    {
+        $id = $this->db->provider();
+        $this->db->bind($id, $this->db->admin());
+        $withPasskey = $this->db->admin();
+        $this->db->passkey($withPasskey);
+        $disabledPasskey = $this->db->admin();
+        $this->db->passkey($disabledPasskey, disabled: true);
+        $this->adminPasskeysEnabled = true;
+
+        $violation = $this->singleViolation($this->validate([$this->update($id, ['disable_non_oidc_admin_login' => 1])]));
+        self::assertStringContainsString('1 active admin', (string) $violation->getMessage());
+
+        $this->adminPasskeysEnabled = false;
+        $violation = $this->singleViolation($this->validate([$this->update($id, ['disable_non_oidc_admin_login' => 1])]));
+        self::assertStringContainsString('2 active admin', (string) $violation->getMessage(), 'admin passkeys off: no way in');
+    }
+
+    /**
+     * R8-L24: a save refused for another reason doesn't use the
+     * confirmation up; only the committed write does.
+     */
+    public function testAConfirmationSurvivesARefusedSaveAndIsUsedByTheCommittedOne(): void
+    {
+        $id = $this->db->provider();
+        $this->db->bind($id, $this->db->admin());
+        $this->db->admin();
+        $this->confirmations->confirm($id, $this->actingAdmin);
+
+        $refused = $this->validate([$this->update($id, ['disable_non_oidc_admin_login' => 1, 'jwks_endpoint' => 'https://internal.example/jwks', 'client_secret' => 'sw6oidc_v2:new'])], privateIps: true);
+        self::assertSame(Sw6OidcProviderWriteGuardSubscriber::CODE_URL_BLOCKED, $this->singleViolation($refused)->getCode());
+
+        $this->assertNoViolations($this->validate([$this->update($id, ['disable_non_oidc_admin_login' => 1])]));
+        $this->written($id);
+
+        $again = $this->singleViolation($this->validate([$this->update($id, ['disable_non_oidc_admin_login' => 1])]));
+        self::assertSame(Sw6OidcProviderWriteGuardSubscriber::CODE_LOCKOUT_UNBOUND_USERS, $again->getCode(), 'used up by the committed write');
     }
 
     public function testUnboundAdminsNeedAnExplicitConfirmationByTheActingAdmin(): void
@@ -325,6 +388,25 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
 
         $this->db->connection->executeStatement('UPDATE `sw6oidc_attribute_mapping` SET `transform_function` = NULL');
         $this->assertNoViolations($this->validate([$this->update($id, ['require_email_verified' => 1])]));
+    }
+
+    /**
+     * R8-L22: fixing the email mapping and requiring a verified email in one
+     * save is judged on the result, not on the stored mapping.
+     */
+    public function testTheEmailMappingOfTheSameSaveCounts(): void
+    {
+        $id = $this->db->provider(['require_email_verified' => 0]);
+        $mapping = $this->db->attributeMapping($id, ['attribute_type' => 'email', 'attribute_name' => 'mail']);
+
+        $fix = $this->createStub(UpdateCommand::class);
+        $fix->method('getEntityName')->willReturn('sw6oidc_attribute_mapping');
+        $fix->method('getPayload')->willReturn(['attribute_name' => 'email']);
+        $fix->method('getPrimaryKey')->willReturn(['id' => Uuid::fromHexToBytes($mapping)]);
+        $fix->method('getPath')->willReturn('/1');
+
+        $this->singleViolation($this->validate([$this->update($id, ['require_email_verified' => 1])]));
+        $this->assertNoViolations($this->validate([$this->update($id, ['require_email_verified' => 1]), $fix]));
     }
 
     /**
@@ -434,6 +516,7 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
             new NullLogger(),
             $this->issuerChanges,
             self::providerDefinition(),
+            $this->passkeyConfig(),
         );
 
         $source = new AdminApiSource($this->actingAdmin);
@@ -453,13 +536,13 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
     /**
      * @return list<object> the messages dispatched once the provider write is committed
      */
-    private function written(string $id): array
+    private function written(string $id, ?Context $context = null): array
     {
         $this->dispatched = [];
         $this->subscriber->onProviderWritten(new EntityWrittenEvent(
             Sw6OidcProviderDefinition::ENTITY_NAME,
             [new EntityWriteResult($id, [], Sw6OidcProviderDefinition::ENTITY_NAME, EntityWriteResult::OPERATION_UPDATE)],
-            Context::createDefaultContext(),
+            $context ?? Context::createDefaultContext(),
         ));
 
         return $this->dispatched;
@@ -499,6 +582,14 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
         $command->method('getPath')->willReturn('/0');
 
         return $command;
+    }
+
+    private function passkeyConfig(): PasskeyConfig
+    {
+        $config = $this->createStub(PasskeyConfig::class);
+        $config->method('isEnabledForAdmin')->willReturn($this->adminPasskeysEnabled);
+
+        return $config;
     }
 
     private static function providerDefinition(): Sw6OidcProviderDefinition

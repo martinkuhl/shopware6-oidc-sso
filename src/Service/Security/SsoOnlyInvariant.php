@@ -168,8 +168,31 @@ class SsoOnlyInvariant
     }
 
     /**
+     * Of these admins, the ones who can't log in with a passkey either (no
+     * active credential). Callers apply it only while admin passkey login is
+     * enabled (R8-L25).
+     *
+     * @param list<string> $userIds hex
+     *
+     * @return list<string>
+     */
+    public function withoutPasskeyLogin(array $userIds): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        /** @var list<string> $passkeyOwners */
+        $passkeyOwners = $this->connection->fetchFirstColumn(
+            'SELECT DISTINCT LOWER(HEX(`user_id`)) FROM `sw6oidc_passkey_credential` WHERE `user_type` = \'admin\' AND `disabled_at` IS NULL',
+        );
+
+        return array_values(array_diff($userIds, $passkeyOwners));
+    }
+
+    /**
      * The SQL condition (and its parameter) a binding must meet to count for
-     * this provider: its current issuer. Legacy providers without an issuer,
+     * this provider: its current issuer. Providers without an issuer,
      * and a re-bind in progress, accept any binding.
      *
      * @param array<string, mixed> $provider

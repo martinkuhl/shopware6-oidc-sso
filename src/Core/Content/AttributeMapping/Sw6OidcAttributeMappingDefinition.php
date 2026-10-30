@@ -46,6 +46,16 @@ class Sw6OidcAttributeMappingDefinition extends EntityDefinition
     public const TYPE_SHIPPING_COUNTRY = 'shipping_country';
     public const TYPE_SHIPPING_PHONE = 'shipping_phone';
 
+    /** Every type AttributeMapper reads; anything else would be stored and silently ignored (R8-L27). */
+    public const TYPES = [
+        self::TYPE_EMAIL, self::TYPE_USERNAME, self::TYPE_FIRSTNAME, self::TYPE_LASTNAME, self::TYPE_BIRTHDAY,
+        self::TYPE_GENDER, self::TYPE_PHONE, self::TYPE_LOCALE, self::TYPE_ZONEINFO, self::TYPE_PICTURE,
+        self::TYPE_BILLING_STREET, self::TYPE_BILLING_ZIPCODE, self::TYPE_BILLING_CITY, self::TYPE_BILLING_STATE,
+        self::TYPE_BILLING_COUNTRY, self::TYPE_BILLING_PHONE,
+        self::TYPE_SHIPPING_STREET, self::TYPE_SHIPPING_ZIPCODE, self::TYPE_SHIPPING_CITY, self::TYPE_SHIPPING_STATE,
+        self::TYPE_SHIPPING_COUNTRY, self::TYPE_SHIPPING_PHONE,
+    ];
+
     public function getEntityName(): string
     {
         return self::ENTITY_NAME;
@@ -66,7 +76,7 @@ class Sw6OidcAttributeMappingDefinition extends EntityDefinition
         return new FieldCollection([
             (new IdField('id', 'id'))->addFlags(new ApiAware(), new PrimaryKey(), new Required()),
             (new FkField('provider_id', 'providerId', Sw6OidcProviderDefinition::class))->addFlags(new ApiAware(), new Required()),
-            (new StringField('attribute_type', 'attributeType', 64))->addFlags(new ApiAware(), new Required()),
+            (new StringField('attribute_type', 'attributeType', 64))->addFlags(new ApiAware(), new Required(), new Choice(self::TYPES, true)),
             (new StringField('attribute_name', 'attributeName'))->addFlags(new ApiAware(), new Required()),
             (new StringField('transform_function', 'transformFunction', 32))->addFlags(new ApiAware(), new Choice(AttributeTransformer::FUNCTIONS, true)),
             (new JsonField('transform_params', 'transformParams'))->addFlags(new ApiAware()),

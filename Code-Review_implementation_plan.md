@@ -23,7 +23,7 @@ Paths are relative to `src/` unless they start with `tests/`, `.github/` or `src
 | D5 | R8-M9: on a repeat customer login with the same context token, what happens to the older registry entry? | **Kept** (changed during implementation): superseding it at login would drop the older device's `sid`, so that IdP session's back-channel logout would end nothing. Instead, logout ends every entry of the context token and revokes each one's tokens. |
 | D6 | R8-M10: duplicate (issuer, client_id) providers | **Allowed** (separate customer and admin rows for one IdP client are legitimate). Back-channel logout runs for every matching provider. |
 | D7 | R8-L16: health status `down` | **200** by default with `status: down`; `?strict=1` answers 503. Breaking for anyone who relies on 503: note it in the CHANGELOG. |
-| D8 | R8-L25: passkey-only accounts and SSO-only mode | Count an active passkey as "can still log in" in the confirmation prompt, and don't revoke sessions of accounts that have one. |
+| D8 | R8-L25: passkey-only accounts and SSO-only mode | Count an active passkey as "can still log in" in the confirmation prompt (while admin passkeys are enabled). **Narrowed during implementation:** their sessions are still revoked, because that is harmless (they log in again with the passkey) and it ends password-started sessions, the point of the revocation. |
 
 ---
 

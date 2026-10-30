@@ -20,6 +20,8 @@ class Sw6OidcCspHostCollector
 {
     private const CACHE_KEY = 'sw6oidc_csp_hosts';
 
+    private const CACHE_TTL_SECONDS = 300;
+
     /**
      * @param EntityRepository<Sw6OidcProviderCollection> $providerRepository
      */
@@ -68,6 +70,9 @@ class Sw6OidcCspHostCollector
         sort($origins);
 
         $item->set($origins);
+        // Invalidation reaches only this node's pool: with per-node caches the
+        // other nodes pick up a changed IdP origin within this TTL (R8-L26).
+        $item->expiresAfter(self::CACHE_TTL_SECONDS);
         $this->cache->save($item);
 
         return $origins;

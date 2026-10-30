@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Administration users without the passkey recovery privilege can delete their own passkeys** (R8-M8); two near-simultaneous passkey logins no longer disable the key as cloned (R8-L15); state without a browser binding is never redeemed in a browser (R8-L14).
 
+- **A dry-run config import can no longer end sessions** (R8-M7): it queues no revocation, and a queued revocation re-checks that password login is still off before it runs.
+- Provider save fixes: changing the email mapping and requiring a verified email in one save works (R8-L22); an issuer re-bind no longer inflates the lockout prompt (R8-L23); a confirmation survives a save refused for another reason (R8-L24); admins with a passkey aren't counted as locked out (R8-L25). Unknown attribute-mapping types are refused (R8-L27). Uninstall without keeping data removes the plugin's ACL privileges and custom fields (R8-L29).
+
 ### Added (code review, revision 8)
 
 - **`auth_time` is requested as an essential claim** for re-authentication when the IdP advertises `claims_parameter_supported` (new read-only provider field, set by discovery). A re-authentication the IdP doesn't confirm shows its own message and no longer counts against the callback rate limit (R8-L32).

@@ -8,6 +8,7 @@ use MartinKuhl\Sw6Oidc\Core\Content\AttributeMapping\Sw6OidcAttributeMappingDefi
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
+use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig;
 use MartinKuhl\Sw6Oidc\Service\Security\IssuerChangeConfirmationStore;
 use MartinKuhl\Sw6Oidc\Service\Security\LockoutConfirmationStore;
 use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
@@ -99,6 +100,12 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
      */
     public const STATE_BINDING_LOSS_CONFIRMED = 'sw6oidc.provider_binding_loss_confirmed';
 
+    /**
+     * Set by a dry-run config import: its writes are rolled back, so they
+     * must not queue session revocations or use up confirmations (R8-M7).
+     */
+    public const STATE_DRY_RUN = 'sw6oidc.dry_run';
+
 
     /**
      * URLs the client secret (or tokens) are sent to: changing one on an
@@ -162,6 +169,14 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
     /** @var array<string, string> provider id (hex) => new issuer its bindings move to after commit */
     private array $pendingRebinds = [];
 
+    /**
+     * Confirmations the validated write relies on: used up only once it is
+     * committed, never by a write that is refused or rolled back (R8-L24).
+     *
+     * @var list<array{'lockout'|'issuer', string, string}> kind, provider id, admin user id
+     */
+    private array $pendingConfirmations = [];
+
     public function __construct(
         private readonly SsrfUrlValidator $urlValidator,
         private readonly Connection $connection,
@@ -173,6 +188,7 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
         private readonly LoggerInterface $logger,
         private readonly IssuerChangeConfirmationStore $issuerChangeConfirmations,
         private readonly Sw6OidcProviderDefinition $providerDefinition,
+        private readonly PasskeyConfig $passkeyConfig,
     ) {
     }
 
@@ -190,6 +206,7 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
         $this->pendingRevocations = [];
         $this->pendingProviderIds = [];
         $this->pendingRebinds = [];
+        $this->pendingConfirmations = [];
     }
 
     public function validate(PreWriteValidationEvent $event): void
@@ -241,7 +258,7 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
             $this->validateRedirectUrls($command, $violations[$id]);
             $this->validateClientSecret($command, $current, $violations[$id]);
             $this->validateCustomerLockout($command, $idBytes, $current, $violations[$id]);
-            $this->validateEmailVerification($command, $idBytes, $current, $violations[$id]);
+            $this->validateEmailVerification($command, $idBytes, $current, $violations[$id], $event->getCommandsForEntity(Sw6OidcAttributeMappingDefinition::ENTITY_NAME));
 
             if ($this->validateIssuerChange($command, $id, $current, $violations[$id], $event->getContext()) === IssuerChangeConfirmationStore::DECISION_REBIND) {
                 $rebinding[] = $id;
@@ -265,6 +282,13 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
      */
     public function onProviderWritten(EntityWrittenEvent $event): void
     {
+        if ($event->getContext()->hasState(self::STATE_DRY_RUN)) {
+            $this->reset();
+
+            return;
+        }
+
+        $this->consumeConfirmations($event);
         $this->applyRebinds($event);
 
         if ($this->pendingRevocations === []) {
@@ -282,6 +306,28 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
         }
 
         $this->reset();
+    }
+
+    private function consumeConfirmations(EntityWrittenEvent $event): void
+    {
+        $written = array_map(static fn (mixed $id): string => \is_string($id) ? strtolower($id) : '', $event->getIds());
+        $pending = [];
+
+        foreach ($this->pendingConfirmations as $confirmation) {
+            [$kind, $providerId, $userId] = $confirmation;
+
+            if (!\in_array(strtolower($providerId), $written, true)) {
+                $pending[] = $confirmation;
+
+                continue;
+            }
+
+            $kind === 'lockout'
+                ? $this->confirmationStore->consume($providerId, $userId)
+                : $this->issuerChangeConfirmations->consume($providerId, $userId);
+        }
+
+        $this->pendingConfirmations = $pending;
     }
 
     private function validateUrls(WriteCommand $command, ConstraintViolationList $violations): void
@@ -417,8 +463,9 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
      * direction is checked by AttributeMappingWriteGuardSubscriber).
      *
      * @param array<string, mixed>|null $current
+     * @param list<WriteCommand>        $mappingCommands
      */
-    private function validateEmailVerification(WriteCommand $command, string $providerIdBytes, ?array $current, ConstraintViolationList $violations): void
+    private function validateEmailVerification(WriteCommand $command, string $providerIdBytes, ?array $current, ConstraintViolationList $violations, array $mappingCommands): void
     {
         $payload = $command->getPayload();
 
@@ -426,14 +473,13 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
             return;
         }
 
-        $mappings = $this->connection->fetchAllAssociative(
-            'SELECT `attribute_name`, `transform_function` FROM `sw6oidc_attribute_mapping` WHERE `provider_id` = :id AND `attribute_type` = :type',
-            ['id' => $providerIdBytes, 'type' => Sw6OidcAttributeMappingDefinition::TYPE_EMAIL],
-            ['id' => ParameterType::BINARY],
+        $mappings = array_filter(
+            $this->mappingsAfterWrite($providerIdBytes, $mappingCommands),
+            static fn (array $mapping): bool => ($mapping['attribute_type'] ?? null) === Sw6OidcAttributeMappingDefinition::TYPE_EMAIL,
         );
 
         foreach ($mappings as $mapping) {
-            if (!AttributeMappingWriteGuardSubscriber::isVerifiableEmailMapping($mapping['attribute_name'], $mapping['transform_function'])) {
+            if (!AttributeMappingWriteGuardSubscriber::isVerifiableEmailMapping($mapping['attribute_name'] ?? null, $mapping['transform_function'] ?? null)) {
                 $violations->add($this->violation(
                     'A verified email can only be required while the email is mapped from the "email" claim without a transform.',
                     'requireEmailVerified',
@@ -444,6 +490,54 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
                 return;
             }
         }
+    }
+
+    /**
+     * The provider's attribute mappings as this write leaves them: the stored
+     * rows with the mapping commands of the same save applied (insert,
+     * update, delete), so changing the email mapping and requiring a
+     * verified email in one save is judged on the result (R8-L22).
+     *
+     * @param list<WriteCommand> $mappingCommands
+     *
+     * @return array<string, array{attribute_type?: mixed, attribute_name?: mixed, transform_function?: mixed}> by binary id
+     */
+    private function mappingsAfterWrite(string $providerIdBytes, array $mappingCommands): array
+    {
+        $rows = [];
+        $stored = $this->connection->fetchAllAssociative(
+            'SELECT `id`, `attribute_type`, `attribute_name`, `transform_function` FROM `sw6oidc_attribute_mapping` WHERE `provider_id` = :id',
+            ['id' => $providerIdBytes],
+            ['id' => ParameterType::BINARY],
+        );
+
+        foreach ($stored as $row) {
+            $rows[(string) $row['id']] = $row;
+        }
+
+        foreach ($mappingCommands as $command) {
+            $id = $command->getPrimaryKey()['id'] ?? null;
+
+            if (!\is_string($id)) {
+                continue;
+            }
+
+            if ($command instanceof DeleteCommand) {
+                unset($rows[$id]);
+
+                continue;
+            }
+
+            $payload = $command->getPayload();
+
+            if ($command instanceof InsertCommand ? ($payload['provider_id'] ?? null) !== $providerIdBytes : !isset($rows[$id])) {
+                continue;
+            }
+
+            $rows[$id] = array_intersect_key($payload, array_flip(['attribute_type', 'attribute_name', 'transform_function'])) + ($rows[$id] ?? []);
+        }
+
+        return $rows;
     }
 
     /**
@@ -518,7 +612,17 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
         $source = $context->getSource();
         $userId = $source instanceof AdminApiSource ? $source->getUserId() : null;
 
-        return $userId !== null ? $this->issuerChangeConfirmations->consume($providerId, $userId) : null;
+        if ($userId === null) {
+            return null;
+        }
+
+        $decision = $this->issuerChangeConfirmations->peek($providerId, $userId);
+
+        if ($decision !== null) {
+            $this->pendingConfirmations[] = ['issuer', $providerId, $userId];
+        }
+
+        return $decision;
     }
 
     private function applyRebinds(EntityWrittenEvent $event): void
@@ -594,7 +698,9 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
                 }
 
                 if (!$disabledBefore) {
-                    $unbound = \count($this->invariant->unboundActiveAdminIds($changes));
+                    $unboundIds = $this->invariant->unboundActiveAdminIds($changes, $rebinding);
+                    // Passkey login keeps working in SSO-only mode: those admins aren't locked out (R8-L25).
+                    $unbound = \count($this->passkeyConfig->isEnabledForAdmin() ? $this->invariant->withoutPasskeyLogin($unboundIds) : $unboundIds);
 
                     if ($unbound > 0 && !$this->lockoutConfirmed(array_keys($affected), $context)) {
                         $this->addToAll($violations, $affected, $this->violation(
@@ -689,7 +795,8 @@ class Sw6OidcProviderWriteGuardSubscriber implements EventSubscriberInterface, R
         }
 
         foreach ($providerIds as $providerId) {
-            if ($this->confirmationStore->consume($providerId, $userId)) {
+            if ($this->confirmationStore->peek($providerId, $userId)) {
+                $this->pendingConfirmations[] = ['lockout', $providerId, $userId];
                 $this->logger->warning('sw6oidc: Administration password login disabled despite admins without SSO binding (confirmed).', [
                     'providerId' => $providerId,
                     'adminUserId' => $userId,

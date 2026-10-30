@@ -38,6 +38,7 @@ final class SqliteSsoSchema
                 `issuer` VARCHAR(1024) NULL
             )
         SQL);
+        $this->connection->executeStatement('CREATE TABLE `sw6oidc_passkey_credential` (`user_type` VARCHAR(16) NOT NULL, `user_id` BLOB NOT NULL, `disabled_at` DATETIME NULL)');
         $this->connection->executeStatement('CREATE TABLE `user` (`id` BLOB NOT NULL PRIMARY KEY, `active` INTEGER NOT NULL DEFAULT 1, `admin` INTEGER NOT NULL DEFAULT 0)');
         $this->connection->executeStatement(<<<'SQL'
             CREATE TABLE `sw6oidc_attribute_mapping` (
@@ -85,6 +86,15 @@ final class SqliteSsoSchema
         );
 
         return $id;
+    }
+
+    public function passkey(string $userId, string $userType = 'admin', bool $disabled = false): void
+    {
+        $this->connection->insert(
+            'sw6oidc_passkey_credential',
+            ['user_type' => $userType, 'user_id' => Uuid::fromHexToBytes($userId), 'disabled_at' => $disabled ? '2026-01-01 00:00:00.000' : null],
+            ['user_id' => ParameterType::BINARY],
+        );
     }
 
     public function admin(bool $active = true, bool $superadmin = false): string
