@@ -59,6 +59,7 @@ class Migration1790900000CreateSchema extends MigrationStep
                     `well_known_config_url` VARCHAR(1024) NULL,
                     `scope` VARCHAR(512) NOT NULL DEFAULT 'openid profile email',
                     `pkce_flow` VARCHAR(16) NOT NULL DEFAULT 'S256',
+                    `claims_parameter_supported` TINYINT(1) NOT NULL DEFAULT 0,
                     `base64_claims` JSON NULL,
                     `public_client` TINYINT(1) NOT NULL DEFAULT 0,
                     `group_attribute` VARCHAR(255) NOT NULL DEFAULT 'groups',

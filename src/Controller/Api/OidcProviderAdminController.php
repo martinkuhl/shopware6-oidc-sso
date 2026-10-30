@@ -152,6 +152,7 @@ class OidcProviderAdminController extends AbstractController
         $warnings = $violation['warnings'];
         $algorithmWarning = OidcDiscoveryService::unsupportedSigningAlgorithmsWarning($endpoints['idTokenSigningAlgValuesSupported'] ?? null);
         unset($endpoints['idTokenSigningAlgValuesSupported']);
+        // claimsParameterSupported stays: the provider page stores it (R8-L32).
 
         if ($algorithmWarning !== null) {
             $warnings[] = $algorithmWarning;

@@ -115,6 +115,7 @@ class Sw6OidcProviderDefinition extends EntityDefinition
             'linkExistingAccounts' => false,
             'frontchannelAdminLogout' => false,
             'revokeSuperadminOnSso' => false,
+            'claimsParameterSupported' => false,
             'healthAlertFailureThreshold' => 0,
             'healthAlertNotifyOnRecovery' => false,
             'logoutStyle' => self::LOGOUT_STYLE_STANDARD,
@@ -155,6 +156,8 @@ class Sw6OidcProviderDefinition extends EntityDefinition
             (new StringField('scope', 'scope', 512))->addFlags(new ApiAware(), new Required()),
             // Strict: `s256` would break every login (R3-L43).
             (new StringField('pkce_flow', 'pkceFlow'))->addFlags(new ApiAware(), new Required(), new Choice(self::PKCE_FLOWS, true)),
+            // From discovery: may the plugin ask for claims with the `claims` request parameter (OIDC Core §5.5)?
+            (new BoolField('claims_parameter_supported', 'claimsParameterSupported'))->addFlags(new ApiAware(), new Required()),
             (new ListField('base64_claims', 'base64Claims', StringField::class))->addFlags(new ApiAware()),
             (new BoolField('public_client', 'publicClient'))->addFlags(new ApiAware(), new Required()),
             (new StringField('group_attribute', 'groupAttribute'))->addFlags(new ApiAware(), new Required()),

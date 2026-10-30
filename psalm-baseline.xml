@@ -131,6 +131,7 @@
       <code><![CDATA[setAutoCreateAdmin]]></code>
       <code><![CDATA[setAutoCreateCustomer]]></code>
       <code><![CDATA[setBase64Claims]]></code>
+      <code><![CDATA[setClaimsParameterSupported]]></code>
       <code><![CDATA[setClientId]]></code>
       <code><![CDATA[setClientSecret]]></code>
       <code><![CDATA[setDefaultAclRole]]></code>

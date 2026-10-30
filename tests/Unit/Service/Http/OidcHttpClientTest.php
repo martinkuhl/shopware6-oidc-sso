@@ -42,7 +42,7 @@ final class OidcHttpClientTest extends TestCase
         $client->postForm('https://idp.example/token', ['client_id' => 'public-client'], 10);
     }
 
-    public function testPostFormSendsABasicAuthorizationHeaderWithCredentials(): void
+    public function testPostFormSendsTheGivenAuthorizationHeader(): void
     {
         $response = $this->createMock(ResponseInterface::class);
         $response->method('getContent')->willReturn('{}');
@@ -60,7 +60,7 @@ final class OidcHttpClientTest extends TestCase
 
         $client = new OidcHttpClient($httpClient, $this->createMock(LoggerInterface::class));
 
-        $client->postForm('https://idp.example/token', [], 10, 'my-client', 'my-secret');
+        $client->postForm('https://idp.example/token', [], 10, $expectedHeader);
     }
 
     public function testPostIgnoringResponseBodyAcceptsAnEmptySuccessBody(): void
@@ -68,9 +68,23 @@ final class OidcHttpClientTest extends TestCase
         // RFC 7009 §2.2: a successful revocation answers 200, content ignored (Authelia: empty).
         $httpClient = new MockHttpClient(new MockResponse(''));
 
-        (new OidcHttpClient($httpClient, new NullLogger()))->postFormIgnoringResponseBody('https://idp.example/revoke', ['token' => 't'], 5, 'my-client', 'my-secret');
+        (new OidcHttpClient($httpClient, new NullLogger()))->postFormIgnoringResponseBody('https://idp.example/revoke', ['token' => 't'], 5, 'Basic x');
 
         self::assertSame(1, $httpClient->getRequestsCount());
+    }
+
+    /**
+     * R8-L1: redirects aren't followed, so a 3xx (http→https, a login portal
+     * in front of the IdP) revoked nothing and must not pass as success.
+     */
+    public function testPostIgnoringResponseBodyFailsOnARedirect(): void
+    {
+        $httpClient = new MockHttpClient(new MockResponse('', ['http_code' => 302, 'response_headers' => ['Location' => 'https://portal.example/login']]));
+
+        $this->expectException(OidcHttpException::class);
+        $this->expectExceptionMessage('failed with status 302');
+
+        (new OidcHttpClient($httpClient, new NullLogger()))->postFormIgnoringResponseBody('https://idp.example/revoke', ['token' => 't'], 5);
     }
 
     public function testPostIgnoringResponseBodyStillFailsOnAnErrorStatus(): void

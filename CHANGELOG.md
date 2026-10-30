@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security (code review, revision 8)
 
+- **HTTP Basic client credentials are form-urlencoded** before base64 (RFC 6749 §2.3.1, R8-M1): client secrets containing `+`, `%` or `:` failed with `invalid_client` at Authelia and Keycloak.
+- **Token revocation succeeds only on 2xx** (R8-L1); a confidential client without a usable secret never sends an empty one (R8-L2).
+- **`email` and `email_verified` are taken as a pair** from the same source (R8-L4).
+- Storefront Connect SSO and re-authentication starts are rate-limited per customer (R8-L3).
+
+### Added (code review, revision 8)
+
+- **`auth_time` is requested as an essential claim** for re-authentication when the IdP advertises `claims_parameter_supported` (new read-only provider field, set by discovery). A re-authentication the IdP doesn't confirm shows its own message and no longer counts against the callback rate limit (R8-L32).
+
 - **"Login as customer" no longer counts as a fresh login** (R8-H2): an administrator imitating a customer can no longer register a passkey or connect an SSO identity to that customer account.
 
 ### Breaking changes (code review, revision 7)

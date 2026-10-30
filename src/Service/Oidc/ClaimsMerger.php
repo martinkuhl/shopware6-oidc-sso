@@ -18,8 +18,11 @@ final class ClaimsMerger
     /**
      * Userinfo usually carries more claims and wins in general, but the
      * identity-defining claims come from the signed id_token (OIDC Core
-     * §5.3.2): userinfo must describe the same subject, and `sub`, `email`
-     * and `email_verified` are never taken from it when the id_token has them.
+     * §5.3.2): userinfo must describe the same subject, `sub` is never taken
+     * from it when the id_token has one, and `email` and `email_verified`
+     * travel as a pair from whichever source supplies `email` — the id_token
+     * first. A verified flag from one source never vouches for the other
+     * source's address (R8-L4).
      *
      * @param array<string, mixed> $idTokenClaims
      * @param array<string, mixed> $userInfoClaims
@@ -38,9 +41,16 @@ final class ClaimsMerger
 
         $merged = array_merge($idTokenClaims, $userInfoClaims);
 
-        foreach (['sub', 'email', 'email_verified'] as $claim) {
-            if (\array_key_exists($claim, $idTokenClaims)) {
-                $merged[$claim] = $idTokenClaims[$claim];
+        if (\array_key_exists('sub', $idTokenClaims)) {
+            $merged['sub'] = $idTokenClaims['sub'];
+        }
+
+        $emailSource = \array_key_exists('email', $idTokenClaims) ? $idTokenClaims : $userInfoClaims;
+        unset($merged['email'], $merged['email_verified']);
+
+        foreach (['email', 'email_verified'] as $claim) {
+            if (\array_key_exists($claim, $emailSource)) {
+                $merged[$claim] = $emailSource[$claim];
             }
         }
 

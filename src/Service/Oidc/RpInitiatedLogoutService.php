@@ -5,6 +5,7 @@ namespace MartinKuhl\Sw6Oidc\Service\Oidc;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
+use MartinKuhl\Sw6Oidc\Service\Security\Exception\ClientSecretUnavailableException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -89,19 +90,16 @@ class RpInitiatedLogoutService
             return;
         }
 
-        $secret = $provider->isPublicClient() ? null : $provider->getUsableClientSecret();
-
-        if (!$provider->isPublicClient() && $secret === null) {
-            // Undecryptable secret: never send the envelope to the IdP (N-L5).
+        // RFC 7009 §2.1 uses the token endpoint's client authentication, but
+        // IdPs like Authelia register the method per endpoint, hence the
+        // provider's own `revocation_endpoint_auth_method`.
+        try {
+            $authentication = ClientAuthentication::forProvider($provider, $provider->getRevocationEndpointAuthMethod());
+        } catch (ClientSecretUnavailableException) {
             $this->logger->warning('sw6oidc: RFC 7009 revocation skipped, the client secret is unavailable.', ['providerId' => $provider->getId()]);
 
             return;
         }
-
-        // RFC 7009 §2.1 uses the token endpoint's client authentication, but
-        // IdPs like Authelia register the method per endpoint, hence the
-        // provider's own `revocation_endpoint_auth_method`.
-        $authentication = ClientAuthentication::forProvider($provider, $provider->getRevocationEndpointAuthMethod(), $secret);
 
         try {
             $this->httpClient->postFormIgnoringResponseBody(
@@ -110,8 +108,7 @@ class RpInitiatedLogoutService
                 // Runs inside the user's logout request: an unreachable IdP
                 // may cost seconds, never twice the provider timeout (R3-L33).
                 min($provider->getHttpTimeout(), self::REVOCATION_TIMEOUT_SECONDS),
-                $authentication->basicAuthUsername,
-                $authentication->basicAuthPassword,
+                $authentication->authorizationHeader,
                 self::REVOCATION_TIMEOUT_SECONDS,
             );
         } catch (\Throwable $exception) {

@@ -95,7 +95,7 @@ class OidcConnectionTestService
         }
 
         $algorithmWarning = OidcDiscoveryService::unsupportedSigningAlgorithmsWarning($document['idTokenSigningAlgValuesSupported'] ?? null);
-        unset($document['idTokenSigningAlgValuesSupported']);
+        unset($document['idTokenSigningAlgValuesSupported'], $document['claimsParameterSupported']);
 
         // Fill in any endpoint the admin hasn't manually overridden, so the
         // downstream checks (required-endpoints, JWKS) see discovered values too.

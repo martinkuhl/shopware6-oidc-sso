@@ -31,6 +31,7 @@ class Sw6OidcProviderEntity extends Entity
     protected ?string $wellKnownConfigUrl = null;
     protected string $scope = 'openid profile email';
     protected string $pkceFlow = 'S256';
+    protected bool $claimsParameterSupported = false;
     protected bool $publicClient = false;
     protected string $groupAttribute = 'groups';
     protected bool $autoCreateCustomer = true;
@@ -284,6 +285,16 @@ class Sw6OidcProviderEntity extends Entity
     public function setScope(string $scope): void
     {
         $this->scope = $scope;
+    }
+
+    public function isClaimsParameterSupported(): bool
+    {
+        return $this->claimsParameterSupported;
+    }
+
+    public function setClaimsParameterSupported(bool $claimsParameterSupported): void
+    {
+        $this->claimsParameterSupported = $claimsParameterSupported;
     }
 
     public function getPkceFlow(): string

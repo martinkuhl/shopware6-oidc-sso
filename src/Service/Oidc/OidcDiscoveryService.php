@@ -28,6 +28,7 @@ class OidcDiscoveryService
      *     jwksEndpoint?: string,
      *     issuer?: string,
      *     idTokenSigningAlgValuesSupported?: list<string>,
+     *     claimsParameterSupported: bool,
      * }
      */
     public function discover(string $wellKnownConfigUrl, int $timeoutSeconds = self::DEFAULT_TIMEOUT_SECONDS): array
@@ -51,6 +52,9 @@ class OidcDiscoveryService
                 $result[$fieldName] = $document[$documentKey];
             }
         }
+
+        // OIDC Discovery §3: absent means false.
+        $result['claimsParameterSupported'] = ($document['claims_parameter_supported'] ?? false) === true;
 
         $algorithms = $document['id_token_signing_alg_values_supported'] ?? null;
 

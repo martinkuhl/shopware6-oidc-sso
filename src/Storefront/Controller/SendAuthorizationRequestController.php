@@ -3,6 +3,7 @@
 namespace MartinKuhl\Sw6Oidc\Storefront\Controller;
 
 use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
+use MartinKuhl\Sw6Oidc\Service\Oidc\AuthTimeValidator;
 use MartinKuhl\Sw6Oidc\Service\Oidc\AuthorizationRequestBuilder;
 use MartinKuhl\Sw6Oidc\Service\Provider\Exception\ProviderNotFoundException;
 use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
@@ -116,6 +117,10 @@ class SendAuthorizationRequestController extends StorefrontController
             return $this->notWhileImitating();
         }
 
+        if (!$this->consumeCustomerFlowStart($request, $customer->getId())) {
+            return new RedirectResponse($this->generateUrl('frontend.account.profile.page'));
+        }
+
         if (!$this->authenticationClock->isFresh($context)) {
             return new RedirectResponse($this->generateUrl('frontend.sw6oidc.reauth', ['target' => 'profile']));
         }
@@ -167,6 +172,10 @@ class SendAuthorizationRequestController extends StorefrontController
         $providerId = $this->bindingService->getBoundProviderId(LoginType::Customer->value, $customer->getId(), $context->getContext());
 
         if ($providerId !== null) {
+            if (!$this->consumeCustomerFlowStart($request, $customer->getId())) {
+                return new RedirectResponse($this->generateUrl('frontend.account.profile.page'));
+            }
+
             try {
                 $provider = $this->providerResolver->getActiveById($providerId, LoginType::Customer->value, $context->getContext());
 
@@ -177,7 +186,7 @@ class SendAuthorizationRequestController extends StorefrontController
                     $this->generateUrl('frontend.sw6oidc.callback', [], UrlGeneratorInterface::ABSOLUTE_URL),
                     AuthorizationFlowContext::PURPOSE_REAUTH,
                     $customer->getId(),
-                    ['prompt' => 'login'],
+                    AuthTimeValidator::freshLoginParameters($provider),
                 ));
             } catch (ProviderNotFoundException) {
                 // Provider gone: fall back to a normal re-login.
@@ -193,6 +202,22 @@ class SendAuthorizationRequestController extends StorefrontController
         $this->addFlash(self::INFO, $this->trans('sw6oidc.account.reauthRequired'));
 
         return new RedirectResponse($this->generateUrl('frontend.account.login.page', ['redirectTo' => $targetRoute]));
+    }
+
+    /**
+     * Link and reauth store a flow like a login does: a consuming budget per
+     * customer, like the Administration's per admin (R8-L3, R3-L41).
+     */
+    private function consumeCustomerFlowStart(Request $request, string $customerId): bool
+    {
+        if ($this->rateLimiter->consume(Sw6OidcRateLimiter::SCOPE_FLOW_START . ':' . $customerId, $request->getClientIp())) {
+            return true;
+        }
+
+        $this->logger->warning('sw6oidc: customer SSO link/reauth start rate-limited.', ['customerId' => $customerId]);
+        $this->addFlash(self::DANGER, $this->trans('sw6oidc.login.failed'));
+
+        return false;
     }
 
     /**

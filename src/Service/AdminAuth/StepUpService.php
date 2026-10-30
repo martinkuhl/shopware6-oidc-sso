@@ -77,7 +77,7 @@ class StepUpService
             $redirectUri,
             AuthorizationFlowContext::PURPOSE_STEP_UP,
             $userId,
-            ['prompt' => 'login'],
+            AuthTimeValidator::freshLoginParameters($provider),
         );
     }
 

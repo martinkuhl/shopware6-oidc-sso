@@ -164,6 +164,8 @@
                 "base64ClaimsPlaceholder": "Claim-Name, dann Enter",
                 "publicClient": "Public Client (PKCE, ohne Client-Secret)",
                 "publicClientHelp": "Aktivieren für einen reinen PKCE-Client ohne Client-Secret (RFC 6749 §2.1).",
+                "claimsParameterSupported": "Unterstützt das Anfordern von Claims (aus Discovery)",
+                "claimsParameterSupportedHelp": "Wird von der Discovery aus claims_parameter_supported gesetzt. Wenn aktiv, fordert die erneute Anmeldung (Step-up, erneute Storefront-Anmeldung) auth_time als essenziellen Claim an, damit auch IdPs, die ihn nur auf Anfrage senden, eine frische Anmeldung bestätigen können.",
                 "httpTimeout": "HTTP-Timeout (Sekunden)",
                 "httpTimeoutHelp": "Timeout in Sekunden für HTTP-Anfragen an diesen IdP (Discovery, Token-Austausch, Userinfo, JWKS).",
                 "jwksCacheTtl": "JWKS-Cache-TTL (Sekunden)",
@@ -445,7 +447,8 @@
             "hint": "Oder bestätigen Sie Ihre Identität mit:",
             "sso": "Single Sign-on",
             "passkey": "Passkey",
-            "error": "Die Bestätigung ist fehlgeschlagen oder wurde abgebrochen. Bitte versuchen Sie es erneut."
+            "error": "Die Bestätigung ist fehlgeschlagen oder wurde abgebrochen. Bitte versuchen Sie es erneut.",
+            "freshLoginNotConfirmed": "Ihr Identity Provider hat keine neue Anmeldung bestätigt. Bestätigen Sie stattdessen mit Ihrem Passkey oder Passwort."
         }
     },
     "sw-privileges": {

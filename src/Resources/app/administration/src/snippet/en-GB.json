@@ -164,6 +164,8 @@
                 "base64ClaimsPlaceholder": "Claim name, then Enter",
                 "publicClient": "Public client (PKCE, no client secret)",
                 "publicClientHelp": "Enable for a PKCE-only client with no client secret (RFC 6749 §2.1).",
+                "claimsParameterSupported": "Supports requesting claims (from discovery)",
+                "claimsParameterSupportedHelp": "Set by discovery from claims_parameter_supported. When on, re-authentication (step-up, Storefront re-login) asks the IdP for auth_time as an essential claim, so IdPs that send it only on request can confirm a fresh login.",
                 "httpTimeout": "HTTP timeout (seconds)",
                 "httpTimeoutHelp": "Timeout in seconds for HTTP requests to this IdP (discovery, token exchange, userinfo, JWKS).",
                 "jwksCacheTtl": "JWKS cache TTL (seconds)",
@@ -445,7 +447,8 @@
             "hint": "Or confirm it's you with:",
             "sso": "Single sign-on",
             "passkey": "Passkey",
-            "error": "The confirmation failed or was cancelled. Please try again."
+            "error": "The confirmation failed or was cancelled. Please try again.",
+            "freshLoginNotConfirmed": "Your identity provider did not confirm a new login. Confirm with your passkey or password instead."
         }
     },
     "sw-privileges": {

@@ -126,7 +126,7 @@ Component.override('sw-verify-user-modal', {
 
             // The callback page also reports failures, as {error} (R3-F9).
             if (typeof event.data.nonce !== 'string') {
-                this.sw6oidcStepUpFailed();
+                this.sw6oidcStepUpFailed(event.data.error === 'fresh_login_not_confirmed' ? 'sw6oidc.stepUp.freshLoginNotConfirmed' : undefined);
                 return;
             }
 
@@ -179,12 +179,12 @@ Component.override('sw-verify-user-modal', {
             this.$emit('close');
         },
 
-        sw6oidcStepUpFailed() {
+        sw6oidcStepUpFailed(snippet = 'sw6oidc.stepUp.error') {
             window.removeEventListener('message', this.sw6oidcOnStepUpMessage);
             this.sw6oidcStopPopupWatch();
             this.sw6oidcStepUpBusy = false;
             this.sw6oidcStepUpPopup = null;
-            this.createNotificationError({ message: this.$t('sw6oidc.stepUp.error') });
+            this.createNotificationError({ message: this.$t(snippet) });
         },
     },
 });

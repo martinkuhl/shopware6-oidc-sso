@@ -18,7 +18,28 @@ final class ClaimsMergerTest extends TestCase
             ['sub' => 's1', 'email' => 'b@example.com', 'email_verified' => false, 'name' => 'Ann'],
         );
 
-        self::assertSame(['sub' => 's1', 'email' => 'a@example.com', 'email_verified' => true, 'name' => 'Ann'], $merged);
+        self::assertEquals(['sub' => 's1', 'email' => 'a@example.com', 'email_verified' => true, 'name' => 'Ann'], $merged);
+    }
+
+    /**
+     * R8-L4: userinfo's verified flag must not vouch for the id_token's
+     * (unverified) address, and vice versa.
+     */
+    public function testEmailAndEmailVerifiedComeFromTheSameSource(): void
+    {
+        $idTokenOnlyEmail = ClaimsMerger::merge(
+            ['sub' => 's1', 'email' => 'x@example.com'],
+            ['sub' => 's1', 'email' => 'y@example.com', 'email_verified' => true],
+        );
+        self::assertSame('x@example.com', $idTokenOnlyEmail['email']);
+        self::assertArrayNotHasKey('email_verified', $idTokenOnlyEmail);
+
+        $userinfoEmail = ClaimsMerger::merge(
+            ['sub' => 's1', 'email_verified' => true],
+            ['sub' => 's1', 'email' => 'y@example.com'],
+        );
+        self::assertSame('y@example.com', $userinfoEmail['email']);
+        self::assertArrayNotHasKey('email_verified', $userinfoEmail);
     }
 
     public function testUserinfoForAnotherSubjectIsRefused(): void

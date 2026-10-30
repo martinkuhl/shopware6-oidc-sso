@@ -343,6 +343,13 @@
                     :help-text="$t('sw6oidc.provider.detail.publicClientHelp')"
                     :disabled="!canEditField('publicClient')"
                 />
+                {# Set by discovery only, never by hand (R8-L32). #}
+                <mt-switch
+                    v-model="provider.claimsParameterSupported"
+                    :label="$t('sw6oidc.provider.detail.claimsParameterSupported')"
+                    :help-text="$t('sw6oidc.provider.detail.claimsParameterSupportedHelp')"
+                    disabled
+                />
                 <sw-container
                     columns="1fr 1fr"
                     gap="0 30px"

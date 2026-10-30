@@ -19,6 +19,7 @@ use MartinKuhl\Sw6Oidc\Service\Provisioning\IdentityResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
 use MartinKuhl\Sw6Oidc\Service\Security\AuthorizationFlowContext;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\AccessControlDeniedException;
+use MartinKuhl\Sw6Oidc\Service\Security\Exception\FreshLoginNotConfirmedException;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\InvalidStateException;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\UnknownStateException;
 use MartinKuhl\Sw6Oidc\Service\Security\RelayStateValidator;
@@ -206,6 +207,13 @@ class OidcCallbackController extends StorefrontController
             $this->addFlash(self::DANGER, $this->trans('sw6oidc.login.accountUnavailable'));
 
             return new RedirectResponse($this->generateUrl('frontend.account.login.page'));
+        } catch (FreshLoginNotConfirmedException $exception) {
+            // The IdP answered the re-authentication without a fresh auth_time:
+            // the customer is still logged in; not counted (R8-L32).
+            $this->logger->notice('sw6oidc: customer re-authentication not confirmed by the IdP.', ['exception' => $exception->getMessage()]);
+            $this->addFlash(self::DANGER, $this->trans('sw6oidc.account.reauthNotConfirmed'));
+
+            return new RedirectResponse($this->generateUrl('frontend.account.home.page'));
         } catch (UnknownStateException $exception) {
             // Expired/reused state (back button, second tab) or junk: not counted (N-M3).
             $this->logger->notice('sw6oidc: customer OIDC callback with an unknown state.', ['exception' => $exception->getMessage()]);

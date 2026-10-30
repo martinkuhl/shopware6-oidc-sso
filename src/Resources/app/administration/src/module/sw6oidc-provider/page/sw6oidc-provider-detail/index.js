@@ -753,6 +753,10 @@ Component.register('sw6oidc-provider-detail', () => {
                     }
                 });
 
+                if (typeof result.claimsParameterSupported === 'boolean') {
+                    this.provider.claimsParameterSupported = result.claimsParameterSupported;
+                }
+
                 this.loadedWellKnownConfigUrl = wellKnownConfigUrl;
 
                 return Array.isArray(result.warnings) ? result.warnings.filter((warning) => typeof warning === 'string') : [];

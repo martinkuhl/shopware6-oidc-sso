@@ -7,6 +7,7 @@ use MartinKuhl\Sw6Oidc\Service\Oidc\AuthTimeValidator;
 use MartinKuhl\Sw6Oidc\Service\Oidc\OidcCallbackResult;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\MappedProfile;
 use MartinKuhl\Sw6Oidc\Service\Security\AuthorizationFlowContext;
+use MartinKuhl\Sw6Oidc\Service\Security\Exception\FreshLoginNotConfirmedException;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\InvalidStateException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -31,9 +32,27 @@ final class AuthTimeValidatorTest extends TestCase
 
     public function testAMissingAuthTimeIsRefused(): void
     {
-        $this->expectException(InvalidStateException::class);
+        $this->expectException(FreshLoginNotConfirmedException::class);
 
         AuthTimeValidator::assertFresh($this->callbackResult(null));
+    }
+
+    /**
+     * R8-L32: auth_time is asked for as an essential claim, but only where the
+     * IdP supports the `claims` parameter; never max_age (Authelia, 2dabbd4).
+     */
+    public function testFreshLoginParametersAskForAuthTimeOnlyWhereSupported(): void
+    {
+        $provider = new Sw6OidcProviderEntity();
+
+        self::assertSame(['prompt' => 'login'], AuthTimeValidator::freshLoginParameters($provider));
+
+        $provider->setClaimsParameterSupported(true);
+        $parameters = AuthTimeValidator::freshLoginParameters($provider);
+
+        self::assertSame('login', $parameters['prompt']);
+        self::assertArrayNotHasKey('max_age', $parameters);
+        self::assertSame(['id_token' => ['auth_time' => ['essential' => true]]], json_decode($parameters['claims'], true));
     }
 
     private function callbackResult(?int $authTime): OidcCallbackResult

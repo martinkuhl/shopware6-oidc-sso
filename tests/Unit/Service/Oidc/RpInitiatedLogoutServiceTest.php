@@ -56,8 +56,7 @@ final class RpInitiatedLogoutServiceTest extends TestCase
                     return true;
                 }),
                 3,
-                'shop-client',
-                'the-secret',
+                'Basic ' . base64_encode('shop-client:the-secret'),
                 3,
             );
 
@@ -73,7 +72,7 @@ final class RpInitiatedLogoutServiceTest extends TestCase
         $httpClient = $this->createMock(OidcHttpClient::class);
         $httpClient->expects(self::exactly(2))
             ->method('postFormIgnoringResponseBody')
-            ->with('https://idp.example/revoke', self::anything(), 3, null, null, 3)
+            ->with('https://idp.example/revoke', self::anything(), 3, null, 3)
             ->willReturnCallback(static function (string $url, array $params) use (&$sent): void {
                 $sent[] = $params;
             });
@@ -84,6 +83,17 @@ final class RpInitiatedLogoutServiceTest extends TestCase
             ['token' => 'refresh', 'token_type_hint' => 'refresh_token', 'client_id' => 'shop-client', 'client_secret' => 'the-secret'],
             ['token' => 'access', 'token_type_hint' => 'access_token', 'client_id' => 'shop-client', 'client_secret' => 'the-secret'],
         ], $sent);
+    }
+
+    public function testRevocationIsSkippedWithoutAUsableSecret(): void
+    {
+        $provider = $this->revocationProvider();
+        $provider->setClientSecret('');
+
+        $httpClient = $this->createMock(OidcHttpClient::class);
+        $httpClient->expects(self::never())->method('postFormIgnoringResponseBody');
+
+        $this->service($httpClient)->revokeTokens($provider, new LogoutContext('a1000000000000000000000000000001', null, 'access', 'refresh'));
     }
 
     private function revocationProvider(): Sw6OidcProviderEntity

@@ -32,6 +32,7 @@ use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\SubjectAlreadyLinkedExcept
 use MartinKuhl\Sw6Oidc\Service\Provisioning\IdentityResolver;
 use MartinKuhl\Sw6Oidc\Service\Security\AuthorizationFlowContext;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\AccessControlDeniedException;
+use MartinKuhl\Sw6Oidc\Service\Security\Exception\FreshLoginNotConfirmedException;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\InvalidStateException;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\UnknownStateException;
 use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
@@ -642,6 +643,13 @@ class OidcAdminAuthController extends AbstractController
     {
         try {
             $message = ['type' => 'sw6oidc-step-up', 'nonce' => $this->stepUpService->completeOidc($result, $context)];
+        } catch (FreshLoginNotConfirmedException $exception) {
+            // The IdP answered without a fresh auth_time: the modal suggests the passkey (R8-L32).
+            $this->logger->notice('sw6oidc: OIDC step-up not confirmed by the IdP.', [
+                'exception' => $exception->getMessage(),
+                'userId' => $result->flow->expectedUserId,
+            ]);
+            $message = ['type' => 'sw6oidc-step-up', 'error' => 'fresh_login_not_confirmed'];
         } catch (\Throwable $exception) {
             $this->logger->warning('sw6oidc: OIDC step-up refused.', [
                 'exceptionClass' => $exception::class,

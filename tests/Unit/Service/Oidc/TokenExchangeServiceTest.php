@@ -43,8 +43,7 @@ final class TokenExchangeServiceTest extends TestCase
                     return true;
                 }),
                 10,
-                'client-1',
-                'the-secret',
+                'Basic ' . base64_encode('client-1:the-secret'),
             )
             ->willReturn(['access_token' => 'at']);
 
@@ -71,7 +70,6 @@ final class TokenExchangeServiceTest extends TestCase
                 }),
                 10,
                 null,
-                null,
             )
             ->willReturn(['access_token' => 'at']);
 
@@ -96,7 +94,6 @@ final class TokenExchangeServiceTest extends TestCase
                 }),
                 10,
                 null,
-                null,
             )
             ->willReturn(['access_token' => 'at']);
 
@@ -120,7 +117,6 @@ final class TokenExchangeServiceTest extends TestCase
                 }),
                 10,
                 null,
-                null,
             )
             ->willReturn(['access_token' => 'at']);
 
@@ -138,6 +134,31 @@ final class TokenExchangeServiceTest extends TestCase
 
         $this->expectException(ClientSecretUnavailableException::class);
         (new TokenExchangeService($httpClient))->exchangeCodeForTokens($provider, 'the-code', 'https://shop.example/callback', 'verifier');
+    }
+
+    public function testAnEmptySecretOfAConfidentialClientFailsBeforeAnyRequest(): void
+    {
+        $provider = $this->buildProvider(publicClient: false);
+        $provider->setClientSecret('');
+
+        $httpClient = $this->createMock(OidcHttpClient::class);
+        $httpClient->expects(self::never())->method('postForm');
+
+        $this->expectException(ClientSecretUnavailableException::class);
+        (new TokenExchangeService($httpClient))->exchangeCodeForTokens($provider, 'the-code', 'https://shop.example/callback', 'verifier');
+    }
+
+    /**
+     * R8-M1: RFC 6749 §2.3.1 form-urlencodes id and secret before base64;
+     * fosite/Keycloak decode them, so `+`, `%` and `:` must survive.
+     */
+    public function testBasicCredentialsAreFormUrlencodedBeforeBase64(): void
+    {
+        $header = ClientAuthentication::basicAuthorization('client:1', 'a+b%2F:c');
+        [$id, $secret] = explode(':', (string) base64_decode(substr($header, 6), true), 2);
+
+        self::assertSame('client:1', urldecode($id));
+        self::assertSame('a+b%2F:c', urldecode($secret), 'decoded the way fosite (url.QueryUnescape) does it');
     }
 
     private function buildProvider(bool $publicClient): Sw6OidcProviderEntity

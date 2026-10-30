@@ -4,8 +4,6 @@ namespace MartinKuhl\Sw6Oidc\Service\Oidc;
 
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
-use MartinKuhl\Sw6Oidc\Service\Security\Exception\ClientSecretUnavailableException;
-use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 
 /**
  * Exchanges an authorization code (+ PKCE verifier) for tokens at the provider's
@@ -38,7 +36,7 @@ class TokenExchangeService
         string $redirectUri,
         string $codeVerifier,
     ): array {
-        $authentication = ClientAuthentication::forProvider($provider, $provider->getTokenEndpointAuthMethod(), $this->clientSecret($provider));
+        $authentication = ClientAuthentication::forProvider($provider, $provider->getTokenEndpointAuthMethod());
 
         $params = array_merge([
             'grant_type' => 'authorization_code',
@@ -51,26 +49,7 @@ class TokenExchangeService
             (string) $provider->getAccessTokenEndpoint(),
             $params,
             $provider->getHttpTimeout(),
-            $authentication->basicAuthUsername,
-            $authentication->basicAuthPassword,
+            $authentication->authorizationHeader,
         );
-    }
-
-    private function clientSecret(Sw6OidcProviderEntity $provider): ?string
-    {
-        if ($provider->isPublicClient()) {
-            return null;
-        }
-
-        // Still an envelope after hydration = undecryptable with the current
-        // APP_SECRET. Fail with an actionable error instead of sending the
-        // ciphertext to the IdP and getting an opaque invalid_client back.
-        $secret = $provider->getUsableClientSecret();
-
-        if ($secret === null && Sw6OidcEncryptor::isEnvelope((string) $provider->getClientSecret())) {
-            throw ClientSecretUnavailableException::forProvider($provider->getId());
-        }
-
-        return $secret;
     }
 }

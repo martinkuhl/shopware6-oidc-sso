@@ -30,17 +30,18 @@ class OidcHttpClient
         string $url,
         array $formParams,
         int $timeoutSeconds,
-        ?string $basicAuthUsername = null,
-        ?string $basicAuthPassword = null,
+        #[\SensitiveParameter] ?string $authorizationHeader = null,
         ?int $maxDurationSeconds = null,
     ): array {
-        return $this->requestJson('POST', $url, $this->formOptions($formParams, $timeoutSeconds, $basicAuthUsername, $basicAuthPassword, $maxDurationSeconds));
+        return $this->requestJson('POST', $url, $this->formOptions($formParams, $timeoutSeconds, $authorizationHeader, $maxDurationSeconds));
     }
 
     /**
      * POST for endpoints whose success answer has no meaningful body, like
      * RFC 7009 revocation (§2.2: HTTP 200, the content is ignored — Authelia
-     * sends an empty body). Only the status code decides.
+     * sends an empty body). Only the status code decides, and only 2xx is
+     * success: redirects aren't followed, so a 3xx (http→https, a login
+     * portal in front of the IdP) revoked nothing (R8-L1).
      *
      * @param array<string, string> $formParams
      * @param int|null              $maxDurationSeconds cap on the whole request (`timeout` alone is an idle timeout)
@@ -49,16 +50,15 @@ class OidcHttpClient
         string $url,
         array $formParams,
         int $timeoutSeconds,
-        ?string $basicAuthUsername = null,
-        ?string $basicAuthPassword = null,
+        #[\SensitiveParameter] ?string $authorizationHeader = null,
         ?int $maxDurationSeconds = null,
     ): void {
-        $options = $this->formOptions($formParams, $timeoutSeconds, $basicAuthUsername, $basicAuthPassword, $maxDurationSeconds);
+        $options = $this->formOptions($formParams, $timeoutSeconds, $authorizationHeader, $maxDurationSeconds);
         [, $statusCode] = $this->send('POST', $url, $options);
 
         $this->logResponse('POST', $url, $statusCode, null);
 
-        if ($statusCode >= 400) {
+        if ($statusCode < 200 || $statusCode >= 300) {
             throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed with status %d.', $this->withoutQuery($url), $statusCode));
         }
     }
@@ -71,14 +71,13 @@ class OidcHttpClient
     private function formOptions(
         array $formParams,
         int $timeoutSeconds,
-        ?string $basicAuthUsername,
-        ?string $basicAuthPassword,
+        #[\SensitiveParameter] ?string $authorizationHeader,
         ?int $maxDurationSeconds,
     ): array {
         $headers = ['Accept' => 'application/json'];
 
-        if ($basicAuthUsername !== null) {
-            $headers['Authorization'] = 'Basic ' . base64_encode($basicAuthUsername . ':' . ($basicAuthPassword ?? ''));
+        if ($authorizationHeader !== null) {
+            $headers['Authorization'] = $authorizationHeader;
         }
 
         $options = [

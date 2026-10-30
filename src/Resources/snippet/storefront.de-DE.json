@@ -43,6 +43,7 @@
             "ssoConnected": "Ihr Konto ist mit %name% verbunden.",
             "linkSuccess": "Single Sign-on wurde mit Ihrem Konto verbunden.",
             "reauthRequired": "Bitte melden Sie sich zu Ihrer Sicherheit erneut an, um einen Passkey hinzuzufügen.",
+            "reauthNotConfirmed": "Ihr Login-Anbieter hat keine neue Anmeldung bestätigt, daher wurde die Änderung nicht vorgenommen. Melden Sie sich ab und wieder an und versuchen Sie es erneut.",
             "notWhileImitating": "Passkeys und Single Sign-on können nicht eingerichtet werden, solange Sie aus der Administration als dieser Kunde angemeldet sind."
         }
     }
