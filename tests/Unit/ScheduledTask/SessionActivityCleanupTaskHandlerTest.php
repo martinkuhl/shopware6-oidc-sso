@@ -33,7 +33,7 @@ final class SessionActivityCleanupTaskHandlerTest extends TestCase
         self::assertCount(2, $activityDeletes);
         self::assertStringContainsString('LIMIT 1000', $activityDeletes[0][0]);
         $before = new \DateTimeImmutable($activityDeletes[0][1]['before'], new \DateTimeZone('UTC'));
-        self::assertLessThan(5, abs($before->getTimestamp() - strtotime('-30 days')));
+        self::assertLessThan(5, abs($before->getTimestamp() - (new \DateTimeImmutable('-30 days', new \DateTimeZone('UTC')))->getTimestamp()));
     }
 
     public function testZeroRetentionKeepsActivityButStillPrunesState(): void
