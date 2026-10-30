@@ -58,8 +58,12 @@ final class HealthCheckControllerTest extends TestCase
     {
         [$status, $body] = $this->health([$this->provider(['jwksEndpoint' => null]), $this->monitored('fail')]);
 
-        self::assertSame(503, $status);
+        // R8-L16: an IdP outage must not pull the whole shop out of a load balancer.
+        self::assertSame(200, $status);
         self::assertSame('down', $body['status']);
+
+        [$strictStatus] = $this->health([$this->provider(['jwksEndpoint' => null]), $this->monitored('fail')], strict: true);
+        self::assertSame(503, $strictStatus);
     }
 
     public function testUnmonitoredProvidersIgnoreAFrozenFailure(): void
@@ -123,7 +127,7 @@ final class HealthCheckControllerTest extends TestCase
      *
      * @return array{int, array<string, mixed>}
      */
-    private function health(array $providers, ?string $token = 'monitor-token', ?string $sentToken = 'monitor-token'): array
+    private function health(array $providers, ?string $token = 'monitor-token', ?string $sentToken = 'monitor-token', bool $strict = false): array
     {
         $repository = $this->createStub(EntityRepository::class);
         $repository->method('search')->willReturnCallback(static fn (Criteria $criteria, Context $context): EntitySearchResult => new EntitySearchResult(
@@ -138,7 +142,7 @@ final class HealthCheckControllerTest extends TestCase
         $infrastructure = $this->createStub(InfrastructureInspector::class);
         $infrastructure->method('inspect')->willReturn(['atomicStore' => 'database', 'nodesSeen' => 1, 'warnings' => $this->infrastructureWarnings]);
 
-        $request = new Request();
+        $request = new Request($strict ? ['strict' => '1'] : []);
 
         if ($sentToken !== null) {
             $request->headers->set(HealthCheckController::TOKEN_HEADER, $sentToken);

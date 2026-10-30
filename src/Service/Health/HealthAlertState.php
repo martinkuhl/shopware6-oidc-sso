@@ -17,6 +17,13 @@ final readonly class HealthAlertState
     public const STATUS_OK = 'ok';
     public const STATUS_FAIL = 'fail';
 
+    /**
+     * Healthy again, but the recovery notice hasn't been delivered yet: kept
+     * until the webhook accepts it, so a failed delivery is retried on the
+     * next run (R8-L17). The provider counts as reachable.
+     */
+    public const STATUS_RECOVERY_PENDING = 'recovery_pending';
+
     public const NOTIFY_UNHEALTHY = 'unhealthy';
     public const NOTIFY_RECOVERED = 'recovered';
 
@@ -46,9 +53,11 @@ final readonly class HealthAlertState
     public function next(bool $healthy, int $threshold, bool $notifyOnRecovery, \DateTimeImmutable $now): array
     {
         if ($healthy) {
-            $notify = $notifyOnRecovery && $this->alertedCurrentOutage() ? self::NOTIFY_RECOVERED : null;
+            if ($notifyOnRecovery && $this->alertedCurrentOutage()) {
+                return [new self(0, self::STATUS_RECOVERY_PENDING, $this->firstFailureAt, $this->lastNotifiedAt), self::NOTIFY_RECOVERED];
+            }
 
-            return [new self(0, self::STATUS_OK, null, $this->lastNotifiedAt), $notify];
+            return [new self(0, self::STATUS_OK, null, $this->lastNotifiedAt), null];
         }
 
         $failures = $this->consecutiveFailures + 1;
@@ -62,14 +71,22 @@ final readonly class HealthAlertState
         return [$next, $due ? self::NOTIFY_UNHEALTHY : null];
     }
 
+    /**
+     * The notification of this state was delivered. A delivered recovery
+     * notice closes the outage.
+     */
     public function withNotifiedAt(\DateTimeImmutable $at): self
     {
+        if ($this->lastStatus === self::STATUS_RECOVERY_PENDING) {
+            return new self(0, self::STATUS_OK, null, $at);
+        }
+
         return new self($this->consecutiveFailures, $this->lastStatus, $this->firstFailureAt, $at);
     }
 
     private function alertedCurrentOutage(): bool
     {
-        return $this->lastStatus === self::STATUS_FAIL
+        return \in_array($this->lastStatus, [self::STATUS_FAIL, self::STATUS_RECOVERY_PENDING], true)
             && $this->firstFailureAt instanceof \DateTimeImmutable
             && $this->lastNotifiedAt instanceof \DateTimeImmutable
             && $this->lastNotifiedAt >= $this->firstFailureAt;

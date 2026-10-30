@@ -29,7 +29,11 @@ use Symfony\Component\Routing\Attribute\Route;
  * - `degraded` (200): some provider is incomplete or its monitored probe
  *   failed, but SSO still works through another one. A load balancer must not
  *   take the shop out of rotation for that.
- * - `down` (503): no active provider is usable.
+ * - `down` (200, or 503 with `?strict=1`): no active provider is usable.
+ *   The shop itself still works (guest checkout, password logins), so a
+ *   load balancer pointed here must not pull it out of rotation; monitors
+ *   that page on SSO specifically ask for `strict` (R8-L16). This is not a
+ *   liveness probe.
  * - `unconfigured` (200): no active provider.
  *
  * Only providers that are actually monitored (threshold > 0 and a webhook)
@@ -91,7 +95,7 @@ class HealthCheckController extends AbstractController
 
         /** @var array{status: string} $result */
         $result = $item->get();
-        $status = $result['status'] === 'down' ? Response::HTTP_SERVICE_UNAVAILABLE : Response::HTTP_OK;
+        $status = $result['status'] === 'down' && $request->query->getBoolean('strict') ? Response::HTTP_SERVICE_UNAVAILABLE : Response::HTTP_OK;
 
         // Counts and infrastructure warnings only for a caller holding the
         // token: anonymous callers learn whether SSO works, nothing more (R3-L36).

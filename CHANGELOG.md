@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking changes (code review, revision 8)
 
 - **One schema migration.** The 21 migrations are replaced by `Migration1790900000CreateSchema`, which holds the final schema. There is no upgrade path from earlier development versions: reinstall the plugin (export the providers with `sw6oidc:config:export`, uninstall, install, import). Code that only read pre-migration data is gone: `sw6oidc_v1:` envelopes and plaintext secrets are no longer read, subject-less (legacy) bindings are no longer upgraded by email, and Redis values must be encrypted.
+- **`/sw6oidc/health` answers `down` with HTTP 200**; 503 only with `?strict=1` (R8-L16). An IdP outage no longer takes the whole shop out of a load balancer pointed at it.
 - **The encryptor requires a purpose** on every call; `isEncrypted()` is replaced by the static `isEnvelope()`.
 - **Provider trust fields are deny-by-default** (R8-H1): the `sw6oidc_provider` editor role may change only an allow-list of fields (`ProviderTrustGuardSubscriber::EDITOR_FIELDS`); every other column needs a superadmin. Before, the editor role could turn on superadmin revocation and switch off Administration password login.
 - **Guest conversion is refused in customer SSO-only mode** (R8-M11). **Unlinking a superadmin needs a superadmin**, and unlinking someone else ends their sessions (R8-L5).
@@ -37,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A dry-run config import can no longer end sessions** (R8-M7): it queues no revocation, and a queued revocation re-checks that password login is still off before it runs.
 - Provider save fixes: changing the email mapping and requiring a verified email in one save works (R8-L22); an issuer re-bind no longer inflates the lockout prompt (R8-L23); a confirmation survives a save refused for another reason (R8-L24); admins with a passkey aren't counted as locked out (R8-L25). Unknown attribute-mapping types are refused (R8-L27). Uninstall without keeping data removes the plugin's ACL privileges and custom fields (R8-L29).
+
+- A health-alert recovery notice the webhook rejected is retried (R8-L17); the health and IdP logout endpoints no longer create a PHP session on every call (R8-L18).
 
 ### Added (code review, revision 8)
 

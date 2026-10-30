@@ -506,6 +506,11 @@
         </service>
 
         <!-- R3-M16: placeholder addresses are completed before checkout; the flag clears on real values. -->
+        <!-- R8-L18: machine endpoints don't leave PHP sessions behind. -->
+        <service id="MartinKuhl\Sw6Oidc\Subscriber\StatelessEndpointSubscriber">
+            <tag name="kernel.event_subscriber" />
+        </service>
+
         <!-- R8-M5: no order with a placeholder address, whatever the checkout path. -->
         <service id="MartinKuhl\Sw6Oidc\Checkout\Cart\PlaceholderAddressCartValidator">
             <tag name="shopware.cart.validator" />

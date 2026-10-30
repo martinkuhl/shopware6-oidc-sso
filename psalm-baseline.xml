@@ -782,6 +782,11 @@
       <code><![CDATA[SessionActivityWriteGuardSubscriber]]></code>
     </UnusedClass>
   </file>
+  <file src="src/Subscriber/StatelessEndpointSubscriber.php">
+    <UnusedClass>
+      <code><![CDATA[StatelessEndpointSubscriber]]></code>
+    </UnusedClass>
+  </file>
   <file src="src/Subscriber/Sw6OidcCspSubscriber.php">
     <UnusedClass>
       <code><![CDATA[Sw6OidcCspSubscriber]]></code>

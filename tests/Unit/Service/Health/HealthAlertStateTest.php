@@ -57,12 +57,33 @@ final class HealthAlertStateTest extends TestCase
 
         [$recovered, $notify] = $alerted->next(true, 1, true, $this->at(1));
         self::assertSame(HealthAlertState::NOTIFY_RECOVERED, $notify);
-        self::assertSame([0, HealthAlertState::STATUS_OK, null], [$recovered->consecutiveFailures, $recovered->lastStatus, $recovered->firstFailureAt]);
+        self::assertSame(HealthAlertState::STATUS_RECOVERY_PENDING, $recovered->lastStatus, 'until the notice is delivered');
+
+        $delivered = $recovered->withNotifiedAt($this->at(1));
+        self::assertSame([0, HealthAlertState::STATUS_OK, null], [$delivered->consecutiveFailures, $delivered->lastStatus, $delivered->firstFailureAt]);
+        self::assertNull($delivered->next(true, 1, true, $this->at(2))[1], 'sent once');
 
         self::assertNull($alerted->next(true, 1, false, $this->at(1))[1], 'recovery notice disabled');
 
         [$failedOnce] = (new HealthAlertState())->next(false, 3, true, $this->at(0));
         self::assertNull($failedOnce->next(true, 3, true, $this->at(1))[1], 'no alert was sent, so no recovery notice');
+    }
+
+    /**
+     * R8-L17: a recovery notice the webhook rejected is sent again on the
+     * next healthy run, not dropped.
+     */
+    public function testAnUndeliveredRecoveryNoticeIsRetried(): void
+    {
+        [$alerted] = (new HealthAlertState())->next(false, 1, true, $this->at(0));
+        $alerted = $alerted->withNotifiedAt($this->at(0));
+
+        [$pending, $first] = $alerted->next(true, 1, true, $this->at(1));
+        self::assertSame(HealthAlertState::NOTIFY_RECOVERED, $first);
+
+        // Not delivered: $pending is persisted as is.
+        [, $again] = $pending->next(true, 1, true, $this->at(2));
+        self::assertSame(HealthAlertState::NOTIFY_RECOVERED, $again);
     }
 
     public function testANewOutageAlertsAgain(): void

@@ -301,6 +301,7 @@
                 "healthStatus": {
                     "ok": "erreichbar",
                     "fail": "nicht erreichbar",
+                    "recovery_pending": "wieder erreichbar (Entwarnung noch nicht zugestellt)",
                     "unknown": "unbekannt"
                 },
                 "buttonRunDiagnostics": "Diagnose ausführen",

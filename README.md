@@ -268,7 +268,7 @@ Passkeys require **user verification** (PIN or biometrics) for registration and 
   |---|---|---|
   | `ok` | 200 | Every active provider is usable |
   | `degraded` | 200 | Some provider is incomplete (missing configuration, undecryptable client secret) or failed its last monitored check, but SSO still works through another one |
-  | `down` | 503 | No active provider is usable |
+  | `down` | 200 (503 with `?strict=1`) | No active provider is usable. The shop itself still works, so the default stays 200: don't take the shop out of a load balancer for an IdP outage. Monitors that should page on SSO use `/sw6oidc/health?strict=1`. This is not a liveness probe. |
   | `unconfigured` | 200 | No active provider |
 
   Only providers with alerting configured (threshold > 0 and a webhook) count their last scheduled check; a result older than 15 minutes counts as `unknown`, not as a failure. Set `SW6OIDC_HEALTH_TOKEN` to protect the endpoint and see the details: requests must then send the value in the `X-Sw6oidc-Health-Token` header, otherwise they get HTTP 401.
