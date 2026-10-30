@@ -3,7 +3,6 @@
 namespace MartinKuhl\Sw6Oidc\ScheduledTask;
 
 use Doctrine\DBAL\Connection;
-use MartinKuhl\Sw6Oidc\Service\Cache\DatabaseAtomicCache;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Defaults;
@@ -17,7 +16,8 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  *  - activity rows whose login is older than
  *    SW6OIDC_SESSION_ACTIVITY_RETENTION_DAYS (default 90; 0 = keep forever),
  *    deleted in batches so a large backlog never locks the table for long;
- *  - expired session registry entries and one-time tokens;
+ *  - expired session registry entries (one-time tokens have their own
+ *    hourly task, OneTimeTokenCleanupTask);
  *  - node heartbeats older than a day.
  */
 #[AsMessageHandler(handles: SessionActivityCleanupTask::class)]
@@ -31,7 +31,6 @@ class SessionActivityCleanupTaskHandler extends ScheduledTaskHandler
         private readonly Connection $connection,
         private readonly int $retentionDays,
         private readonly Sw6OidcSessionRegistry $sessionRegistry,
-        private readonly DatabaseAtomicCache $oneTimeTokens,
     ) {
         parent::__construct($scheduledTaskRepository, $exceptionLogger);
     }
@@ -50,7 +49,6 @@ class SessionActivityCleanupTaskHandler extends ScheduledTaskHandler
         }
 
         $this->sessionRegistry->prune();
-        $this->oneTimeTokens->prune();
 
         $this->connection->executeStatement(
             'DELETE FROM `sw6oidc_node_heartbeat` WHERE `last_seen_at` < :before',

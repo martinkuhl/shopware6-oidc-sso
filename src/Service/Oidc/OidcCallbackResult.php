@@ -106,7 +106,6 @@ final readonly class OidcCallbackResult
             $this->provider->getId(),
             \is_string($issuer) && $issuer !== '' ? $issuer : (string) $this->provider->getIssuer(),
             $subject,
-            $this->profile->email,
             $this->emailVerified(),
         );
     }

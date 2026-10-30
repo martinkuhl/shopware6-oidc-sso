@@ -17,6 +17,9 @@ class NodeHeartbeat
     /** At most one write per process and window: the health endpoint may be polled every few seconds. */
     private const MIN_INTERVAL_SECONDS = 60;
 
+    /** How far back a heartbeat counts as a live node (InfrastructureInspector). */
+    private const RECENT_WINDOW_SECONDS = 900;
+
     private static int $lastRecordedAt = 0;
 
     public function __construct(
@@ -47,12 +50,12 @@ class NodeHeartbeat
     /**
      * Distinct nodes seen within the window.
      */
-    public function recentNodeCount(int $windowSeconds = 900): int
+    public function recentNodeCount(): int
     {
         try {
             return (int) $this->connection->fetchOne(
                 'SELECT COUNT(*) FROM `sw6oidc_node_heartbeat` WHERE `last_seen_at` >= :since',
-                ['since' => (new \DateTimeImmutable(sprintf('-%d seconds', $windowSeconds), new \DateTimeZone('UTC')))->format(Defaults::STORAGE_DATE_TIME_FORMAT)],
+                ['since' => (new \DateTimeImmutable(sprintf('-%d seconds', self::RECENT_WINDOW_SECONDS), new \DateTimeZone('UTC')))->format(Defaults::STORAGE_DATE_TIME_FORMAT)],
             );
         } catch (\Throwable) {
             return 0;

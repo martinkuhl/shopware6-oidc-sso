@@ -62,7 +62,7 @@ class UserProviderBindingService
      * The binding this IdP identity logs in with: the one in the sales
      * channel's scope, else the global one.
      */
-    public function findBindingBySubject(string $userType, ExternalIdentity $identity, Context $context, ?string $salesChannelId = null): ?Sw6OidcUserProviderEntity
+    private function findBindingBySubject(string $userType, ExternalIdentity $identity, Context $context, ?string $salesChannelId = null): ?Sw6OidcUserProviderEntity
     {
         $scopes = array_values(array_unique(array_filter([$salesChannelId, Sw6OidcUserProviderEntity::GLOBAL_SCOPE])));
         $bindings = $this->userProviderRepository->search($this->subjectCriteria($userType, $identity, $scopes), $context)->getEntities();

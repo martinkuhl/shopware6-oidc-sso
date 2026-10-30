@@ -1,5 +1,5 @@
 import template from './sw-verify-user-modal.html.twig';
-import { preparePublicKeyRequestOptions, serializeAssertionCredential } from '../../service/webauthn-codec';
+import { preparePublicKeyRequestOptions, serializeAssertionCredential } from '../../../../shared/webauthn-codec';
 
 const { Component } = Shopware;
 

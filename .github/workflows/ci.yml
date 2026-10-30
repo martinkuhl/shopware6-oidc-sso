@@ -48,7 +48,7 @@ jobs:
       # come back (removed in Shopware 6.8).
       - name: No deprecated Administration components
         run: |
-          ! grep -rnE '<sw-(text-field|switch-field|number-field|password-field|textarea-field|checkbox-field|card|button|button-process|label)[ >/]|\$tc\(' src/Resources/app/administration/src
+          ! grep -rnE '<sw-(text-field|switch-field|number-field|password-field|textarea-field|checkbox-field|card|button|button-process|label|skeleton-bar)[ >/]|\$tc\(' src/Resources/app/administration/src
 
   static-analysis:
     name: Static analysis (PHPStan + Psalm, PHP ${{ matrix.php-version }})

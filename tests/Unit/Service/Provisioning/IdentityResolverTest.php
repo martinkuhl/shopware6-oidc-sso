@@ -185,7 +185,7 @@ final class IdentityResolverTest extends TestCase
 
     private function identity(bool $verified): ExternalIdentity
     {
-        return new ExternalIdentity($this->provider->getId(), 'https://idp.example.com', 'subject-1', 'jane@example.com', $verified);
+        return new ExternalIdentity($this->provider->getId(), 'https://idp.example.com', 'subject-1', $verified);
     }
 
     private function binding(string $providerId, ?string $sub): Sw6OidcUserProviderEntity

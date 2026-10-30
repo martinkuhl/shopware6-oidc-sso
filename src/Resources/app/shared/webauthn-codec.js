@@ -4,7 +4,8 @@
  * PasskeyAuthenticationService) serializes challenge/id fields as base64url
  * strings in both directions — the browser's `navigator.credentials` API only
  * speaks ArrayBuffer, so every field has to be converted crossing that
- * boundary.
+ * boundary. One source for both builds (R8-M-4): the Administration (Vite)
+ * and the Storefront (webpack) import this file by relative path.
  */
 
 export function base64UrlToBuffer(base64url) {

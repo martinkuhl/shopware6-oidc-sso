@@ -62,7 +62,7 @@ class Sw6OidcSessionActivityRecorder
                 'userId' => $userId,
                 'sub' => $registrySession?->sub,
                 // A `sid` lets anyone end the IdP session: only its hash is kept (R3-L40).
-                'sid' => $registrySession?->sid !== null ? self::hashSid($registrySession->sid) : null,
+                'sid' => $registrySession?->sid !== null ? $this->hashSid($registrySession->sid) : null,
                 'loginMethod' => $loginMethod,
                 'sessionKeyHash' => $this->hash($sessionKey),
                 'registrySessionId' => $registrySession?->id,
@@ -207,7 +207,7 @@ class Sw6OidcSessionActivityRecorder
     /**
      * The stored form of an IdP session id: `sha256:<hex>`.
      */
-    public static function hashSid(string $sid): string
+    private function hashSid(string $sid): string
     {
         return 'sha256:' . hash('sha256', $sid);
     }

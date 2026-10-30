@@ -2,7 +2,7 @@ import Plugin from 'src/plugin-system/plugin.class';
 import {
     preparePublicKeyCreationOptions,
     serializeAttestationCredential,
-} from './webauthn-codec';
+} from '../../../shared/webauthn-codec';
 
 /**
  * Self-service Passkey registration under My Account > Passkeys, against

@@ -965,7 +965,7 @@ final class AdminProvisioningServiceTest extends TestCase
         return $this->createService()->findOrCreateAdmin(
             $provider,
             $profile,
-            $identity ?? new ExternalIdentity($provider->getId(), 'https://idp.example.com', $this->subject, $profile->email, $this->emailVerified),
+            $identity ?? new ExternalIdentity($provider->getId(), 'https://idp.example.com', $this->subject, $this->emailVerified),
             $context,
         );
     }

@@ -15,7 +15,7 @@ class AccessControlDeniedException extends Sw6OidcException
     protected const ERROR_CODE = 'SW6OIDC_ACCESS_DENIED';
 
     public function __construct(
-        public readonly string $ruleId,
+        string $ruleId,
         public readonly string $claimKey,
         public readonly ?string $userMessage,
     ) {

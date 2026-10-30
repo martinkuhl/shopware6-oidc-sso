@@ -987,7 +987,7 @@ final class CustomerProvisioningServiceTest extends TestCase
      */
     private function identity(): ExternalIdentity
     {
-        return new ExternalIdentity($this->providerId, 'https://idp.example.com', $this->subject, 'user@example.com', $this->emailVerified);
+        return new ExternalIdentity($this->providerId, 'https://idp.example.com', $this->subject, $this->emailVerified);
     }
 
     private function customer(string $id, string $email, ?string $billingAddressId = null, ?string $shippingAddressId = null): CustomerEntity

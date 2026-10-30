@@ -12,7 +12,7 @@ import './sw-login.scss';
 import {
     preparePublicKeyRequestOptions,
     serializeAssertionCredential,
-} from '../../service/webauthn-codec';
+} from '../../../../shared/webauthn-codec';
 import Sw6oidcApiService from '../../service/sw6oidc-api.service';
 import { clearSsoReturnRoute, consumeSsoReturnRoute } from '../../service/sso-return-route';
 import { completeLogin, consumeRememberMe, rememberRememberMe } from '../../service/login-completion';

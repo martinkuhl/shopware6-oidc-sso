@@ -144,7 +144,7 @@ class AdminOidcGrant extends AbstractGrant
     {
         $userId = $request->getAttribute(self::REQUEST_ATTRIBUTE_USER_ID);
 
-        if (!\is_string($userId) || !Uuid::isValid($userId)) {
+        if (!\is_string($userId) || $userId === '' || !Uuid::isValid($userId)) {
             throw OAuthServerException::invalidRequest(self::REQUEST_ATTRIBUTE_USER_ID);
         }
 
@@ -153,7 +153,7 @@ class AdminOidcGrant extends AbstractGrant
             ['id' => Uuid::fromHexToBytes($userId)],
         );
 
-        if ($userId === '' || $active === false || !(bool) $active) {
+        if ($active === false || !(bool) $active) {
             throw OAuthServerException::invalidGrant('The user does not exist or is inactive.');
         }
 

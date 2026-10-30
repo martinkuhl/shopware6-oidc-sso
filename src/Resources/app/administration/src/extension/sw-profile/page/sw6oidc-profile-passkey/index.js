@@ -2,7 +2,7 @@ import template from './sw6oidc-profile-passkey.html.twig';
 import {
     preparePublicKeyCreationOptions,
     serializeAttestationCredential,
-} from '../../../../service/webauthn-codec';
+} from '../../../../../../shared/webauthn-codec';
 
 const { Component, Mixin } = Shopware;
 

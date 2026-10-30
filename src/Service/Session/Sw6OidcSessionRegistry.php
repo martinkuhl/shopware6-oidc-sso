@@ -94,7 +94,7 @@ class Sw6OidcSessionRegistry
             'user_type' => $userType,
             'user_id' => Uuid::fromHexToBytes($userId),
             'session_key' => $this->encryptor->encrypt($sessionKey, self::PURPOSE_PREFIX . 'session_key'),
-            'session_key_hash' => self::hashSessionKey($sessionKey),
+            'session_key_hash' => $this->hashSessionKey($sessionKey),
             'sales_channel_id' => $salesChannelId !== null ? Uuid::fromHexToBytes($salesChannelId) : null,
             'id_token' => $this->encryptNullable($idToken, 'id_token'),
             'idp_access_token' => $this->encryptNullable($idpAccessToken, 'idp_access_token'),
@@ -160,7 +160,7 @@ class Sw6OidcSessionRegistry
         return array_reverse($this->fetch('`user_type` = :userType AND `user_id` = :userId AND `session_key_hash` = :hash', [
             'userType' => $userType,
             'userId' => Uuid::fromHexToBytes($userId),
-            'hash' => self::hashSessionKey($sessionKey),
+            'hash' => $this->hashSessionKey($sessionKey),
         ]));
     }
 
@@ -190,7 +190,7 @@ class Sw6OidcSessionRegistry
             [
                 'id' => $id,
                 'key' => $this->encryptor->encrypt($sessionKey, self::PURPOSE_PREFIX . 'session_key'),
-                'hash' => self::hashSessionKey($sessionKey),
+                'hash' => $this->hashSessionKey($sessionKey),
                 'expiresAt' => $this->expiresAt(self::HARD_TTL_SECONDS),
             ],
         );
@@ -309,7 +309,7 @@ class Sw6OidcSessionRegistry
     }
 
 
-    public static function hashSessionKey(string $sessionKey): string
+    private function hashSessionKey(string $sessionKey): string
     {
         return hash('sha256', $sessionKey);
     }

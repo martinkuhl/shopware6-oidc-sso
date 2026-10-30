@@ -1,7 +1,7 @@
 {% block sw6oidc_user_provider_info %}
 <span class="sw6oidc-user-provider-info">
     <template v-if="isLoading">
-        <sw-skeleton-bar class="sw6oidc-user-provider-info__skeleton" />
+        <mt-skeleton-bar class="sw6oidc-user-provider-info__skeleton" />
     </template>
 
     <template v-else-if="binding">

@@ -3,7 +3,7 @@ import './sw-inactivity-login.scss';
 import {
     preparePublicKeyRequestOptions,
     serializeAssertionCredential,
-} from '../../service/webauthn-codec';
+} from '../../../../shared/webauthn-codec';
 import Sw6oidcApiService from '../../service/sw6oidc-api.service';
 import { rememberSsoReturnRoute } from '../../service/sso-return-route';
 import { completeLogin, rememberRememberMe } from '../../service/login-completion';

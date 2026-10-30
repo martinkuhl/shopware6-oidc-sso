@@ -415,7 +415,6 @@
             <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument>%env(int:SW6OIDC_SESSION_ACTIVITY_RETENTION_DAYS)%</argument>
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry" />
-            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Cache\DatabaseAtomicCache" />
             <tag name="messenger.message_handler" />
         </service>
 

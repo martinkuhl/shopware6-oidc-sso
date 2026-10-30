@@ -2,7 +2,7 @@ import Plugin from 'src/plugin-system/plugin.class';
 import {
     preparePublicKeyRequestOptions,
     serializeAssertionCredential,
-} from './webauthn-codec';
+} from '../../../shared/webauthn-codec';
 
 /**
  * Usernameless/discoverable Passkey login on the Storefront login page,

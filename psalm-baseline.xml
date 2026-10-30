@@ -535,11 +535,6 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
-  <file src="src/Service/Provisioning/ExternalIdentity.php">
-    <PossiblyUnusedProperty>
-      <code><![CDATA[$email]]></code>
-    </PossiblyUnusedProperty>
-  </file>
   <file src="src/Service/Provisioning/GroupMappingResolver.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
@@ -564,11 +559,6 @@
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
-  </file>
-  <file src="src/Service/Security/Exception/AccessControlDeniedException.php">
-    <PossiblyUnusedProperty>
-      <code><![CDATA[$ruleId]]></code>
-    </PossiblyUnusedProperty>
   </file>
   <file src="src/Service/Security/IssuerChangeConfirmationStore.php">
     <PossiblyUnusedMethod>

@@ -255,7 +255,7 @@ final class UserProviderBindingServiceTest extends TestCase
 
     private function identity(string $providerId): ExternalIdentity
     {
-        return new ExternalIdentity($providerId, 'https://idp.example.com', 'subject-1', 'jane@example.com', true);
+        return new ExternalIdentity($providerId, 'https://idp.example.com', 'subject-1', true);
     }
 
     private function repositoryReturning(?Sw6OidcUserProviderEntity $binding): EntityRepository&\PHPUnit\Framework\MockObject\MockObject

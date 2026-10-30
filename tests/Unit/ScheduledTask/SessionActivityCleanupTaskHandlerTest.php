@@ -5,7 +5,6 @@ namespace MartinKuhl\Sw6Oidc\Tests\Unit\ScheduledTask;
 use Doctrine\DBAL\Connection;
 use MartinKuhl\Sw6Oidc\ScheduledTask\SessionActivityCleanupTask;
 use MartinKuhl\Sw6Oidc\ScheduledTask\SessionActivityCleanupTaskHandler;
-use MartinKuhl\Sw6Oidc\Service\Cache\DatabaseAtomicCache;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -43,10 +42,8 @@ final class SessionActivityCleanupTaskHandlerTest extends TestCase
 
         $registry = $this->createMock(Sw6OidcSessionRegistry::class);
         $registry->expects(self::once())->method('prune');
-        $tokens = $this->createMock(DatabaseAtomicCache::class);
-        $tokens->expects(self::once())->method('prune');
 
-        (new SessionActivityCleanupTaskHandler($this->createMock(EntityRepository::class), new NullLogger(), $connection, 0, $registry, $tokens))->run();
+        (new SessionActivityCleanupTaskHandler($this->createMock(EntityRepository::class), new NullLogger(), $connection, 0, $registry))->run();
     }
 
     public function testTaskRunsDaily(): void
@@ -63,7 +60,6 @@ final class SessionActivityCleanupTaskHandlerTest extends TestCase
             $connection,
             $retentionDays,
             $this->createStub(Sw6OidcSessionRegistry::class),
-            $this->createStub(DatabaseAtomicCache::class),
         );
     }
 }
