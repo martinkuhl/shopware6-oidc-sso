@@ -42,7 +42,7 @@ class CustomerProvisioningService
      */
     public const PLACEHOLDER_ADDRESS_FIELD = 'sw6oidc_placeholder_address';
 
-    private const PLACEHOLDER = '-';
+    public const PLACEHOLDER = '-';
 
     private const MIN_BIRTH_YEAR = 1900;
 

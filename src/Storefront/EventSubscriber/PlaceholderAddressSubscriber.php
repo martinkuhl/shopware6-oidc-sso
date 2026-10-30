@@ -27,9 +27,10 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * reach an order (R3-M16):
  *
  * - the checkout confirm page sends a customer with a flagged billing or
- *   shipping address to that address's edit form first;
- * - the flag goes away as soon as real values are written, by the customer,
- *   an admin or address sync.
+ *   shipping address to that address's edit form first; every other order
+ *   path is blocked by PlaceholderAddressCartValidator (R8-M5);
+ * - the flag goes away once the stored street and city both hold real
+ *   values, whoever wrote them: the customer, an admin or address sync.
  */
 class PlaceholderAddressSubscriber implements EventSubscriberInterface
 {
@@ -90,16 +91,19 @@ class PlaceholderAddressSubscriber implements EventSubscriberInterface
         $event->setController(static fn (): RedirectResponse => new RedirectResponse($url));
     }
 
+    /**
+     * Decided on the stored row, not the payload: a write of only the street
+     * (partial address sync, an Admin API PATCH) must leave the flag while
+     * the city is still a placeholder (R8-M6).
+     */
     public function clearFlagOnRealValues(EntityWrittenEvent $event): void
     {
         $ids = [];
 
         foreach ($event->getWriteResults() as $result) {
             $payload = $result->getPayload();
-            $street = $payload['street'] ?? null;
-            $city = $payload['city'] ?? null;
 
-            if (($street === null && $city === null) || $street === '-' || $city === '-') {
+            if (!\array_key_exists('street', $payload) && !\array_key_exists('city', $payload)) {
                 continue;
             }
 
@@ -117,8 +121,9 @@ class PlaceholderAddressSubscriber implements EventSubscriberInterface
         $this->connection->executeStatement(
             'UPDATE `customer_address`
              SET `custom_fields` = JSON_REMOVE(`custom_fields`, :path)
-             WHERE `id` IN (:ids) AND JSON_CONTAINS_PATH(`custom_fields`, \'one\', :path)',
-            ['path' => '$.' . CustomerProvisioningService::PLACEHOLDER_ADDRESS_FIELD, 'ids' => $ids],
+             WHERE `id` IN (:ids) AND JSON_CONTAINS_PATH(`custom_fields`, \'one\', :path)
+               AND TRIM(`street`) NOT IN (\'\', :placeholder) AND TRIM(`city`) NOT IN (\'\', :placeholder)',
+            ['path' => '$.' . CustomerProvisioningService::PLACEHOLDER_ADDRESS_FIELD, 'placeholder' => CustomerProvisioningService::PLACEHOLDER, 'ids' => $ids],
             ['ids' => ArrayParameterType::BINARY],
         );
     }

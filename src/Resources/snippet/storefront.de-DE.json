@@ -46,5 +46,8 @@
             "reauthNotConfirmed": "Ihr Login-Anbieter hat keine neue Anmeldung bestätigt, daher wurde die Änderung nicht vorgenommen. Melden Sie sich ab und wieder an und versuchen Sie es erneut.",
             "notWhileImitating": "Passkeys und Single Sign-on können nicht eingerichtet werden, solange Sie aus der Administration als dieser Kunde angemeldet sind."
         }
+    },
+    "checkout": {
+        "sw6oidc-placeholder-address": "Bitte vervollständigen Sie vor der Bestellung Ihre Adresse: Sie enthält noch Platzhalter aus Ihrer Single-Sign-on-Registrierung."
     }
 }

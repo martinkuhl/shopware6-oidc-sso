@@ -46,5 +46,8 @@
             "reauthNotConfirmed": "Your login provider did not confirm a new login, so the change wasn't made. Log out and in again, then try once more.",
             "notWhileImitating": "Passkeys and single sign-on can't be set up while you are logged in as this customer from the Administration."
         }
+    },
+    "checkout": {
+        "sw6oidc-placeholder-address": "Please complete your address before ordering: it still contains placeholders from your single sign-on registration."
     }
 }

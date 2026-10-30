@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An unknown locale claim no longer resets the admin's language** (R8-M4): `de` and `de_DE` resolve to `de-DE`; nothing matching changes nothing. Salutation sync has no fallback either.
 - Avatar import replaces only the media it created and refuses images over 4096 px per side (R8-L6); `email_domain` access rules need a verified email and compare IDN domains in punycode (R8-L7); country claims resolve to active countries only (R8-L9); deactivated customers are refused before anything is synced (R8-L10); import errors of same-named providers are kept apart (R8-L11); a lost identity race reports "already linked" (R8-L12).
 
+- **Placeholder addresses can't reach an order through the Store API or headless checkouts** (R8-M5): a blocking cart error covers every order path, not only the Storefront confirm page. The placeholder flag is cleared only when street and city are both real (R8-M6).
+
 ### Added (code review, revision 8)
 
 - **`auth_time` is requested as an essential claim** for re-authentication when the IdP advertises `claims_parameter_supported` (new read-only provider field, set by discovery). A re-authentication the IdP doesn't confirm shows its own message and no longer counts against the callback rate limit (R8-L32).
