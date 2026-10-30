@@ -125,6 +125,15 @@ class UserProviderBindingService
                 'bindingScope' => $scope,
             ]], $systemContext));
         } catch (UniqueConstraintViolationException $exception) {
+            // Which key collided? The subject key means another account won
+            // the race for this identity; the account key, that this account
+            // got another binding meanwhile (R8-L12).
+            $subjectOwner = $this->userProviderRepository->search($this->subjectCriteria($userType, $identity, [$scope]), $context)->first();
+
+            if ($subjectOwner instanceof Sw6OidcUserProviderEntity && $subjectOwner->getUserId() !== $userId) {
+                throw new SubjectAlreadyLinkedException(sprintf('This identity is already linked to another %s account.', $userType), $exception);
+            }
+
             $binding = $this->getBinding($userType, $userId, $context);
 
             if (
@@ -137,7 +146,6 @@ class UserProviderBindingService
             }
         }
     }
-
 
     public function unbind(string $userType, string $userId, Context $context): void
     {

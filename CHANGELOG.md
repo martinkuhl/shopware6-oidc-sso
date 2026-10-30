@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deleting a passkey on *My account > Passkeys* logs the customer out only if it ended this very session (R8-L13).
 - Redis failures in long-running workers no longer cost the read timeout on every call (R8-L19); the session-registry cleanup runs in batches (R8-L20).
 
+- **A missing groups claim no longer strips admin roles** (R8-M3): when the IdP sends no groups claim (or Entra ID moves it out of the token), role sync and superadmin revocation are skipped.
+- **An unknown locale claim no longer resets the admin's language** (R8-M4): `de` and `de_DE` resolve to `de-DE`; nothing matching changes nothing. Salutation sync has no fallback either.
+- Avatar import replaces only the media it created and refuses images over 4096 px per side (R8-L6); `email_domain` access rules need a verified email and compare IDN domains in punycode (R8-L7); country claims resolve to active countries only (R8-L9); deactivated customers are refused before anything is synced (R8-L10); import errors of same-named providers are kept apart (R8-L11); a lost identity race reports "already linked" (R8-L12).
+
 ### Added (code review, revision 8)
 
 - **`auth_time` is requested as an essential claim** for re-authentication when the IdP advertises `claims_parameter_supported` (new read-only provider field, set by discovery). A re-authentication the IdP doesn't confirm shows its own message and no longer counts against the callback rate limit (R8-L32).

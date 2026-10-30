@@ -32,6 +32,12 @@ final readonly class MappedProfile
         public ?AddressProfile $shippingAddress = null,
         /** @var string[] */
         public array $groups = [],
+        /**
+         * Whether the IdP sent the groups claim at all. Missing (not sent,
+         * or Entra ID's group overage via `_claim_names`) is not "in no
+         * groups": group-driven sync must leave the account alone (R8-M3).
+         */
+        public bool $groupsClaimPresent = true,
     ) {
     }
 
@@ -56,6 +62,7 @@ final readonly class MappedProfile
             $this->billingAddress?->truncatedToFieldLimits(),
             $this->shippingAddress?->truncatedToFieldLimits(),
             $this->groups,
+            $this->groupsClaimPresent,
         );
     }
 

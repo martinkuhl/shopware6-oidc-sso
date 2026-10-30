@@ -2,15 +2,12 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Provisioning;
 
-use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
 use MartinKuhl\Sw6Oidc\Event\AdminAfterCreateEvent;
 use MartinKuhl\Sw6Oidc\Event\AdminBeforeCreateEvent;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\AdminProvisioningDeniedException;
-use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\ProviderMismatchException;
-use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\SubjectAlreadyLinkedException;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Content\Media\MediaCollection;
 use Shopware\Core\Content\Media\MediaService;
@@ -21,6 +18,8 @@ use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenContainerEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\PrefixFilter;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Sorting\FieldSorting;
 use Shopware\Core\Framework\Uuid\Uuid;
 use Shopware\Core\System\Locale\LocaleCollection;
 use Shopware\Core\System\User\UserCollection;
@@ -42,6 +41,9 @@ class AdminProvisioningService
     /** user.customFields key: sha256 of the picture URL last imported (M19). */
     public const AVATAR_URL_HASH_FIELD = 'sw6oidc_avatar_url_hash';
 
+    /** The media id of the avatar the plugin imported: only that one is ever replaced (R8-L6). */
+    public const AVATAR_MEDIA_ID_FIELD = 'sw6oidc_avatar_media_id';
+
     /**
      * @param EntityRepository<EntityCollection<Entity>> $aclUserRoleRepository
      * @param EntityRepository<LocaleCollection> $localeRepository
@@ -53,7 +55,6 @@ class AdminProvisioningService
         private readonly EntityRepository $localeRepository,
         private readonly EntityRepository $mediaRepository,
         private readonly GroupMappingResolver $groupMappingResolver,
-        private readonly UserProviderBindingService $bindingService,
         private readonly IdentityResolver $identityResolver,
         private readonly MediaService $mediaService,
         private readonly AvatarFetcher $avatarFetcher,
@@ -61,8 +62,8 @@ class AdminProvisioningService
         private readonly LoggerInterface $logger,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly EntityRepository $aclUserRoleRepository,
-        private readonly Connection $connection,
         private readonly AdminRoleStore $roleStore,
+        private readonly JitAccountCreator $jitAccountCreator,
     ) {
     }
 
@@ -120,29 +121,21 @@ class AdminProvisioningService
             }
         }
 
-        try {
-            // Create and bind together: a concurrent first login of the same
-            // subject must not leave an unbound duplicate behind (R3-M12).
-            $userId = $this->connection->transactional(function () use ($provider, $profile, $aclRoleIds, $mappedRoleIds, $isSuperadmin, $identity, $context): string {
+        $result = $this->jitAccountCreator->createAndBind(
+            Sw6OidcUserProviderEntity::USER_TYPE_ADMIN,
+            $identity,
+            $context,
+            function () use ($provider, $profile, $aclRoleIds, $mappedRoleIds, $isSuperadmin, $context): string {
                 $userId = $this->create($provider, $profile, $aclRoleIds, $isSuperadmin, $context);
                 $this->roleStore->rememberManaged($userId, $mappedRoleIds, $provider->getId());
-                $this->bindingService->bind(Sw6OidcUserProviderEntity::USER_TYPE_ADMIN, $userId, $identity, $context);
 
                 return $userId;
-            });
-        } catch (UniqueConstraintViolationException | SubjectAlreadyLinkedException | ProviderMismatchException $exception) {
-            $winnerId = $this->bindingService->findUserIdBySubject(Sw6OidcUserProviderEntity::USER_TYPE_ADMIN, $identity, $context);
+            },
+        );
+        $userId = $result['id'];
 
-            if ($winnerId === null) {
-                throw $exception;
-            }
-
-            $this->logger->info('sw6oidc: concurrent first login; using the account the other login created.', [
-                'providerId' => $provider->getId(),
-                'userId' => $winnerId,
-            ]);
-
-            return $this->existingAdmin($winnerId, null, $context);
+        if (!$result['created']) {
+            return $this->existingAdmin($userId, null, $context);
         }
 
         // Outside the transaction: the media file can't be rolled back.
@@ -178,7 +171,18 @@ class AdminProvisioningService
     private function syncExisting(Sw6OidcProviderEntity $provider, UserEntity $existing, MappedProfile $profile, Context $context): UserEntity
     {
         if ($provider->isSyncAdminRoleOnSso()) {
-            $this->syncRole($provider, $existing, $profile->groups, $context);
+            if ($profile->groupsClaimPresent) {
+                $this->syncRole($provider, $existing, $profile->groups, $context);
+            } else {
+                // No claim is not "in no groups": stripping every managed
+                // role (or superadmin) on a missing claim would lock admins
+                // out on an IdP hiccup or group overage (R8-M3).
+                $this->logger->notice('sw6oidc: admin role sync skipped, the IdP sent no groups claim.', [
+                    'providerId' => $provider->getId(),
+                    'userId' => $existing->getId(),
+                    'groupAttribute' => $provider->getGroupAttribute(),
+                ]);
+            }
         }
 
         if ($provider->isSyncAdminProfileOnSso()) {
@@ -212,7 +216,7 @@ class AdminProvisioningService
             'localeId' => $this->resolveLocaleId($profile->locale, $context),
             'username' => $this->resolveUniqueUsername($profile, $context),
             // Never the email address itself as a name (L9).
-            'firstName' => $profile->firstName ?? (trim(explode('@', $profile->email)[0]) ?: '-'),
+            'firstName' => ProfileDiff::fallbackFirstName($profile),
             'lastName' => $profile->lastName ?? '-',
             'email' => $profile->email,
             'password' => bin2hex(random_bytes(32)),
@@ -410,8 +414,12 @@ class AdminProvisioningService
             $payload['lastName'] = $profile->lastName;
         }
 
-        if ($profile->locale !== null) {
-            $payload['localeId'] = $this->resolveLocaleId($profile->locale, $context);
+        // Only a claim that names a real locale: the create fallback (en-GB)
+        // here would reset the admin's own choice on every login (R8-M4).
+        $localeId = $profile->locale !== null ? $this->findLocaleId($profile->locale, $context) : null;
+
+        if ($localeId !== null) {
+            $payload['localeId'] = $localeId;
         }
 
         $timeZone = $this->resolveTimeZone($profile->zoneinfo);
@@ -426,13 +434,7 @@ class AdminProvisioningService
         }
 
         // Most logins change nothing: no write, so no user.written events (R3-L29).
-        $current = $existing->getVars();
-
-        foreach (['firstName', 'lastName', 'localeId', 'timeZone'] as $field) {
-            if (\array_key_exists($field, $payload) && \array_key_exists($field, $current) && $payload[$field] === $current[$field]) {
-                unset($payload[$field]);
-            }
-        }
+        $payload = ProfileDiff::withoutUnchanged($payload, array_intersect_key($existing->getVars(), array_flip(['firstName', 'lastName', 'localeId', 'timeZone'])));
 
         if (\count($payload) > 1) {
             $this->userRepository->update([$payload], $context);
@@ -477,6 +479,12 @@ class AdminProvisioningService
             return [];
         }
 
+        // An avatar chosen by hand (or shared media) is never overwritten:
+        // only the one this plugin imported, else a new media entity.
+        $ownAvatarId = $existingAvatarId !== null && ($existing?->getCustomFields()[self::AVATAR_MEDIA_ID_FIELD] ?? null) === $existingAvatarId
+            ? $existingAvatarId
+            : null;
+
         try {
             $mediaFile = $this->avatarFetcher->fetch($pictureUrl, $tempFile);
 
@@ -485,7 +493,7 @@ class AdminProvisioningService
                 'sw6oidc-avatar-' . $userId,
                 $context,
                 'user',
-                $existingAvatarId,
+                $ownAvatarId,
                 false,
             );
 
@@ -499,7 +507,7 @@ class AdminProvisioningService
                 'fileSize' => $mediaFile->getFileSize(),
             ]);
 
-            return ['avatarId' => $avatarId, 'customFields' => [self::AVATAR_URL_HASH_FIELD => $urlHash]];
+            return ['avatarId' => $avatarId, 'customFields' => [self::AVATAR_URL_HASH_FIELD => $urlHash, self::AVATAR_MEDIA_ID_FIELD => $avatarId]];
         } catch (\Throwable $e) {
             $this->logger->warning('sw6oidc: failed to import Administration user avatar from picture claim.', [
                 'userId' => $userId,
@@ -548,18 +556,40 @@ class AdminProvisioningService
      * match; falls back to the previous hardcoded "en-GB"-or-first-available
      * behavior when the claim is absent or doesn't match any known locale.
      */
+    /**
+     * The locale a claim names: `de-DE`, also written `de_DE` or `DE-de`, or
+     * a bare language (`de`, as Keycloak and Google send it), which picks
+     * `de-DE` if it exists, else the first `de-*` locale. Null if none fits.
+     */
+    private function findLocaleId(string $localeClaim, Context $context): ?string
+    {
+        $normalized = str_replace('_', '-', trim($localeClaim));
+
+        if (preg_match('/^([a-z]{2,3})(?:-([a-z]{2,4}))?$/i', $normalized, $parts) !== 1) {
+            return null;
+        }
+
+        $language = strtolower($parts[1]);
+        $region = $parts[2] ?? null;
+        $code = $language . '-' . ($region === null ? strtoupper($language) : (\strlen($region) === 2 ? strtoupper($region) : ucfirst(strtolower($region))));
+        $id = $this->localeRepository->searchIds((new Criteria())->addFilter(new EqualsFilter('code', $code))->setLimit(1), $context)->firstId();
+
+        if ($id !== null || $region !== null) {
+            return $id;
+        }
+
+        $criteria = (new Criteria())->addFilter(new PrefixFilter('code', $language . '-'))->setLimit(1);
+        $criteria->addSorting(new FieldSorting('code'));
+
+        return $this->localeRepository->searchIds($criteria, $context)->firstId();
+    }
+
     private function resolveLocaleId(?string $localeClaim, Context $context): string
     {
-        if ($localeClaim !== null) {
-            $criteria = new Criteria();
-            $criteria->addFilter(new EqualsFilter('code', $localeClaim));
-            $criteria->setLimit(1);
+        $id = $localeClaim !== null ? $this->findLocaleId($localeClaim, $context) : null;
 
-            $id = $this->localeRepository->searchIds($criteria, $context)->firstId();
-
-            if ($id !== null) {
-                return $id;
-            }
+        if ($id !== null) {
+            return $id;
         }
 
         $criteria = new Criteria();

@@ -51,11 +51,11 @@ class AttributeMapper
 
     /**
      * @param array<string, mixed> $flattenedClaims
-     * @param string[]             $groups
+     * @param string[]|null        $groups null: the IdP sent no groups claim (MappedProfile::$groupsClaimPresent)
      *
      * @throws MissingEmailClaimException
      */
-    public function map(Sw6OidcProviderEntity $provider, array $flattenedClaims, array $groups, Context $context): MappedProfile
+    public function map(Sw6OidcProviderEntity $provider, array $flattenedClaims, ?array $groups, Context $context): MappedProfile
     {
         $mappings = $this->loadMappings($provider->getId(), $context);
 
@@ -121,7 +121,8 @@ class AttributeMapper
             picture: $read(Attr::TYPE_PICTURE),
             billingAddress: $billingAddress->isEmpty() ? null : $billingAddress,
             shippingAddress: $shippingAddress->isEmpty() ? null : $shippingAddress,
-            groups: $groups,
+            groups: $groups ?? [],
+            groupsClaimPresent: $groups !== null,
         );
 
         $event = new AttributeMappingCompletedEvent($provider, $flattenedClaims, $profile, $context);

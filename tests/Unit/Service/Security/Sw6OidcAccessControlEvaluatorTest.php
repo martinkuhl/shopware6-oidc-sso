@@ -107,6 +107,24 @@ final class Sw6OidcAccessControlEvaluatorTest extends TestCase
         self::assertSame($expected, $this->evaluator([])->matches($this->rule($claimKey, $operator, $value), self::CLAIMS));
     }
 
+    /**
+     * R8-L7: an unverified address says nothing about its domain, and IDN
+     * domains compare in punycode.
+     */
+    public function testEmailDomainNeedsAVerifiedEmailAndComparesPunycode(): void
+    {
+        $evaluator = $this->evaluator([]);
+        $rule = $this->rule('email', 'email_domain', 'corp.example');
+
+        self::assertFalse($evaluator->matches($rule, ['email' => 'x@corp.example', 'email_verified' => false]));
+        self::assertFalse($evaluator->matches($rule, ['email' => 'x@corp.example']));
+        self::assertTrue($evaluator->matches($rule, ['email' => 'x@corp.example', 'email_verified' => 'true']));
+
+        $idn = $this->rule('email', 'email_domain', 'müller.example');
+        self::assertTrue($evaluator->matches($idn, ['email' => 'anna@müller.example', 'email_verified' => true]));
+        self::assertTrue($evaluator->matches($idn, ['email' => 'anna@xn--mller-kva.example', 'email_verified' => true]));
+    }
+
     public function testNoRulesAllowsEveryone(): void
     {
         $this->evaluator([])->evaluate('provider', self::CLAIMS, Context::createDefaultContext());

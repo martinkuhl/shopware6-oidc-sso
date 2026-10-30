@@ -4,14 +4,11 @@ namespace MartinKuhl\Sw6Oidc\Service\Provisioning;
 
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
 use MartinKuhl\Sw6Oidc\Event\CustomerAfterCreateEvent;
 use MartinKuhl\Sw6Oidc\Event\CustomerBeforeCreateEvent;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\CustomerProvisioningDeniedException;
-use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\ProviderMismatchException;
-use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\SubjectAlreadyLinkedException;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Checkout\Customer\CustomerCollection;
 use Shopware\Core\Checkout\Customer\CustomerEntity;
@@ -58,13 +55,13 @@ class CustomerProvisioningService
         private readonly EntityRepository $salutationRepository,
         private readonly CountryResolver $countryResolver,
         private readonly GroupMappingResolver $groupMappingResolver,
-        private readonly UserProviderBindingService $bindingService,
         private readonly IdentityResolver $identityResolver,
         private readonly NumberRangeValueGeneratorInterface $numberRangeValueGenerator,
         private readonly LoggerInterface $logger,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly Connection $connection,
         private readonly SystemConfigService $systemConfigService,
+        private readonly JitAccountCreator $jitAccountCreator,
     ) {
     }
 
@@ -98,6 +95,13 @@ class CustomerProvisioningService
 
         if ($customerId !== null) {
             $existing = $this->existingCustomer($customerId, $emailMatch, $salesChannelContext);
+
+            // A deactivated account can't log in: nothing is written to it,
+            // and the refusal is an account policy, not a failed login (R8-L10).
+            if (!$existing->getActive()) {
+                throw new CustomerProvisioningDeniedException('The customer account of this identity is deactivated.');
+            }
+
             $this->syncExisting($provider, $existing, $profile, $salesChannelContext);
 
             return $existing;
@@ -110,28 +114,18 @@ class CustomerProvisioningService
         // Shopware's own registration rule for the bound sales channel (R3-M13).
         $boundSalesChannelId = $this->boundSalesChannelId($profile->email, $salesChannelId);
 
-        try {
-            // Create and bind together: a concurrent first login of the same
-            // subject must not leave an unbound duplicate behind (R3-M12).
-            $customerId = $this->connection->transactional(function () use ($provider, $profile, $salesChannelContext, $boundSalesChannelId, $identity, $context): string {
-                $customerId = $this->create($provider, $profile, $salesChannelContext, $boundSalesChannelId);
-                $this->bindingService->bind(Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER, $customerId, $identity, $context, $boundSalesChannelId);
+        $result = $this->jitAccountCreator->createAndBind(
+            Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER,
+            $identity,
+            $context,
+            fn (): string => $this->create($provider, $profile, $salesChannelContext, $boundSalesChannelId),
+            $boundSalesChannelId,
+            $salesChannelId,
+        );
+        $customerId = $result['id'];
 
-                return $customerId;
-            });
-        } catch (UniqueConstraintViolationException | SubjectAlreadyLinkedException | ProviderMismatchException $exception) {
-            $winnerId = $this->bindingService->findUserIdBySubject(Sw6OidcUserProviderEntity::USER_TYPE_CUSTOMER, $identity, $context, $salesChannelId);
-
-            if ($winnerId === null) {
-                throw $exception;
-            }
-
-            $this->logger->info('sw6oidc: concurrent first login; using the account the other login created.', [
-                'providerId' => $provider->getId(),
-                'customerId' => $winnerId,
-            ]);
-
-            return $this->existingCustomer($winnerId, null, $salesChannelContext);
+        if (!$result['created']) {
+            return $this->existingCustomer($customerId, null, $salesChannelContext);
         }
 
         $created = $this->customerRepository->search(new Criteria([$customerId]), $context)->first();
@@ -240,7 +234,7 @@ class CustomerProvisioningService
         // quirk rather than a real finding; following its suggested fix
         // (plain ->) would throw on a null $billing instead of falling
         // through to the '-' default.
-        $firstName = $this->fallbackFirstName($profile);
+        $firstName = ProfileDiff::fallbackFirstName($profile);
         $lastName = $profile->lastName ?? self::PLACEHOLDER;
 
         $addressPayload = [
@@ -360,7 +354,8 @@ class CustomerProvisioningService
             }
 
             if ($profile->salutationTechnicalName !== null) {
-                $salutationId = $this->resolveSalutationId($profile->salutationTechnicalName, $context);
+                // No not_specified fallback on sync: it would overwrite the customer's own choice (R8-M4).
+                $salutationId = $this->resolveSalutationId($profile->salutationTechnicalName, $context, withFallback: false);
 
                 if ($salutationId !== null) {
                     $payload['salutationId'] = $salutationId;
@@ -407,48 +402,11 @@ class CustomerProvisioningService
 
         // Most logins change nothing: no write, so no *.written events,
         // indexers or subscribers run for it (R3-L29).
-        $payload = $this->withoutUnchanged($payload, $existing->getVars());
+        $payload = ProfileDiff::withoutUnchanged($payload, $existing->getVars());
 
         if (\count($payload) > 1) {
             $this->customerRepository->update([$payload], $context);
         }
-    }
-
-    /**
-     * Drops the fields of a write payload that already hold that value.
-     *
-     * @param array<string, mixed> $payload `id` plus fields
-     * @param array<string, mixed> $current field => stored value (missing = unknown, kept)
-     *
-     * @return array<string, mixed>
-     */
-    private function withoutUnchanged(array $payload, array $current): array
-    {
-        foreach ($payload as $field => $value) {
-            if ($field === 'id' || !\array_key_exists($field, $current)) {
-                continue;
-            }
-
-            $stored = $current[$field];
-            $same = match (true) {
-                // Birthdays: a date, whatever the time part.
-                $value instanceof \DateTimeInterface, $stored instanceof \DateTimeInterface => $this->dateOf($value) === $this->dateOf($stored),
-                // Ids: hex in any case.
-                str_ends_with($field, 'Id') => \is_string($value) && \is_string($stored) && strtolower($value) === strtolower($stored),
-                default => $value === $stored,
-            };
-
-            if ($same) {
-                unset($payload[$field]);
-            }
-        }
-
-        return $payload;
-    }
-
-    private function dateOf(mixed $value): mixed
-    {
-        return $value instanceof \DateTimeInterface ? $value->format('Y-m-d') : $value;
     }
 
     /**
@@ -474,7 +432,7 @@ class CustomerProvisioningService
         $changed = [];
 
         foreach ($addressPayloads as $address) {
-            $address = $this->withoutUnchanged($address, $current[strtolower((string) $address['id'])] ?? []);
+            $address = ProfileDiff::withoutUnchanged($address, $current[strtolower((string) $address['id'])] ?? []);
 
             if (\count($address) > 1) {
                 $changed[] = $address;
@@ -532,20 +490,6 @@ class CustomerProvisioningService
         return \count($addressPayload) > 1 ? $addressPayload : null;
     }
 
-    /**
-     * Never the email address as a name (L9): it would end up on invoices
-     * and in mails. The local part is a readable, editable stand-in.
-     */
-    private function fallbackFirstName(MappedProfile $profile): string
-    {
-        if ($profile->firstName !== null) {
-            return $profile->firstName;
-        }
-
-        $localPart = trim(explode('@', $profile->email)[0]);
-
-        return $localPart !== '' ? mb_substr($localPart, 0, 255) : self::PLACEHOLDER;
-    }
 
     /**
      * Strict Y-m-d (OIDC `birthdate`), between 1900 and today. Anything else
@@ -575,7 +519,8 @@ class CustomerProvisioningService
         return $date;
     }
 
-    private function resolveSalutationId(?string $technicalName, Context $context): ?string
+
+    private function resolveSalutationId(?string $technicalName, Context $context, bool $withFallback = true): ?string
     {
         $criteria = new Criteria();
         $criteria->setLimit(1);
@@ -583,7 +528,7 @@ class CustomerProvisioningService
 
         $id = $this->salutationRepository->searchIds($criteria, $context)->firstId();
 
-        if ($id !== null) {
+        if ($id !== null || !$withFallback) {
             return $id;
         }
 

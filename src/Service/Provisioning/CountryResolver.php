@@ -78,6 +78,10 @@ class CountryResolver implements ResetInterface
         return $this->stateMemoized[$key] = $this->lookupState(trim($stateClaim), $countryId, $context);
     }
 
+    /**
+     * Active countries only: an address in a deactivated country is refused
+     * at checkout anyway (R8-L9), so it is better left unset.
+     */
     private function lookup(string $countryClaim, Context $context): ?string
     {
         $length = mb_strlen($countryClaim);
@@ -86,7 +90,7 @@ class CountryResolver implements ResetInterface
             $isoField = $length === 2 ? 'iso' : 'iso3';
             $criteria = new Criteria();
             $criteria->setLimit(1);
-            $criteria->addFilter(new EqualsFilter($isoField, mb_strtoupper($countryClaim)));
+            $criteria->addFilter(new EqualsFilter($isoField, mb_strtoupper($countryClaim)), new EqualsFilter('active', true));
 
             $id = $this->countryRepository->searchIds($criteria, $context)->firstId();
 
@@ -97,7 +101,7 @@ class CountryResolver implements ResetInterface
 
         $nameCriteria = new Criteria();
         $nameCriteria->setLimit(1);
-        $nameCriteria->addFilter(new EqualsFilter('translations.name', $countryClaim));
+        $nameCriteria->addFilter(new EqualsFilter('translations.name', $countryClaim), new EqualsFilter('active', true));
 
         return $this->countryRepository->searchIds($nameCriteria, $context)->firstId();
     }

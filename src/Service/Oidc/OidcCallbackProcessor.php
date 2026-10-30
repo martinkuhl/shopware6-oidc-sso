@@ -168,12 +168,16 @@ class OidcCallbackProcessor
         // Extracted from the *unflattened* claims: flattening a Zitadel-style
         // nested role object would turn its group-name keys into dotted leaf
         // paths and lose them (see ClaimsNormalizer::normalizeGroups()).
-        $rawGroupsClaim = $mergedClaims[$provider->getGroupAttribute()] ?? null;
-        $groups = $this->claimsNormalizer->decodeGroups(
-            $this->claimsNormalizer->normalizeGroups($rawGroupsClaim),
-            $provider->getGroupAttribute(),
+        // A claim the IdP didn't send (or sent elsewhere: Entra ID's group
+        // overage lists it in `_claim_names`) is null, not "no groups" (R8-M3).
+        $groupAttribute = $provider->getGroupAttribute();
+        $groupsClaimPresent = \array_key_exists($groupAttribute, $mergedClaims)
+            && !\is_array($mergedClaims['_claim_names'][$groupAttribute] ?? null) && !\is_string($mergedClaims['_claim_names'][$groupAttribute] ?? null);
+        $groups = $groupsClaimPresent ? $this->claimsNormalizer->decodeGroups(
+            $this->claimsNormalizer->normalizeGroups($mergedClaims[$groupAttribute]),
+            $groupAttribute,
             $provider->getBase64Claims(),
-        );
+        ) : null;
 
         $flattenedClaims = $this->claimsNormalizer->flatten($mergedClaims, $provider->getBase64Claims());
 
@@ -184,7 +188,7 @@ class OidcCallbackProcessor
 
         $this->logger->debug('sw6oidc: claims mapped to profile.', [
             'providerId' => $provider->getId(),
-            'groupCount' => \count($groups),
+            'groupCount' => $groups === null ? null : \count($groups),
         ]);
 
         return new OidcCallbackResult($provider, $flow, $profile, $tokens, $idTokenClaims, $mergedClaims);

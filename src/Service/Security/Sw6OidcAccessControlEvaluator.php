@@ -7,6 +7,7 @@ use MartinKuhl\Sw6Oidc\Core\Content\AccessControlRule\Sw6OidcAccessControlRuleDe
 use MartinKuhl\Sw6Oidc\Core\Content\AccessControlRule\Sw6OidcAccessControlRuleEntity;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\AccessControlDeniedException;
 use Psr\Log\LoggerInterface;
+use Shopware\Core\Checkout\Customer\Service\EmailIdnConverter;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
@@ -97,7 +98,10 @@ class Sw6OidcAccessControlEvaluator
             Sw6OidcAccessControlRuleDefinition::OPERATOR_NOT_CONTAINS => $values !== [] && $expected !== null && $expected !== ''
                 && !$this->containsClaim($scalar, $members, $expected),
             Sw6OidcAccessControlRuleDefinition::OPERATOR_ENDS_WITH => $expected !== '' && $this->anyValue($values, $expected, str_ends_with(...)),
-            Sw6OidcAccessControlRuleDefinition::OPERATOR_EMAIL_DOMAIN => $this->anyValue($values, $expected, $this->hasEmailDomain(...)),
+            // An unverified address proves nothing about the domain: for the
+            // `email` claim the IdP must have verified it (R8-L7).
+            Sw6OidcAccessControlRuleDefinition::OPERATOR_EMAIL_DOMAIN => ($key !== 'email' || $this->isVerifiedEmail($flattenedClaims))
+                && $this->anyValue($values, $expected, $this->hasEmailDomain(...)),
             default => $this->unknownOperator($rule),
         };
     }
@@ -143,16 +147,37 @@ class Sw6OidcAccessControlEvaluator
         return \in_array($expected, $tokens, true);
     }
 
+    /**
+     * Compared in punycode, like core stores emails: `müller.de` and
+     * `xn--mller-kva.de` are the same domain, and an IDN address passes the
+     * email check only once encoded (R8-L7).
+     */
     private function hasEmailDomain(string $value, string $expectedDomain): bool
     {
-        $expectedDomain = ltrim($expectedDomain, '@');
+        $expectedDomain = $this->asciiDomain(ltrim($expectedDomain, '@'));
+        $value = EmailIdnConverter::encode($value);
         $at = strrpos($value, '@');
 
         if ($expectedDomain === '' || $at === false || filter_var($value, \FILTER_VALIDATE_EMAIL) === false) {
             return false;
         }
 
-        return substr($value, $at + 1) === $expectedDomain;
+        return mb_strtolower(substr($value, $at + 1)) === $expectedDomain;
+    }
+
+    /**
+     * @param array<string, mixed> $flattenedClaims
+     */
+    private function isVerifiedEmail(array $flattenedClaims): bool
+    {
+        return $this->booleanish($this->normalize($flattenedClaims['email_verified'] ?? null) ?? '') === true;
+    }
+
+    private function asciiDomain(string $domain): string
+    {
+        $ascii = \function_exists('idn_to_ascii') ? idn_to_ascii($domain, \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46) : false;
+
+        return mb_strtolower($ascii === false ? $domain : $ascii);
     }
     /**
      * @param array<string, mixed> $flattenedClaims

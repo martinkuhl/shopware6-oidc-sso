@@ -37,6 +37,9 @@ use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
 #[CoversClass(OidcCallbackResult::class)]
 final class OidcCallbackProcessorIdentityTest extends TestCase
 {
+    /** @var list<string>|null groups the mapper received */
+    private ?array $mappedGroups = [];
+
     public function testFlowStartedForTheStorefrontIsRejectedAtTheAdminCallback(): void
     {
         $this->expectException(InvalidStateException::class);
@@ -82,6 +85,25 @@ final class OidcCallbackProcessorIdentityTest extends TestCase
 
         $customClaim = $this->process(idTokenClaims: ['sub' => 'a', 'email' => 'other@example.com', 'email_verified' => true]);
         self::assertFalse($customClaim->emailVerified());
+    }
+
+    /**
+     * R8-M3: a groups claim the IdP didn't send (or moved out of the token,
+     * Entra ID's group overage) is null for the mapper, not "no groups".
+     */
+    public function testAMissingGroupsClaimIsNotAnEmptyOne(): void
+    {
+        $this->process(idTokenClaims: ['sub' => 'a']);
+        self::assertNull($this->mappedGroups);
+
+        $this->process(idTokenClaims: ['sub' => 'a', 'groups' => ['x'], '_claim_names' => ['groups' => 'src1']]);
+        self::assertNull($this->mappedGroups, 'group overage');
+
+        $this->process(idTokenClaims: ['sub' => 'a', 'groups' => []]);
+        self::assertSame([], $this->mappedGroups);
+
+        $this->process(idTokenClaims: ['sub' => 'a', 'groups' => ['Admins']]);
+        self::assertSame(['admins'], array_map(strtolower(...), (array) $this->mappedGroups));
     }
 
     public function testMissingSubjectIsRejected(): void
@@ -130,7 +152,11 @@ final class OidcCallbackProcessorIdentityTest extends TestCase
         ));
 
         $mapper = $this->createStub(AttributeMapper::class);
-        $mapper->method('map')->willReturn(new MappedProfile('a@example.com'));
+        $mapper->method('map')->willReturnCallback(function (Sw6OidcProviderEntity $provider, array $claims, ?array $groups): MappedProfile {
+            $this->mappedGroups = $groups;
+
+            return new MappedProfile('a@example.com');
+        });
 
         $security = new OidcSecurityHelper(new InMemoryAtomicCache(), new BrowserBinding(new RequestStack()));
         $state = $security->beginAuthorizationRequest('provider-1', $flowLoginType, '', 'S256')['state'];

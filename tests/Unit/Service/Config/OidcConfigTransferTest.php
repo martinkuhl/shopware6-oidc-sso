@@ -118,6 +118,21 @@ final class OidcConfigTransferTest extends TestCase
         self::assertSame($this->storedSecret, $this->exportOne(OidcConfigTransfer::SECRET_ENCRYPTED)['clientSecret']);
     }
 
+    /**
+     * R8-L11: entries with the same name keep separate failures, and a
+     * non-scalar appName fails that entry only.
+     */
+    public function testFailuresOfSameNamedOrMalformedEntriesAreKeptApart(): void
+    {
+        $result = $this->transfer()->import(['version' => 1, 'providers' => [
+            ['appName' => 'twin'],
+            ['appName' => 'twin'],
+            ['appName' => ['not' => 'a string']],
+        ]], false, false, false, Context::createDefaultContext());
+
+        self::assertSame(['twin', 'twin (#1)', '#2'], array_keys($result->failed));
+    }
+
     public function testRejectsUnknownFormat(): void
     {
         $this->expectException(\InvalidArgumentException::class);

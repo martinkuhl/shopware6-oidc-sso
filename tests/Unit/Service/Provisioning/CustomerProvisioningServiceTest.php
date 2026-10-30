@@ -19,6 +19,7 @@ use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\ProviderMismatchException;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\ExternalIdentity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\GroupMappingResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\IdentityResolver;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\JitAccountCreator;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\MappedProfile;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -193,6 +194,26 @@ final class CustomerProvisioningServiceTest extends TestCase
         $this->expectException(ProviderMismatchException::class);
 
         $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com'), $this->identity(), $this->salesChannelContext());
+    }
+
+    /**
+     * R8-L10: a deactivated customer is refused before anything is synced
+     * into the account, as an account policy (not a failed login).
+     */
+    public function testADeactivatedCustomerIsRefusedBeforeAnySync(): void
+    {
+        $provider = $this->provider();
+        $provider->setSyncCustomerProfileOnSso(true);
+        $existing = $this->customer(Uuid::randomHex(), 'user@example.com');
+        $existing->setActive(false);
+        $this->existingCustomers = [$existing];
+        $this->boundProviderId = $provider->getId();
+
+        $this->customerRepository->expects(self::never())->method('update');
+
+        $this->expectException(CustomerProvisioningDeniedException::class);
+
+        $this->createService()->findOrCreateCustomer($provider, new MappedProfile('user@example.com', firstName: 'New'), $this->identity(), $this->salesChannelContext());
     }
 
     public function testExistingCustomerBoundToSameProviderIsReturnedWithoutRebinding(): void
@@ -916,13 +937,13 @@ final class CustomerProvisioningServiceTest extends TestCase
             $this->salutationRepository($salutationsAvailable),
             $this->countryResolver(),
             $groupMappingResolver ?? $this->groupMappingResolver,
-            $bindingService,
             new IdentityResolver($bindingService, new NullLogger()),
             $this->numberRangeValueGenerator(),
             new NullLogger(),
             $this->eventDispatcher ??= new EventDispatcher(),
-            $this->connection(),
+            $connection = $this->connection(),
             $this->systemConfig(),
+            new JitAccountCreator($connection, $bindingService, new NullLogger()),
         );
     }
 

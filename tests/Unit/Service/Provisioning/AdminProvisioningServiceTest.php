@@ -19,10 +19,12 @@ use MartinKuhl\Sw6Oidc\Service\Provisioning\Exception\ProviderMismatchException;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\ExternalIdentity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\GroupMappingResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\IdentityResolver;
+use MartinKuhl\Sw6Oidc\Service\Provisioning\JitAccountCreator;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\MappedProfile;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\TimeZoneValidator;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -36,6 +38,7 @@ use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenContainerEve
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\PrefixFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\IdSearchResult;
 use Shopware\Core\Framework\Event\NestedEventCollection;
 use Shopware\Core\Framework\Uuid\Uuid;
@@ -352,6 +355,30 @@ final class AdminProvisioningServiceTest extends TestCase
         self::assertSame([], $this->userUpdates, 'the kept role needs no write');
     }
 
+    /**
+     * R8-M3: an IdP that sent no groups claim (outage, dropped scope, Entra
+     * group overage) must not strip the roles role sync granted earlier.
+     */
+    public function testSyncRoleLeavesRolesAloneWithoutAGroupsClaim(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $managedRole = Uuid::randomHex();
+        $this->existingUser->setAclRoles(new AclRoleCollection([$this->role($managedRole)]));
+        $this->managedRoles = [$managedRole];
+
+        $provider = $this->provider();
+        $this->bindTo($provider);
+        $provider->setSyncAdminRoleOnSso(true);
+        $provider->setRevokeSuperadminOnSso(true);
+
+        $this->groupMappingResolver->expects(self::never())->method('resolveAclRoleIds');
+
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', groupsClaimPresent: false), $this->context);
+
+        self::assertSame([], $this->roleDeletes);
+        self::assertSame([], $this->userUpdates);
+    }
+
     public function testSyncRoleAddsEveryMappedRoleAndRemembersIt(): void
     {
         $this->existingUser = $this->user('jane');
@@ -513,6 +540,38 @@ final class AdminProvisioningServiceTest extends TestCase
         ]], $this->userUpdates);
     }
 
+    /**
+     * R8-M4: Keycloak and Google send `de`, others `de_DE`; an unknown locale
+     * must not reset the admin's own choice to en-GB on every login.
+     *
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function localeClaims(): iterable
+    {
+        yield 'language only' => ['de', true];
+        yield 'underscore' => ['de_DE', true];
+        yield 'odd case' => ['DE-de', true];
+        yield 'unknown' => ['xx', false];
+        yield 'garbage' => ['not a locale', false];
+    }
+
+    #[DataProvider('localeClaims')]
+    public function testSyncProfileNormalizesTheLocaleAndNeverFallsBack(string $claim, bool $matches): void
+    {
+        $this->existingUser = $this->user('jane');
+        $deLocaleId = Uuid::randomHex();
+        $this->localeIds['de-DE'] = $deLocaleId;
+        $this->localeIds['en-GB'] = Uuid::randomHex();
+
+        $provider = $this->provider();
+        $this->bindTo($provider);
+        $provider->setSyncAdminProfileOnSso(true);
+
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', locale: $claim), $this->context);
+
+        self::assertSame($matches ? [['id' => $this->existingUser->getId(), 'localeId' => $deLocaleId]] : [], $this->userUpdates);
+    }
+
     public function testSyncProfileSkipsInvalidTimeZoneAndWritesNothingWhenNothingIsMapped(): void
     {
         $this->existingUser = $this->user('jane');
@@ -527,11 +586,12 @@ final class AdminProvisioningServiceTest extends TestCase
         self::assertSame([], $this->userUpdates);
     }
 
-    public function testSyncProfileImportsAvatarReusingExistingMediaId(): void
+    public function testSyncProfileImportsAvatarReusingTheMediaItImportedBefore(): void
     {
         $existingAvatarId = Uuid::randomHex();
         $this->existingUser = $this->user('jane');
         $this->existingUser->setAvatarId($existingAvatarId);
+        $this->existingUser->setCustomFields([AdminProvisioningService::AVATAR_MEDIA_ID_FIELD => $existingAvatarId]);
 
         $provider = $this->provider();
 
@@ -545,9 +605,33 @@ final class AdminProvisioningServiceTest extends TestCase
         self::assertSame([[
             'id' => $this->existingUser->getId(),
             'avatarId' => $existingAvatarId,
-            'customFields' => [AdminProvisioningService::AVATAR_URL_HASH_FIELD => hash('sha256', 'https://idp.example.com/a.png')],
+            'customFields' => [
+                AdminProvisioningService::AVATAR_URL_HASH_FIELD => hash('sha256', 'https://idp.example.com/a.png'),
+                AdminProvisioningService::AVATAR_MEDIA_ID_FIELD => $existingAvatarId,
+            ],
         ]], $this->userUpdates);
         self::assertSame([['id' => $existingAvatarId, 'private' => false]], $this->mediaUpdates);
+    }
+
+    /**
+     * R8-L6: an avatar the admin chose (possibly shared media) is never
+     * overwritten; the import creates its own media.
+     */
+    public function testSyncProfileNeverOverwritesAnAvatarItDidNotImport(): void
+    {
+        $this->existingUser = $this->user('jane');
+        $this->existingUser->setAvatarId(Uuid::randomHex());
+        $newAvatarId = Uuid::randomHex();
+
+        $provider = $this->provider();
+        $this->bindTo($provider);
+        $provider->setSyncAdminProfileOnSso(true);
+
+        $this->expectAvatarImport('https://idp.example.com/a.png', null, $newAvatarId);
+
+        $this->findOrCreate($provider, new MappedProfile('jane@example.com', picture: 'https://idp.example.com/a.png'), $this->context);
+
+        self::assertSame($newAvatarId, $this->userUpdates[0]['avatarId'] ?? null);
     }
 
     public function testSyncProfileSkipsUnchangedAvatar(): void
@@ -856,7 +940,7 @@ final class AdminProvisioningServiceTest extends TestCase
         self::assertSame([[
             'id' => $userId,
             'avatarId' => $newAvatarId,
-            'customFields' => [AdminProvisioningService::AVATAR_URL_HASH_FIELD => hash('sha256', 'https://idp.example.com/a.png')],
+            'customFields' => [AdminProvisioningService::AVATAR_URL_HASH_FIELD => hash('sha256', 'https://idp.example.com/a.png'), AdminProvisioningService::AVATAR_MEDIA_ID_FIELD => $newAvatarId],
         ]], $this->userUpdates);
         self::assertSame([['id' => $newAvatarId, 'private' => false]], $this->mediaUpdates);
     }
@@ -895,7 +979,6 @@ final class AdminProvisioningServiceTest extends TestCase
             $this->localeRepository(),
             $this->mediaRepository(),
             $this->groupMappingResolver,
-            $bindingService,
             new IdentityResolver($bindingService, $this->createStub(LoggerInterface::class)),
             $this->mediaService,
             $this->avatarFetcher,
@@ -903,8 +986,8 @@ final class AdminProvisioningServiceTest extends TestCase
             $this->createStub(LoggerInterface::class),
             $this->eventDispatcher ??= new EventDispatcher(),
             $this->aclUserRoleRepository(),
-            $this->connection(),
             $this->roleStore(),
+            new JitAccountCreator($this->connection(), $bindingService, $this->createStub(LoggerInterface::class)),
         );
     }
 
@@ -1119,6 +1202,14 @@ final class AdminProvisioningServiceTest extends TestCase
         $repository = $this->createStub(EntityRepository::class);
         $repository->method('searchIds')->willReturnCallback(function (Criteria $criteria, Context $context): IdSearchResult {
             $code = $this->filterValue($criteria, 'code');
+
+            foreach ($criteria->getFilters() as $filter) {
+                if ($filter instanceof PrefixFilter) {
+                    $matches = array_filter($this->localeIds, static fn (string $c): bool => str_starts_with($c, (string) $filter->getValue()), \ARRAY_FILTER_USE_KEY);
+
+                    return $this->idSearchResult(array_slice(array_values($matches), 0, 1), $criteria, $context);
+                }
+            }
 
             if ($code === null) {
                 return $this->idSearchResult([$this->fallbackLocaleId], $criteria, $context);

@@ -131,7 +131,10 @@ class OidcConfigTransfer
 
         try {
             foreach ($data['providers'] as $index => $provider) {
-                $label = \is_array($provider) ? (string) ($provider['appName'] ?? $provider['id'] ?? '#' . $index) : '#' . $index;
+                // Built from scalars only: a hostile appName must not abort
+                // the run after earlier providers were committed (R8-L11).
+                $name = \is_array($provider) ? ($provider['appName'] ?? $provider['id'] ?? null) : null;
+                $label = \is_scalar($name) && (string) $name !== '' ? (string) $name : '#' . $index;
 
                 try {
                     if (!\is_array($provider)) {
@@ -140,7 +143,8 @@ class OidcConfigTransfer
 
                     $this->importProvider($provider, $overwrite, $skipUnresolved, $label, $result, $context);
                 } catch (\Throwable $exception) {
-                    $result->failed[$label] = $exception->getMessage();
+                    // Two entries may share a name: never overwrite an earlier failure.
+                    $result->failed[isset($result->failed[$label]) ? $label . ' (#' . $index . ')' : $label] = $exception->getMessage();
                 }
             }
         } finally {

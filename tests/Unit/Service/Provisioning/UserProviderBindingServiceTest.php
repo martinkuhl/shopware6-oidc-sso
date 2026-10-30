@@ -133,7 +133,30 @@ final class UserProviderBindingServiceTest extends TestCase
 
         (new UserProviderBindingService($repository))->bind(self::USER_TYPE, $userId, $this->identity($providerId), Context::createDefaultContext());
 
-        self::assertSame(2, $calls);
+        self::assertSame(3, $calls, 'subject lookup, subject re-read, account re-read');
+    }
+
+    /**
+     * R8-L12: losing the race for the *subject* to another account is
+     * "already linked to another account", not "your account is bound to a
+     * different identity".
+     */
+    public function testLosingTheSubjectRaceToAnotherAccountSaysSo(): void
+    {
+        $providerId = Uuid::randomHex();
+        $calls = 0;
+
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->method('search')->willReturnCallback(function (Criteria $criteria, Context $context) use (&$calls, $providerId): EntitySearchResult {
+            ++$calls;
+
+            return $this->searchResult($calls === 1 ? null : $this->binding(Uuid::randomHex(), $providerId, 'subject-1'), $criteria, $context);
+        });
+        $repository->method('create')->willThrowException($this->createStub(UniqueConstraintViolationException::class));
+
+        $this->expectException(SubjectAlreadyLinkedException::class);
+
+        (new UserProviderBindingService($repository))->bind(self::USER_TYPE, Uuid::randomHex(), $this->identity($providerId), Context::createDefaultContext());
     }
 
     public function testConcurrentBindOfADifferentIdentityIsRefused(): void

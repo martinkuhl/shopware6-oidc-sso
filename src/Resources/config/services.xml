@@ -228,13 +228,19 @@
             <argument type="service" id="salutation.repository" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\CountryResolver" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\GroupMappingResolver" />
-            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\IdentityResolver" />
             <argument type="service" id="Shopware\Core\System\NumberRange\ValueGenerator\NumberRangeValueGeneratorInterface" />
             <argument type="service" id="sw6oidc.logger" />
             <argument type="service" id="event_dispatcher" />
             <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument type="service" id="Shopware\Core\System\SystemConfig\SystemConfigService" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\JitAccountCreator" />
+        </service>
+
+        <service id="MartinKuhl\Sw6Oidc\Service\Provisioning\JitAccountCreator">
+            <argument type="service" id="Doctrine\DBAL\Connection" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService" />
+            <argument type="service" id="sw6oidc.logger" />
         </service>
 
         <service id="MartinKuhl\Sw6Oidc\Service\Provisioning\AdminProvisioningService">
@@ -242,7 +248,6 @@
             <argument type="service" id="locale.repository" />
             <argument type="service" id="media.repository" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\GroupMappingResolver" />
-            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\IdentityResolver" />
             <argument type="service" id="Shopware\Core\Content\Media\MediaService" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\AvatarFetcher" />
@@ -250,8 +255,8 @@
             <argument type="service" id="sw6oidc.logger" />
             <argument type="service" id="event_dispatcher" />
             <argument type="service" id="acl_user_role.repository" />
-            <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\AdminRoleStore" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\JitAccountCreator" />
         </service>
 
         <!-- R3-M11: the roles role sync granted, and the race-free superadmin revoke. -->

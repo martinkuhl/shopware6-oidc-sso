@@ -220,7 +220,7 @@ Order: P0, then PM (so the columns this round adds go straight into the one sche
 - The operator matches only when `email_verified` is true (same truthiness as the identity resolver). Compare domains punycode-encoded (`idn_to_ascii`), and validate the email after encoding.
 
 ### R8-L8: one tokenisation for string groups
-- `ClaimsNormalizer::normalizeGroups()`: split a scalar groups claim on whitespace and commas, as the access-control evaluator does. Document it in CLAUDE.md. Breaking for a group name with spaces sent as a scalar (rare; noted in the CHANGELOG).
+- **Decided during implementation: documented, not changed.** Splitting a scalar groups claim would break single-valued claims with names like `"Domain Users"` (Keycloak sends a string when "multivalued" is off; AD names often have spaces), which is worse than the inconsistency. A scalar stays one group for role mapping; an access rule's `contains` keeps tokenising scalars (scope-like claims, N-M11). Both documented in `ClaimsNormalizer` and CLAUDE.md.
 
 ### R8-L9: countries
 - `CountryResolver`: filter `active = 1`. Prefer countries assigned to the sales channel, then fall back to any active one.
@@ -323,7 +323,7 @@ Order: P0, then PM (so the columns this round adds go straight into the one sche
 | R8-M-5 | `sw-skeleton-bar` → `mt-skeleton-bar` (check against the 6.7.15 admin sources first). Add `sw-skeleton-bar` to the CI grep gate. |
 | R8-M-U | Remove `ExternalIdentity::$email`, `AccessControlDeniedException::$ruleId` (or use it in logging), `Sw6OidcSession::$createdAt`, the dead branch `AdminOidcGrant.php:156`, the `NodeHeartbeat::recentNodeCount()` parameter, the duplicate one-time-token prune in `SessionActivityCleanupTaskHandler`. Make `hashSessionKey()`, `hashSid()`, `findBindingBySubject()` and `isLegacy()` private. Regenerate `psalm-baseline.xml` and check that it shrinks. |
 | Docs | Fix the CLAUDE.md drift listed in the review: `reauth` purpose; JWKS refetch without `kid`; `flow_start` for link and reauth (now true after P2); `recordLogout()` precedence (now true after P3); `OneTimeTokenCleanupTask`; recorder `get()`. Also document the new behaviour from P1–P8. |
-| Release | `composer.json` version `0.3.0`, CHANGELOG with a "Breaking" section (D2 trust list, D7 health status, R8-L8 scalar groups, R8-L27 migration). Update the status table in `Code-Review.md`. |
+| Release | `composer.json` version `0.3.0`, CHANGELOG with a "Breaking" section (PM single migration, D2 trust list, D7 health status). Update the status table in `Code-Review.md`. |
 
 **Done when:** `composer ci` is green, a PR run of every CI job (including `shopware` and `e2e`) is green, and the manual pass below is done.
 

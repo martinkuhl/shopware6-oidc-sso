@@ -53,6 +53,21 @@ final class AvatarFetcherTest extends TestCase
         return (string) base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', true);
     }
 
+    /**
+     * R8-L6: a few kilobytes can decode to a 30k × 30k bitmap. getimagesize()
+     * reads the size from the header, so a patched IHDR is enough here.
+     */
+    public function testRejectsImagesLargerThanTheMaximumDimension(): void
+    {
+        $huge = substr_replace(self::png(), pack('NN', AvatarFetcher::MAX_DIMENSION + 1, 10), 16, 8);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('pixels');
+
+        $this->fetcher(new MockResponse($huge, ['response_headers' => ['content-type' => 'image/png']]))
+            ->fetch('https://idp.example/a.png', $this->tempFile);
+    }
+
     public function testRejectsNonImages(): void
     {
         $this->expectException(\RuntimeException::class);

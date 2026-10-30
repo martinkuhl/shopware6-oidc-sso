@@ -120,7 +120,9 @@ class ClaimsNormalizer
     /**
      * Normalizes the group/role claim into a flat list of group name strings.
      * Handles three shapes seen across real IdPs:
-     *  - a single string ("Engineering")
+     *  - a single string ("Engineering"): one group, never split — single-
+     *    valued claims carry names like "Domain Users". (An access rule's
+     *    `contains` does tokenise a scalar, for scope-like claims; R8-L8.)
      *  - a flat array (["Engineering", "Developers"])
      *  - Zitadel's nested role-object shape ({"Engineering": {"orgId": "..."}}),
      *    where the parent keys are the group names.

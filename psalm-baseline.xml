@@ -545,6 +545,11 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="src/Service/Provisioning/JitAccountCreator.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="src/Service/Provisioning/UserProviderBindingService.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
