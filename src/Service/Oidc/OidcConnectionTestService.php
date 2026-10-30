@@ -42,6 +42,9 @@ class OidcConnectionTestService
      *     hasClientSecret?: bool,
      *     publicClient?: bool,
      *     httpTimeout?: int,
+     *     tokenEndpointAuthMethod?: string|null,
+     *     revocationEndpointAuthMethod?: string|null,
+     *     pkceFlow?: string|null,
      * } $config
      *
      * @return array{overallStatus: string, checks: array<int, array{id: string, status: string, detail: string, messageKey?: string, messageParams?: array<string, string|int>}>}
@@ -65,7 +68,12 @@ class OidcConnectionTestService
         $wellKnownUrl = $this->nullIfEmpty($config['wellKnownConfigUrl'] ?? null);
 
         if ($wellKnownUrl !== null) {
-            $checks[] = $this->checkWellKnown($wellKnownUrl, (int) $timeout, $endpoints);
+            $checks[] = $this->checkWellKnown($wellKnownUrl, (int) $timeout, $endpoints, [
+                'issuer' => $endpoints['issuer'],
+                'tokenEndpointAuthMethod' => $this->nullIfEmpty($config['tokenEndpointAuthMethod'] ?? null),
+                'revocationEndpointAuthMethod' => $this->nullIfEmpty($config['revocationEndpointAuthMethod'] ?? null),
+                'pkceFlow' => $this->nullIfEmpty($config['pkceFlow'] ?? null),
+            ]);
         }
 
         $checks[] = $this->checkRequiredEndpoints($endpoints);
@@ -77,10 +85,11 @@ class OidcConnectionTestService
 
     /**
      * @param array<string, string|null> $endpoints
+     * @param array<string, ?string>     $configured the settings discovery's capabilities are compared with
      *
      * @return array{id: string, status: string, detail: string, messageKey?: string, messageParams?: array<string, string|int>}
      */
-    private function checkWellKnown(string $url, int $timeout, array &$endpoints): array
+    private function checkWellKnown(string $url, int $timeout, array &$endpoints, array $configured): array
     {
         $violation = $this->urlValidator->validate($url);
 
@@ -95,7 +104,14 @@ class OidcConnectionTestService
         }
 
         $algorithmWarning = OidcDiscoveryService::unsupportedSigningAlgorithmsWarning($document['idTokenSigningAlgValuesSupported'] ?? null);
-        unset($document['idTokenSigningAlgValuesSupported'], $document['claimsParameterSupported']);
+        $mismatches = OidcDiscoveryService::capabilityMismatches($document, $configured);
+        unset(
+            $document['idTokenSigningAlgValuesSupported'],
+            $document['claimsParameterSupported'],
+            $document['tokenEndpointAuthMethodsSupported'],
+            $document['revocationEndpointAuthMethodsSupported'],
+            $document['codeChallengeMethodsSupported'],
+        );
 
         // Fill in any endpoint the admin hasn't manually overridden, so the
         // downstream checks (required-endpoints, JWKS) see discovered values too.
@@ -107,8 +123,14 @@ class OidcConnectionTestService
             return ['id' => 'well_known_reachable', 'status' => 'fail', 'detail' => $algorithmWarning];
         }
 
-        if ($violation['warnings'] !== []) {
-            return ['id' => 'well_known_reachable', 'status' => 'warning', 'detail' => implode(' ', $violation['warnings'])];
+        if ($mismatches['errors'] !== []) {
+            return ['id' => 'well_known_reachable', 'status' => 'fail', 'detail' => implode(' ', $mismatches['errors'])];
+        }
+
+        $warnings = [...$violation['warnings'], ...$mismatches['warnings']];
+
+        if ($warnings !== []) {
+            return ['id' => 'well_known_reachable', 'status' => 'warning', 'detail' => implode(' ', $warnings)];
         }
 
         return [

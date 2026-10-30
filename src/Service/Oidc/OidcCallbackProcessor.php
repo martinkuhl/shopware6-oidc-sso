@@ -2,13 +2,13 @@
 
 namespace MartinKuhl\Sw6Oidc\Service\Oidc;
 
+use MartinKuhl\Sw6Oidc\Service\Jwt\JwtVerifier;
 use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\AttributeMapper;
 use MartinKuhl\Sw6Oidc\Service\Security\AuthorizationFlowContext;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\InvalidStateException;
-use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcAccessControlEvaluator;
 use MartinKuhl\Sw6Oidc\Service\Security\OidcSecurityHelper;
-use MartinKuhl\Sw6Oidc\Service\Jwt\JwtVerifier;
+use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcAccessControlEvaluator;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\Context;
 

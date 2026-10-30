@@ -337,6 +337,7 @@
                 "infrastructureWarning": {
                     "redis_dsn_unusable": "SW6OIDC_REDIS_DSN ist gesetzt, Redis kann aber nicht verwendet werden (PHP-Erweiterung fehlt, nicht erreichbar oder Anmeldung fehlgeschlagen). Einmal-Token werden stattdessen in der Datenbank gespeichert — Details stehen im Log.",
                     "multi_node_without_redis": "Mehrere App-Server haben kürzlich SSO-Anmeldungen verarbeitet, Redis wird aber nicht verwendet. Anmeldungen bleiben korrekt, aber Rate-Limiter und JWKS-Cache sind pro Server getrennt, sofern die Cache-Pools von Shopware nicht gemeinsam genutzt werden. Bitte SW6OIDC_REDIS_DSN setzen.",
+                    "redis_failed_recently": "Redis ist auf diesem Server in den letzten 15 Minuten ausgefallen; Einmal-Tokens wurden in der Zwischenzeit in der Datenbank gespeichert. Anmeldungen funktionierten weiter, bitte aber den Redis-Server und das sw6oidc-Log prüfen.",
                     "redis_may_evict": "Das für Einmal-Tokens verwendete Redis kann Schlüssel verdrängen (maxmemory-policy ist nicht noeviction). Ein verdrängter Schlüssel kann eine Anmeldung scheitern lassen oder die Wiederverwendung eines Logout-Tokens erlauben. Bitte maxmemory-policy für dieses Redis auf noeviction setzen."
                 },
                 "frontchannelAdminLogout": "Front-Channel-Logout beendet Admin-Sitzungen",

@@ -2,20 +2,20 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller\Api;
 
-use Symfony\Component\HttpFoundation\RequestStack;
-use MartinKuhl\Sw6Oidc\Service\Security\BrowserBinding;
-use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
 use League\OAuth2\Server\AuthorizationServer;
 use MartinKuhl\Sw6Oidc\Controller\Api\OidcAdminAuthController;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\AdminLoginErrorTicketStore;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\AdminLoginNonceService;
+use MartinKuhl\Sw6Oidc\Service\Security\BrowserBinding;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\BuildsOidcAdminAuthController;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemoryAtomicCache;
+use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
 use Nyholm\Psr7\Response as PsrResponse;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 #[CoversClass(OidcAdminAuthController::class)]
 final class OidcAdminAuthControllerSessionTest extends TestCase

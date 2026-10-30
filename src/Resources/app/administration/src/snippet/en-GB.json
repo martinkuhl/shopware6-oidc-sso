@@ -337,6 +337,7 @@
                 "infrastructureWarning": {
                     "redis_dsn_unusable": "SW6OIDC_REDIS_DSN is set, but Redis can't be used (PHP extension missing, unreachable or authentication failing). One-time tokens are stored in the database instead — check the log for details.",
                     "multi_node_without_redis": "Several app servers handled SSO recently, but Redis isn't in use. Logins stay correct, but the rate limiter and the JWKS cache are per server unless Shopware's cache pools are shared. Set SW6OIDC_REDIS_DSN.",
+                    "redis_failed_recently": "Redis failed on this server within the last 15 minutes; one-time tokens were stored in the database meanwhile. Logins kept working, but check the Redis server and the sw6oidc log.",
                     "redis_may_evict": "The Redis used for one-time tokens may evict keys (maxmemory-policy is not noeviction). An evicted key can fail a login or let a logout token be replayed. Set maxmemory-policy to noeviction for this Redis."
                 },
                 "frontchannelAdminLogout": "Front-channel logout ends admin sessions",

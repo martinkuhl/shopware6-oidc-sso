@@ -42,6 +42,11 @@ final readonly class AuthorizationFlowContext
         public ?string $browserBinding = null,
         /** UI locale of the admin running a live login test, for its result page */
         public ?string $locale = null,
+        /**
+         * Step-up: the access token id (jti) of the Administration session that
+         * started it. Its nonce is redeemable by that session only.
+         */
+        public ?string $boundTokenId = null,
     ) {
     }
 
@@ -57,7 +62,8 @@ final readonly class AuthorizationFlowContext
      *     expectedUserId: string|null,
      *     startedAt: int,
      *     browserBinding: string|null,
-     *     locale: string|null
+     *     locale: string|null,
+     *     boundTokenId: string|null
      * }
      */
     public function toArray(): array
@@ -74,6 +80,7 @@ final readonly class AuthorizationFlowContext
             'startedAt' => $this->startedAt,
             'browserBinding' => $this->browserBinding,
             'locale' => $this->locale,
+            'boundTokenId' => $this->boundTokenId,
         ];
     }
 
@@ -95,6 +102,7 @@ final readonly class AuthorizationFlowContext
         $startedAt = $data['startedAt'] ?? 0;
         $browserBinding = $data['browserBinding'] ?? null;
         $locale = $data['locale'] ?? null;
+        $boundTokenId = $data['boundTokenId'] ?? null;
 
         if (
             !\in_array($data['loginType'], self::LOGIN_TYPES, true)
@@ -103,6 +111,7 @@ final readonly class AuthorizationFlowContext
             || !\is_int($startedAt)
             || ($browserBinding !== null && !\is_string($browserBinding))
             || ($locale !== null && !\is_string($locale))
+            || ($boundTokenId !== null && !\is_string($boundTokenId))
             || ($purpose !== self::PURPOSE_LOGIN && $expectedUserId === null)
         ) {
             throw new InvalidStateException('Stored OAuth state is malformed.');
@@ -120,6 +129,7 @@ final readonly class AuthorizationFlowContext
             $startedAt,
             $browserBinding,
             $locale,
+            $boundTokenId,
         );
     }
 }

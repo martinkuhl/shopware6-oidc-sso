@@ -29,6 +29,9 @@ class OidcDiscoveryService
      *     issuer?: string,
      *     idTokenSigningAlgValuesSupported?: list<string>,
      *     claimsParameterSupported: bool,
+     *     tokenEndpointAuthMethodsSupported?: list<string>,
+     *     revocationEndpointAuthMethodsSupported?: list<string>,
+     *     codeChallengeMethodsSupported?: list<string>,
      * }
      */
     public function discover(string $wellKnownConfigUrl, int $timeoutSeconds = self::DEFAULT_TIMEOUT_SECONDS): array
@@ -56,13 +59,66 @@ class OidcDiscoveryService
         // OIDC Discovery §3: absent means false.
         $result['claimsParameterSupported'] = ($document['claims_parameter_supported'] ?? false) === true;
 
-        $algorithms = $document['id_token_signing_alg_values_supported'] ?? null;
+        $lists = [
+            'id_token_signing_alg_values_supported' => 'idTokenSigningAlgValuesSupported',
+            // What the IdP accepts, so the provider page can preselect it and
+            // the connection test can flag a mismatch.
+            'token_endpoint_auth_methods_supported' => 'tokenEndpointAuthMethodsSupported',
+            'revocation_endpoint_auth_methods_supported' => 'revocationEndpointAuthMethodsSupported',
+            'code_challenge_methods_supported' => 'codeChallengeMethodsSupported',
+        ];
 
-        if (\is_array($algorithms)) {
-            $result['idTokenSigningAlgValuesSupported'] = array_values(array_filter($algorithms, is_string(...)));
+        foreach ($lists as $documentKey => $fieldName) {
+            if (\is_array($document[$documentKey] ?? null)) {
+                $result[$fieldName] = array_values(array_filter($document[$documentKey], is_string(...)));
+            }
         }
 
         return $result;
+    }
+
+    /**
+     * Where the configuration contradicts what discovery advertises: the
+     * issuer must match exactly (OIDC Discovery §4.3 — a trailing slash
+     * fails every login), and the client authentication and PKCE methods
+     * should be ones the IdP supports.
+     *
+     * @param array<string, mixed>   $discovered discover()'s result
+     * @param array<string, ?string> $configured issuer, tokenEndpointAuthMethod, revocationEndpointAuthMethod, pkceFlow
+     *
+     * @return array{errors: list<string>, warnings: list<string>}
+     */
+    public static function capabilityMismatches(array $discovered, array $configured): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        $issuer = $configured['issuer'] ?? null;
+
+        if ($issuer !== null && $issuer !== '' && \is_string($discovered['issuer'] ?? null) && $discovered['issuer'] !== $issuer) {
+            $errors[] = sprintf('The configured issuer "%s" differs from the discovered one "%s"; every ID token would be refused.', $issuer, $discovered['issuer']);
+        }
+
+        foreach (
+            [
+            'tokenEndpointAuthMethod' => ['tokenEndpointAuthMethodsSupported', 'token endpoint'],
+            'revocationEndpointAuthMethod' => ['revocationEndpointAuthMethodsSupported', 'revocation endpoint'],
+            'pkceFlow' => ['codeChallengeMethodsSupported', 'PKCE'],
+            ] as $setting => [$listKey, $label]
+        ) {
+            $value = $configured[$setting] ?? null;
+            $supported = $discovered[$listKey] ?? null;
+
+            if ($value !== null && \is_array($supported) && $supported !== [] && !\in_array($value, $supported, true)) {
+                $warnings[] = sprintf('The %s method "%s" is not among the ones the IdP advertises (%s).', $label, $value, implode(', ', $supported));
+            }
+        }
+
+        if (($configured['pkceFlow'] ?? null) === 'plain' && \in_array('S256', (array) ($discovered['codeChallengeMethodsSupported'] ?? []), true)) {
+            $warnings[] = 'PKCE uses "plain" although the IdP supports S256; switch to S256.';
+        }
+
+        return ['errors' => $errors, 'warnings' => $warnings];
     }
 
     /**

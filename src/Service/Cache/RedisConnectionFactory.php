@@ -21,6 +21,11 @@ class RedisConnectionFactory
     private const CONNECT_TIMEOUT_SECONDS = 1.5;
     private const READ_TIMEOUT_SECONDS = 1.5;
     private const DOWN_MARKER_KEY = 'sw6oidc_redis_down';
+
+    private const LAST_FAILURE_KEY = 'sw6oidc_redis_last_failure';
+
+    /** How long a failure is remembered for the infrastructure warning. */
+    public const LAST_FAILURE_TTL_SECONDS = 900;
     private const DOWN_MARKER_TTL_SECONDS = 30;
 
     private static int $processDownAt = 0;
@@ -130,10 +135,30 @@ class RedisConnectionFactory
         $this->markDown();
     }
 
+    /**
+     * When Redis last failed on this node (connect or command), for the
+     * infrastructure warning `redis_failed_recently`: a flapping Redis
+     * otherwise only shows up as warnings in the log, while every failure
+     * silently moves one-time tokens to the database. Null when unknown.
+     */
+    public function lastFailureAt(): ?int
+    {
+        if (\function_exists('apcu_enabled') && apcu_enabled()) {
+            $at = apcu_fetch(self::LAST_FAILURE_KEY);
+
+            return \is_int($at) ? $at : null;
+        }
+
+        $at = @filemtime($this->markerFile());
+
+        return \is_int($at) ? $at : null;
+    }
+
     private function markDown(): void
     {
         if (\function_exists('apcu_enabled') && apcu_enabled()) {
             apcu_store(self::DOWN_MARKER_KEY, true, self::DOWN_MARKER_TTL_SECONDS);
+            apcu_store(self::LAST_FAILURE_KEY, time(), self::LAST_FAILURE_TTL_SECONDS);
 
             return;
         }

@@ -229,6 +229,12 @@
       <code><![CDATA[setUserType]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="src/Event/AbstractPasskeyAccountEvent.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[getUserId]]></code>
+      <code><![CDATA[getUserType]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="src/Event/AdminAfterCreateEvent.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[getProfile]]></code>
@@ -476,6 +482,16 @@
     </PossiblyUnusedMethod>
   </file>
   <file src="src/Service/Passkey/PasskeyCredentialRepository.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Passkey/PasskeyLoginPolicy.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Passkey/PasskeyOwnerLookup.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>

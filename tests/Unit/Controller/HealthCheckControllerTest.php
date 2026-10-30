@@ -2,12 +2,12 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller;
 
-use MartinKuhl\Sw6Oidc\Service\Health\NodeHeartbeat;
 use MartinKuhl\Sw6Oidc\Controller\HealthCheckController;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Health\InfrastructureInspector;
+use MartinKuhl\Sw6Oidc\Service\Health\NodeHeartbeat;
 use MartinKuhl\Sw6Oidc\Service\Health\ProviderConfigInspector;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
 use PHPUnit\Framework\Attributes\CoversClass;

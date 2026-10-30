@@ -2,16 +2,16 @@
 
 namespace MartinKuhl\Sw6Oidc\Controller\Api;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\ParameterType;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
 use MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant;
+use MartinKuhl\Sw6Oidc\Service\Security\UserVerifiedScope;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionDestructionService;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
-use MartinKuhl\Sw6Oidc\Service\Security\UserVerifiedScope;
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;

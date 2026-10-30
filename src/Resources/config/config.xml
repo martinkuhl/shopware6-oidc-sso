@@ -20,6 +20,15 @@
             <defaultValue>false</defaultValue>
         </input-field>
 
+        <input-field type="bool">
+            <name>passkeyRequiresActiveSso</name>
+            <label>Passkeys of SSO-connected accounts need an active provider</label>
+            <label lang="de-DE">Passkeys von SSO-verbundenen Konten brauchen einen aktiven Provider</label>
+            <helpText>When on, an account connected to a single sign-on provider can only log in with a passkey while that provider is active and serves this login type. Deactivating the provider (for example to offboard its users) then also stops their passkey logins.</helpText>
+            <helpText lang="de-DE">Wenn aktiv, kann sich ein mit einem Single-Sign-on-Provider verbundenes Konto nur mit einem Passkey anmelden, solange dieser Provider aktiv ist und diese Anmeldeart bedient. Wird der Provider deaktiviert (etwa, um seine Benutzer auszusteuern), enden damit auch ihre Passkey-Anmeldungen.</helpText>
+            <defaultValue>false</defaultValue>
+        </input-field>
+
         <input-field type="text">
             <name>passkeyRpName</name>
             <label>Relying Party name</label>

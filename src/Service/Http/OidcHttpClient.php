@@ -94,17 +94,41 @@ class OidcHttpClient
     }
 
     /**
-     * @return array<string, mixed>
+     * The userinfo response: JSON claims, or a signed JWT when the client is
+     * registered for signed userinfo (`application/jwt`, OIDC Core §5.3.2).
+     * The caller verifies the JWT.
+     *
+     * @return array{claims: array<string, mixed>}|array{jwt: string}
      */
-    public function getWithBearerToken(string $url, string $bearerToken, int $timeoutSeconds): array
+    public function getUserInfo(string $url, string $bearerToken, int $timeoutSeconds): array
     {
-        return $this->requestJson('GET', $url, [
+        $options = [
             'timeout' => $timeoutSeconds,
             'headers' => [
                 'Authorization' => 'Bearer ' . $bearerToken,
-                'Accept' => 'application/json',
+                'Accept' => 'application/json, application/jwt',
             ],
-        ]);
+        ];
+        [$content, $statusCode, $contentType] = $this->send('GET', $url, $options);
+
+        if ($statusCode < 400 && str_starts_with(strtolower($contentType), 'application/jwt')) {
+            $this->logResponse('GET', $url, $statusCode, null);
+
+            return ['jwt' => trim($content)];
+        }
+
+        $decoded = json_decode($content, true);
+        $this->logResponse('GET', $url, $statusCode, $decoded);
+
+        if ($statusCode >= 400) {
+            throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed with status %d%s.', $this->withoutQuery($url), $statusCode, $this->oauthError($decoded)));
+        }
+
+        if (!\is_array($decoded)) {
+            throw new OidcHttpException(sprintf('OIDC HTTP response from "%s" was neither JSON nor a signed JWT.', $this->withoutQuery($url)));
+        }
+
+        return ['claims' => $decoded];
     }
 
     /**
@@ -162,7 +186,7 @@ class OidcHttpClient
     /**
      * @param array<string, mixed> $options
      *
-     * @return array{0: string, 1: int} content and status code
+     * @return array{0: string, 1: int, 2: string} content, status code, content type
      */
     private function send(string $method, string $url, array $options): array
     {
@@ -185,6 +209,7 @@ class OidcHttpClient
             $response = $this->httpClient->request($method, $url, $options);
             $content = $response->getContent(false);
             $statusCode = $response->getStatusCode();
+            $contentType = $response->getHeaders(false)['content-type'][0] ?? '';
         } catch (HttpClientExceptionInterface $exception) {
             // Only idempotent GETs are retried: a POST to the token endpoint
             // carries a single-use authorization code that a retry would burn
@@ -202,7 +227,7 @@ class OidcHttpClient
             return $this->retryOnce($method, $url, $options);
         }
 
-        return [$content, $statusCode];
+        return [$content, $statusCode, $contentType];
     }
 
     private function logResponse(string $method, string $url, int $statusCode, mixed $decoded): void
@@ -230,7 +255,7 @@ class OidcHttpClient
     /**
      * @param array<string, mixed> $options
      *
-     * @return array{0: string, 1: int}
+     * @return array{0: string, 1: int, 2: string}
      */
     private function retryOnce(string $method, string $url, array $options): array
     {
@@ -239,7 +264,7 @@ class OidcHttpClient
         try {
             $response = $this->httpClient->request($method, $url, $options);
 
-            return [$response->getContent(false), $response->getStatusCode()];
+            return [$response->getContent(false), $response->getStatusCode(), $response->getHeaders(false)['content-type'][0] ?? ''];
         } catch (HttpClientExceptionInterface $exception) {
             throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed.', $this->withoutQuery($url)), $exception);
         }

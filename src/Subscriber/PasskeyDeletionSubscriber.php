@@ -4,12 +4,15 @@ namespace MartinKuhl\Sw6Oidc\Subscriber;
 
 use Doctrine\DBAL\Connection;
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialDefinition;
+use MartinKuhl\Sw6Oidc\Event\PasskeyDeletedEvent;
+use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyOwnerLookup;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeySessionTerminator;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityDeletedEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\DeleteCommand;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Validation\PreWriteValidationEvent;
 use Shopware\Core\Framework\Uuid\Uuid;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
@@ -20,7 +23,7 @@ use Symfony\Contracts\Service\ResetInterface;
  */
 class PasskeyDeletionSubscriber implements EventSubscriberInterface, ResetInterface
 {
-    /** @var array<string, array{user_type: string, user_id: string, credential_id_hash: string}> credential id (hex) => row */
+    /** @var array<string, array{user_type: string, user_id: string, credential_id_hash: string, nickname: string|null}> credential id (hex) => row */
     private array $pending = [];
 
     /** @var array<string, bool> user id (hex) => whether sessions were ended, for the current request */
@@ -29,6 +32,8 @@ class PasskeyDeletionSubscriber implements EventSubscriberInterface, ResetInterf
     public function __construct(
         private readonly Connection $connection,
         private readonly PasskeySessionTerminator $terminator,
+        private readonly PasskeyOwnerLookup $ownerLookup,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -50,12 +55,12 @@ class PasskeyDeletionSubscriber implements EventSubscriberInterface, ResetInterf
             }
 
             $row = $this->connection->fetchAssociative(
-                'SELECT `user_type`, LOWER(HEX(`user_id`)) AS `user_id`, `credential_id_hash` FROM `sw6oidc_passkey_credential` WHERE `id` = :id',
+                'SELECT `user_type`, LOWER(HEX(`user_id`)) AS `user_id`, `credential_id_hash`, `nickname` FROM `sw6oidc_passkey_credential` WHERE `id` = :id',
                 ['id' => $id],
             );
 
             if (\is_array($row)) {
-                /** @var array{user_type: string, user_id: string, credential_id_hash: string} $row */
+                /** @var array{user_type: string, user_id: string, credential_id_hash: string, nickname: string|null} $row */
                 $this->pending[Uuid::fromBytesToHex($id)] = $row;
             }
         }
@@ -73,6 +78,13 @@ class PasskeyDeletionSubscriber implements EventSubscriberInterface, ResetInterf
 
             if ($this->terminator->endSessionsOf($row['user_type'], $row['user_id'], $row['credential_id_hash'])) {
                 $this->ended[$row['user_id']] = true;
+            }
+
+            // Flow Builder trigger; none when the whole account went (no one to tell).
+            $deleted = $this->ownerLookup->event(PasskeyDeletedEvent::class, $row['user_type'], $row['user_id'], $row['nickname'], $event->getContext());
+
+            if ($deleted instanceof PasskeyDeletedEvent) {
+                $this->eventDispatcher->dispatch($deleted);
             }
         }
     }

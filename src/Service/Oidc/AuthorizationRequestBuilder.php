@@ -33,6 +33,7 @@ class AuthorizationRequestBuilder
         ?string $expectedUserId = null,
         array $extraParams = [],
         ?string $locale = null,
+        ?string $boundTokenId = null,
     ): string {
         $flow = $this->securityHelper->beginAuthorizationRequest(
             $provider->getId(),
@@ -42,6 +43,7 @@ class AuthorizationRequestBuilder
             $purpose,
             $expectedUserId,
             $locale,
+            $boundTokenId,
         );
 
         // The protocol parameters always win over extras.

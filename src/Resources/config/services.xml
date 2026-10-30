@@ -169,6 +169,7 @@
 
         <service id="MartinKuhl\Sw6Oidc\Service\Oidc\UserInfoService">
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Jwt\JwtVerifier" />
         </service>
 
         <service id="MartinKuhl\Sw6Oidc\Service\Oidc\ClaimsNormalizer" />
@@ -605,6 +606,8 @@
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyCredentialRepository" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Cache\AtomicCacheInterface" />
             <argument type="service" id="sw6oidc.logger" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyOwnerLookup" />
+            <argument type="service" id="event_dispatcher" />
         </service>
 
         <service id="MartinKuhl\Sw6Oidc\Controller\Api\OidcAdminAuthController" public="true">
@@ -881,9 +884,16 @@
             <argument type="service" id="event_dispatcher" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\SessionAuthenticationClock" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyLoginPolicy" />
             <call method="setContainer">
                 <argument type="service" id="service_container" />
             </call>
+        </service>
+
+        <service id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyLoginPolicy">
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver" />
         </service>
 
         <service id="MartinKuhl\Sw6Oidc\Storefront\Controller\AccountPasskeyController" public="true">
@@ -904,9 +914,15 @@
             <argument type="service" id="sw6oidc.logger" />
         </service>
 
+        <service id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyOwnerLookup">
+            <argument type="service" id="Doctrine\DBAL\Connection" />
+        </service>
+
         <service id="MartinKuhl\Sw6Oidc\Subscriber\PasskeyDeletionSubscriber">
             <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeySessionTerminator" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyOwnerLookup" />
+            <argument type="service" id="event_dispatcher" />
             <tag name="kernel.event_subscriber" />
             <tag name="kernel.reset" method="reset" />
         </service>
@@ -925,6 +941,7 @@
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyRelyingPartyResolver" />
             <argument type="service" id="event_dispatcher" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyLoginPolicy" />
             <call method="setContainer">
                 <argument type="service" id="service_container" />
             </call>

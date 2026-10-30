@@ -44,4 +44,19 @@ final class InfrastructureInspectorTest extends TestCase
             (new InfrastructureInspector($cache, $factory, $heartbeat))->inspect(),
         );
     }
+
+    public function testARecentRedisFailureIsReported(): void
+    {
+        $cache = $this->createStub(RedisAtomicCache::class);
+        $cache->method('backend')->willReturn('redis');
+        $factory = $this->createStub(RedisConnectionFactory::class);
+        $factory->method('isConfigured')->willReturn(true);
+        $factory->method('lastFailureAt')->willReturnOnConsecutiveCalls(time() - 60, time() - 3600);
+        $heartbeat = $this->createStub(NodeHeartbeat::class);
+        $heartbeat->method('recentNodeCount')->willReturn(1);
+        $inspector = new InfrastructureInspector($cache, $factory, $heartbeat);
+
+        self::assertSame([InfrastructureInspector::WARNING_REDIS_FAILED_RECENTLY], $inspector->inspect()['warnings']);
+        self::assertSame([], $inspector->inspect()['warnings'], 'an hour ago is history');
+    }
 }

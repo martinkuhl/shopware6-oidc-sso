@@ -2,15 +2,16 @@
 
 namespace MartinKuhl\Sw6Oidc\Controller\Api;
 
-use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\SessionActivity\Sw6OidcSessionActivityDefinition;
 use MartinKuhl\Sw6Oidc\Event\PasskeyRegisteredEvent;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\AdminTokenIssuer;
+use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyLimitReachedException;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyAuthenticationService;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyCredentialRepository;
+use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyLoginPolicy;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyRegistrationService;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyRelyingPartyResolver;
 use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
@@ -68,6 +69,7 @@ class PasskeyAdminController extends AbstractController
         private readonly PasskeyRelyingPartyResolver $relyingPartyResolver,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly Sw6OidcRateLimiter $rateLimiter,
+        private readonly PasskeyLoginPolicy $loginPolicy,
     ) {
     }
 
@@ -230,6 +232,11 @@ class PasskeyAdminController extends AbstractController
 
             if ($resolved['userType'] !== 'admin') {
                 throw new \RuntimeException('This passkey is not registered to an Administration user.');
+            }
+
+            // An account policy, not a failed login: not counted.
+            if (!$this->loginPolicy->allows('admin', $resolved['userId'], Context::createDefaultContext())) {
+                return new JsonResponse(['error' => 'account_unavailable'], Response::HTTP_FORBIDDEN);
             }
 
             if (!$this->isExpectedUser($request, $resolved['userId'])) {

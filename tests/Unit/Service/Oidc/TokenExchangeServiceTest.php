@@ -2,9 +2,9 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Oidc;
 
-use MartinKuhl\Sw6Oidc\Service\Http\Exception\OidcHttpException;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
+use MartinKuhl\Sw6Oidc\Service\Http\Exception\OidcHttpException;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
 use MartinKuhl\Sw6Oidc\Service\Oidc\ClientAuthentication;
 use MartinKuhl\Sw6Oidc\Service\Oidc\TokenExchangeService;

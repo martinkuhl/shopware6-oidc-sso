@@ -2,27 +2,27 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Security;
 
+use League\OAuth2\Server\Entities\ClientEntityInterface;
+use League\OAuth2\Server\Repositories\UserRepositoryInterface;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
+use MartinKuhl\Sw6Oidc\Service\AdminAuth\PasswordLoginGuardUserRepository;
 use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\PasswordLoginDisabledException;
 use MartinKuhl\Sw6Oidc\Service\Security\PasswordLoginPolicy;
-use League\OAuth2\Server\Entities\ClientEntityInterface;
-use League\OAuth2\Server\Repositories\UserRepositoryInterface;
-use MartinKuhl\Sw6Oidc\Service\AdminAuth\PasswordLoginGuardUserRepository;
 use MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardConvertGuestRoute;
 use MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardLoginRoute;
 use MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardRegisterConfirmRoute;
 use MartinKuhl\Sw6Oidc\Storefront\Service\PasswordLoginGuardRegisterRoute;
+use MartinKuhl\Sw6Oidc\Subscriber\AdminPasswordLoginGuardSubscriber;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Shopware\Core\Checkout\Customer\CustomerEntity;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractConvertGuestRoute;
+use Shopware\Core\Checkout\Customer\SalesChannel\AbstractLoginRoute;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractRegisterConfirmRoute;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractRegisterRoute;
-use MartinKuhl\Sw6Oidc\Subscriber\AdminPasswordLoginGuardSubscriber;
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
-use Shopware\Core\Checkout\Customer\SalesChannel\AbstractLoginRoute;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
 use Shopware\Core\System\SalesChannel\ContextTokenResponse;
 use Shopware\Core\System\SalesChannel\SuccessResponse;

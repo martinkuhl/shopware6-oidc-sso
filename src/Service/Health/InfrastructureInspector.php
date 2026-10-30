@@ -15,6 +15,9 @@ use MartinKuhl\Sw6Oidc\Service\Cache\RedisConnectionFactory;
  *    in the last 15 minutes and Redis isn't in use. One-time tokens stay
  *    correct (they live in the database), but the rate limiter and the JWKS
  *    cache are per node unless Shopware's cache pools are shared.
+ *  - `redis_failed_recently`: Redis is in use, but failed on this node in
+ *    the last 15 minutes; every failure moved one-time tokens to the
+ *    database for a while (a flapping Redis is otherwise log noise only).
  *  - `redis_may_evict`: the Redis used for one-time tokens may evict keys
  *    (`maxmemory-policy` other than `noeviction`): evicted flow state fails
  *    logins, an evicted replay marker lets a logout token be replayed
@@ -27,6 +30,7 @@ class InfrastructureInspector
     public const WARNING_REDIS_DSN_UNUSABLE = 'redis_dsn_unusable';
     public const WARNING_MULTI_NODE_WITHOUT_REDIS = 'multi_node_without_redis';
     public const WARNING_REDIS_MAY_EVICT = 'redis_may_evict';
+    public const WARNING_REDIS_FAILED_RECENTLY = 'redis_failed_recently';
 
     public function __construct(
         private readonly RedisAtomicCache $atomicCache,
@@ -50,6 +54,12 @@ class InfrastructureInspector
 
         if ($nodes > 1 && $backend !== RedisAtomicCache::BACKEND_REDIS) {
             $warnings[] = self::WARNING_MULTI_NODE_WITHOUT_REDIS;
+        }
+
+        $lastFailure = $this->redisConnectionFactory->isConfigured() ? $this->redisConnectionFactory->lastFailureAt() : null;
+
+        if ($backend === RedisAtomicCache::BACKEND_REDIS && $lastFailure !== null && $lastFailure >= time() - RedisConnectionFactory::LAST_FAILURE_TTL_SECONDS) {
+            $warnings[] = self::WARNING_REDIS_FAILED_RECENTLY;
         }
 
         $evictionPolicy = $backend === RedisAtomicCache::BACKEND_REDIS ? $this->atomicCache->evictionPolicy() : null;

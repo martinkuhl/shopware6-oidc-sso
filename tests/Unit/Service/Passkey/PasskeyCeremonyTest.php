@@ -3,19 +3,23 @@
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Passkey;
 
 use Doctrine\DBAL\Connection;
+use MartinKuhl\Sw6Oidc\Event\PasskeyDisabledEvent;
 use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyCeremonyException;
+use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyLimitReachedException;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyAuthenticationService;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyCredentialRepository;
-use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyLimitReachedException;
+use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyOwnerLookup;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyRegistrationService;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyRelyingParty;
 use MartinKuhl\Sw6Oidc\Service\Passkey\WebauthnCeremonyFactory;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemoryAtomicCache;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\Uuid\Uuid;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Full registration + login ceremonies against the real webauthn-lib 5.x
@@ -26,6 +30,10 @@ use Shopware\Core\Framework\Uuid\Uuid;
 #[CoversClass(WebauthnCeremonyFactory::class)]
 final class PasskeyCeremonyTest extends TestCase
 {
+    private PasskeyOwnerLookup&MockObject $ownerLookup;
+
+    private bool $disabledEventRequested = false;
+
     private InMemoryPasskeyCredentialStore $store;
 
     private PasskeyCredentialRepository $credentials;
@@ -45,7 +53,7 @@ final class PasskeyCeremonyTest extends TestCase
         $this->store = new InMemoryPasskeyCredentialStore();
         $this->credentials = new PasskeyCredentialRepository($this->store->wire($this->createMock(EntityRepository::class)), $factory, new NullLogger(), $this->store->connection($this->createMock(Connection::class)));
         $this->registration = new PasskeyRegistrationService($factory, $this->credentials, $cache);
-        $this->authentication = new PasskeyAuthenticationService($factory, $this->credentials, $cache, new NullLogger());
+        $this->authentication = new PasskeyAuthenticationService($factory, $this->credentials, $cache, new NullLogger(), $this->ownerLookup = $this->createMock(PasskeyOwnerLookup::class), new EventDispatcher());
         $this->authenticator = new SoftwareAuthenticator();
         $this->userId = Uuid::randomHex();
     }
@@ -247,6 +255,11 @@ final class PasskeyCeremonyTest extends TestCase
         $this->authenticator->rewindCounter(0);
         // The clone shows up later, not in the same minute as the real key.
         $this->backdateLastUse('-1 hour');
+        $this->ownerLookup->method('event')->willReturnCallback(function (string $class): null {
+            $this->disabledEventRequested = $class === PasskeyDisabledEvent::class;
+
+            return null;
+        });
 
         $second = $this->authentication->buildRequestOptions([], $this->rp(), 'storefront-login:test');
 
@@ -257,6 +270,7 @@ final class PasskeyCeremonyTest extends TestCase
         }
 
         self::assertNotNull(array_values($this->store->rows)[0]['disabledAt'] ?? null, 'the possible clone was disabled');
+        self::assertTrue($this->disabledEventRequested, 'Flow Builder trigger sw6oidc.passkey.disabled');
 
         $third = $this->authentication->buildRequestOptions([], $this->rp(), 'storefront-login:test');
         $this->expectException(PasskeyCeremonyException::class);

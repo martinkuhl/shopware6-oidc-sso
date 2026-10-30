@@ -2,7 +2,6 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller\Oidc;
 
-use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
 use MartinKuhl\Sw6Oidc\Controller\Oidc\BackChannelLogoutController;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Jwt\JwtVerifier;
@@ -15,6 +14,7 @@ use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionDestructionService;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemoryAtomicCache;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\JwtTestSigner;
+use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;

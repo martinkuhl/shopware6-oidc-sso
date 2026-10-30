@@ -148,7 +148,8 @@ class OidcProviderAdminController extends AbstractController
         $warnings = $violation['warnings'];
         $algorithmWarning = OidcDiscoveryService::unsupportedSigningAlgorithmsWarning($endpoints['idTokenSigningAlgValuesSupported'] ?? null);
         unset($endpoints['idTokenSigningAlgValuesSupported']);
-        // claimsParameterSupported stays: the provider page stores it (R8-L32).
+        // claimsParameterSupported and the *Supported method lists stay: the
+        // provider page stores the flag and preselects from the lists.
 
         if ($algorithmWarning !== null) {
             $warnings[] = $algorithmWarning;
@@ -188,6 +189,9 @@ class OidcProviderAdminController extends AbstractController
             'hasClientSecret' => $hasClientSecret,
             'publicClient' => $request->request->getBoolean('publicClient'),
             'httpTimeout' => $this->timeoutInput($request),
+            'tokenEndpointAuthMethod' => $this->stringInput($request, 'tokenEndpointAuthMethod'),
+            'revocationEndpointAuthMethod' => $this->stringInput($request, 'revocationEndpointAuthMethod'),
+            'pkceFlow' => $this->stringInput($request, 'pkceFlow'),
         ];
 
         return new JsonResponse($this->connectionTestService->test($config));

@@ -26,6 +26,12 @@ class PasskeyConfig
         return (bool) $this->systemConfigService->get(self::CONFIG_DOMAIN . 'passkeyEnabledAdmin');
     }
 
+    /** See PasskeyLoginPolicy. */
+    public function requiresActiveSso(): bool
+    {
+        return (bool) $this->systemConfigService->get(self::CONFIG_DOMAIN . 'passkeyRequiresActiveSso');
+    }
+
     public function isEnabledForCustomer(?string $salesChannelId = null): bool
     {
         return (bool) $this->systemConfigService->get(self::CONFIG_DOMAIN . 'passkeyEnabledCustomer', $salesChannelId);

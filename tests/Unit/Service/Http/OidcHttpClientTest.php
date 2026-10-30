@@ -2,10 +2,10 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Http;
 
+use MartinKuhl\Sw6Oidc\Service\Http\Exception\OidcHttpException;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
-use MartinKuhl\Sw6Oidc\Service\Http\Exception\OidcHttpException;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\Exception\TransportException;

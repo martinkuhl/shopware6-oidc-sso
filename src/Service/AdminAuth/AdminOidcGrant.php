@@ -12,8 +12,8 @@ use League\OAuth2\Server\RequestEvent;
 use League\OAuth2\Server\RequestRefreshTokenEvent;
 use League\OAuth2\Server\ResponseTypes\ResponseTypeInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Shopware\Core\Framework\Api\OAuth\ScopeRepository;
 use Shopware\Core\Framework\Api\OAuth\Scope\UserVerifiedScope;
+use Shopware\Core\Framework\Api\OAuth\ScopeRepository;
 use Shopware\Core\Framework\Api\OAuth\User\User as ShopwareOAuthUser;
 use Shopware\Core\Framework\Uuid\Uuid;
 

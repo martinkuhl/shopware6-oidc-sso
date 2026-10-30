@@ -2,13 +2,13 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\AdminAuth;
 
-use Symfony\Component\HttpFoundation\RequestStack;
-use MartinKuhl\Sw6Oidc\Service\Security\BrowserBinding;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\AdminLoginNonce;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\AdminLoginNonceService;
+use MartinKuhl\Sw6Oidc\Service\Security\BrowserBinding;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemoryAtomicCache;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 #[CoversClass(AdminLoginNonceService::class)]
 #[CoversClass(AdminLoginNonce::class)]

@@ -8,6 +8,10 @@ use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\UserProvider\Sw6OidcUserProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
+use MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionDestructionService;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
+use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSsoSchema;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -17,12 +21,8 @@ use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
 use Shopware\Core\Framework\Uuid\Uuid;
-use Symfony\Component\HttpFoundation\Request;
-use MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant;
-use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionDestructionService;
-use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
-use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSsoSchema;
 use Shopware\Core\PlatformRequest;
+use Symfony\Component\HttpFoundation\Request;
 
 #[CoversClass(OidcUserProviderAdminController::class)]
 final class OidcUserProviderAdminControllerTest extends TestCase

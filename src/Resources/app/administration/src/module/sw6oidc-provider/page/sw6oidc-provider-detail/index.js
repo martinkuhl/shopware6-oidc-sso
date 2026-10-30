@@ -34,6 +34,8 @@ const TECHNICAL_CLAIM_EXCLUSIONS = new Set([
 /**
  * Discovery may only fill these fields — never mass-assign the response (F-M7).
  */
+const CLIENT_AUTH_METHODS = ['client_secret_basic', 'client_secret_post'];
+
 const DISCOVERED_ENDPOINT_FIELDS = [
     'authorizeEndpoint',
     'accessTokenEndpoint',
@@ -300,7 +302,7 @@ Component.register('sw6oidc-provider-detail', () => {
             },
 
             clientAuthMethodOptions() {
-                return ['client_secret_basic', 'client_secret_post'].map((value) => ({
+                return CLIENT_AUTH_METHODS.map((value) => ({
                     value,
                     label: this.$t(`sw6oidc.provider.detail.clientAuthMethod.${value}`),
                 }));
@@ -757,9 +759,31 @@ Component.register('sw6oidc-provider-detail', () => {
                     this.provider.claimsParameterSupported = result.claimsParameterSupported;
                 }
 
+                // Preselect what the IdP advertises when the current choice isn't among it.
+                this.preselectSupported('tokenEndpointAuthMethod', result.tokenEndpointAuthMethodsSupported, CLIENT_AUTH_METHODS);
+                this.preselectSupported('revocationEndpointAuthMethod', result.revocationEndpointAuthMethodsSupported, CLIENT_AUTH_METHODS);
+                this.preselectSupported('pkceFlow', result.codeChallengeMethodsSupported, ['S256', 'plain']);
+
                 this.loadedWellKnownConfigUrl = wellKnownConfigUrl;
 
                 return Array.isArray(result.warnings) ? result.warnings.filter((warning) => typeof warning === 'string') : [];
+            },
+
+            /**
+             * Sets the first of our options the IdP supports, if the current one
+             * isn't supported (S256 before plain). Leaves it when discovery says
+             * nothing, or nothing we support.
+             */
+            preselectSupported(field, advertised, ours) {
+                if (!Array.isArray(advertised) || advertised.length === 0 || advertised.includes(this.provider[field])) {
+                    return;
+                }
+
+                const supported = ours.find((option) => advertised.includes(option));
+
+                if (supported !== undefined) {
+                    this.provider[field] = supported;
+                }
             },
 
             async onClickTestConnection() {
@@ -781,6 +805,9 @@ Component.register('sw6oidc-provider-detail', () => {
                         providerId: this.isNewProvider ? null : this.provider.id,
                         publicClient: this.provider.publicClient,
                         httpTimeout: this.provider.httpTimeout,
+                        tokenEndpointAuthMethod: this.provider.tokenEndpointAuthMethod,
+                        revocationEndpointAuthMethod: this.provider.revocationEndpointAuthMethod,
+                        pkceFlow: this.provider.pkceFlow,
                     });
                 } catch (exception) {
                     // eslint-disable-next-line no-console

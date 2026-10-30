@@ -102,7 +102,22 @@ final class StepUpServiceTest extends TestCase
         );
     }
 
-    private function callbackResult(?int $authTime): OidcCallbackResult
+    /**
+     * A nonce leaked to another session of the same admin is useless: it is
+     * bound to the access token that started the step-up.
+     */
+    public function testTheNonceIsBoundToTheSessionThatStartedTheStepUp(): void
+    {
+        $service = $this->service();
+
+        $nonce = $service->completeOidc($this->callbackResult(time(), 'jti-of-tab-a'), Context::createDefaultContext());
+        self::assertFalse($service->redeemNonce($nonce, self::ADMIN, 'jti-of-tab-b'));
+
+        $nonce = $service->completeOidc($this->callbackResult(time(), 'jti-of-tab-a'), Context::createDefaultContext());
+        self::assertTrue($service->redeemNonce($nonce, self::ADMIN, 'jti-of-tab-a'));
+    }
+
+    private function callbackResult(?int $authTime, ?string $boundTokenId = null): OidcCallbackResult
     {
         $provider = new Sw6OidcProviderEntity();
         $provider->setId('p0000000000000000000000000000001');
@@ -115,7 +130,7 @@ final class StepUpServiceTest extends TestCase
 
         return new OidcCallbackResult(
             $provider,
-            new AuthorizationFlowContext($provider->getId(), 'admin', '', 'v', 'S256', 'n', AuthorizationFlowContext::PURPOSE_STEP_UP, self::ADMIN, time() - 5),
+            new AuthorizationFlowContext($provider->getId(), 'admin', '', 'v', 'S256', 'n', AuthorizationFlowContext::PURPOSE_STEP_UP, self::ADMIN, time() - 5, boundTokenId: $boundTokenId),
             new MappedProfile('admin@example.com'),
             ['access_token' => 'at'],
             $claims,

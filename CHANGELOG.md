@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added (code review, revision 8)
 
+- **Signed userinfo** (`application/jwt`) is verified and accepted.
+- **Discovery-driven defaults:** the provider page preselects the client authentication and PKCE methods the IdP advertises; the connection test fails on an issuer that differs from the discovered one (trailing slash) and warns about unadvertised methods or `plain` PKCE while S256 is offered.
+- **Passkeys of SSO-connected accounts can require an active provider** (`passkeyRequiresActiveSso`), so deactivating a provider also stops its users' passkey logins.
+- Flow Builder triggers `sw6oidc.passkey.deleted` and `sw6oidc.passkey.disabled` (clone detection); infrastructure warning `redis_failed_recently`.
+- Hardening: the OIDC step-up nonce only works in the Administration session that started it; IdP responses are capped at 1 MiB (avatars use their own client); token responses must be Bearer; the IdP's OAuth error is kept for diagnosis; logout tokens over 16 KiB and logout tokens typed as another token kind are refused; the diagnostics probe is rate-limited; provider entities never serialise their secrets.
 - **`auth_time` is requested as an essential claim** for re-authentication when the IdP advertises `claims_parameter_supported` (new read-only provider field, set by discovery). A re-authentication the IdP doesn't confirm shows its own message and no longer counts against the callback rate limit (R8-L32).
 
 - **"Login as customer" no longer counts as a fresh login** (R8-H2): an administrator imitating a customer can no longer register a passkey or connect an SSO identity to that customer account.

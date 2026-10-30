@@ -2,8 +2,8 @@
 
 namespace MartinKuhl\Sw6Oidc\Storefront\Service;
 
-use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\PasswordLoginDisabledException;
+use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use MartinKuhl\Sw6Oidc\Service\Security\PasswordLoginPolicy;
 use Shopware\Core\Checkout\Customer\CustomerEntity;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractConvertGuestRoute;

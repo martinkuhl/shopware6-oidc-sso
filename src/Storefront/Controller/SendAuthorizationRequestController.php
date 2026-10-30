@@ -2,19 +2,19 @@
 
 namespace MartinKuhl\Sw6Oidc\Storefront\Controller;
 
-use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
-use MartinKuhl\Sw6Oidc\Service\Oidc\AuthTimeValidator;
 use MartinKuhl\Sw6Oidc\Service\Oidc\AuthorizationRequestBuilder;
+use MartinKuhl\Sw6Oidc\Service\Oidc\AuthTimeValidator;
 use MartinKuhl\Sw6Oidc\Service\Provider\Exception\ProviderNotFoundException;
 use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService;
 use MartinKuhl\Sw6Oidc\Service\Security\AuthorizationFlowContext;
+use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
 use MartinKuhl\Sw6Oidc\Service\Security\RelayStateValidator;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter;
 use MartinKuhl\Sw6Oidc\Service\Session\SessionAuthenticationClock;
+use Psr\Log\LoggerInterface;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractLogoutRoute;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
-use Psr\Log\LoggerInterface;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Shopware\Storefront\Controller\StorefrontController;
 use Symfony\Component\HttpFoundation\RedirectResponse;

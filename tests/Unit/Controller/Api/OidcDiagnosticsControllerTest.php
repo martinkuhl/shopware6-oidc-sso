@@ -2,9 +2,6 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller\Api;
 
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Cache\Adapter\ArrayAdapter;
-use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter;
 use MartinKuhl\Sw6Oidc\Controller\Api\OidcDiagnosticsController;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
@@ -14,14 +11,17 @@ use MartinKuhl\Sw6Oidc\Service\Health\ProviderConfigInspector;
 use MartinKuhl\Sw6Oidc\Service\Health\ProviderReachabilityChecker;
 use MartinKuhl\Sw6Oidc\Service\Security\SsrfUrlValidator;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
+use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\HttpFoundation\Request;
 
 #[CoversClass(OidcDiagnosticsController::class)]
 final class OidcDiagnosticsControllerTest extends TestCase

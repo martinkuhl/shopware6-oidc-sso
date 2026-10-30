@@ -2,15 +2,16 @@
 
 namespace MartinKuhl\Sw6Oidc\Controller\Api;
 
-use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\AdminTokenIssuer;
 use MartinKuhl\Sw6Oidc\Service\AdminAuth\StepUpService;
+use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig;
 use MartinKuhl\Sw6Oidc\Service\Security\PublicError;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;
+use Shopware\Core\PlatformRequest;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -59,7 +60,7 @@ class StepUpController extends AbstractController
         if ($userId !== null && !$this->flowStartAllowed($userId, $request)) {
             return new JsonResponse(['error' => 'too_many_requests'], Response::HTTP_TOO_MANY_REQUESTS);
         }
-        $authorizeUrl = $userId !== null ? $this->stepUpService->oidcAuthorizeUrl($userId, $this->callbackUrl(), $context) : null;
+        $authorizeUrl = $userId !== null ? $this->stepUpService->oidcAuthorizeUrl($userId, $this->callbackUrl(), $context, $this->tokenId($request)) : null;
 
         if ($authorizeUrl === null) {
             return new JsonResponse(['error' => 'step_up_unavailable'], Response::HTTP_NOT_FOUND);
@@ -81,7 +82,7 @@ class StepUpController extends AbstractController
             return new JsonResponse(['error' => 'too_many_requests'], Response::HTTP_TOO_MANY_REQUESTS);
         }
 
-        if ($userId === null || !$this->stepUpService->redeemNonce((string) $request->request->get('nonce'), $userId)) {
+        if ($userId === null || !$this->stepUpService->redeemNonce((string) $request->request->get('nonce'), $userId, $this->tokenId($request))) {
             if ($userId !== null) {
                 $this->rateLimiter->recordFailure($this->failureScope($userId), $request->getClientIp());
             }
@@ -185,5 +186,16 @@ class StepUpController extends AbstractController
     private function flowStartAllowed(string $userId, Request $request): bool
     {
         return $this->rateLimiter->consume(Sw6OidcRateLimiter::SCOPE_FLOW_START . ':' . $userId, $request->getClientIp());
+    }
+
+    /**
+     * The jti of the access token of this request: the step-up nonce is bound
+     * to the Administration session that started it.
+     */
+    private function tokenId(Request $request): ?string
+    {
+        $tokenId = $request->attributes->get(PlatformRequest::ATTRIBUTE_OAUTH_ACCESS_TOKEN_ID);
+
+        return \is_string($tokenId) && $tokenId !== '' ? $tokenId : null;
     }
 }

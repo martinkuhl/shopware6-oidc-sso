@@ -62,7 +62,11 @@ class StepUpService
      * The authorize URL of an OIDC re-authentication at the admin's bound
      * provider, or null when the admin has no (active) binding.
      */
-    public function oidcAuthorizeUrl(string $userId, string $redirectUri, Context $context): ?string
+    /**
+     * @param string|null $tokenId the jti of the access token starting the step-up: its nonce is then
+     *                             redeemable by that Administration session only
+     */
+    public function oidcAuthorizeUrl(string $userId, string $redirectUri, Context $context, ?string $tokenId = null): ?string
     {
         $provider = $this->boundProvider($userId, $context);
 
@@ -78,6 +82,8 @@ class StepUpService
             AuthorizationFlowContext::PURPOSE_STEP_UP,
             $userId,
             AuthTimeValidator::freshLoginParameters($provider),
+            null,
+            $tokenId,
         );
     }
 
@@ -102,21 +108,31 @@ class StepUpService
         }
 
         $nonce = bin2hex(random_bytes(32));
-        $this->cache->save(self::NONCE_PREFIX . $nonce, $userId, self::NONCE_TTL_SECONDS);
+        $this->cache->save(self::NONCE_PREFIX . $nonce, $userId . "\0" . ($result->flow->boundTokenId ?? ''), self::NONCE_TTL_SECONDS);
 
         return $nonce;
     }
 
     /**
-     * Redeems a step-up nonce; true only for the admin it was issued to.
+     * Redeems a step-up nonce; true only for the admin it was issued to and,
+     * when the step-up was started with a token id, only from that session:
+     * a nonce leaked to another session of the same admin is useless.
      */
-    public function redeemNonce(string $nonce, string $userId): bool
+    public function redeemNonce(string $nonce, string $userId, ?string $tokenId = null): bool
     {
         if ($nonce === '') {
             return false;
         }
 
-        return $this->cache->getAndDelete(self::NONCE_PREFIX . $nonce) === $userId;
+        $stored = $this->cache->getAndDelete(self::NONCE_PREFIX . $nonce);
+
+        if ($stored === null) {
+            return false;
+        }
+
+        [$storedUserId, $boundTokenId] = explode("\0", $stored, 2) + [1 => ''];
+
+        return $storedUserId === $userId && ($boundTokenId === '' || $boundTokenId === $tokenId);
     }
 
     public function hasOidc(string $userId, Context $context): bool

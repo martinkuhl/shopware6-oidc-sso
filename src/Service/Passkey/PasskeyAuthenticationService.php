@@ -3,9 +3,12 @@
 namespace MartinKuhl\Sw6Oidc\Service\Passkey;
 
 use MartinKuhl\Sw6Oidc\Core\Content\PasskeyCredential\Sw6OidcPasskeyCredentialEntity;
+use MartinKuhl\Sw6Oidc\Event\PasskeyDisabledEvent;
 use MartinKuhl\Sw6Oidc\Service\Cache\AtomicCacheInterface;
 use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyCeremonyException;
 use Psr\Log\LoggerInterface;
+use Shopware\Core\Framework\Context;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Webauthn\AuthenticatorAssertionResponse;
 use Webauthn\Exception\CounterException;
 use Webauthn\PublicKeyCredentialDescriptor;
@@ -52,6 +55,8 @@ class PasskeyAuthenticationService
         private readonly PasskeyCredentialRepository $credentialRepository,
         private readonly AtomicCacheInterface $cache,
         private readonly LoggerInterface $logger,
+        private readonly PasskeyOwnerLookup $ownerLookup,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -174,6 +179,18 @@ class PasskeyAuthenticationService
             }
 
             $this->credentialRepository->disable(base64_encode($rawId));
+
+            $disabled = $this->ownerLookup->event(
+                PasskeyDisabledEvent::class,
+                $entity->getUserType(),
+                $entity->getUserId(),
+                $entity->getNickname(),
+                Context::createDefaultContext(),
+            );
+
+            if ($disabled instanceof PasskeyDisabledEvent) {
+                $this->eventDispatcher->dispatch($disabled);
+            }
             $this->logger->warning('sw6oidc: passkey signature counter did not increase — possible cloned authenticator; the credential was disabled.', [
                 'credentialId' => $entity->getId(),
                 'userType' => $entity->getUserType(),

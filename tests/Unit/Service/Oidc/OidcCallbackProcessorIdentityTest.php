@@ -14,19 +14,19 @@ use MartinKuhl\Sw6Oidc\Service\Oidc\UserInfoService;
 use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\AttributeMapper;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\MappedProfile;
+use MartinKuhl\Sw6Oidc\Service\Security\BrowserBinding;
 use MartinKuhl\Sw6Oidc\Service\Security\Exception\InvalidStateException;
 use MartinKuhl\Sw6Oidc\Service\Security\OidcSecurityHelper;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcAccessControlEvaluator;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemoryAtomicCache;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\HttpFoundation\RequestStack;
-use MartinKuhl\Sw6Oidc\Service\Security\BrowserBinding;
 use Psr\Log\NullLogger;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Identity-defining rules of the shared callback pipeline: the login type a

@@ -2,12 +2,13 @@
 
 namespace MartinKuhl\Sw6Oidc\Storefront\Controller;
 
-use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Core\Content\SessionActivity\Sw6OidcSessionActivityDefinition;
 use MartinKuhl\Sw6Oidc\Event\PasskeyRegisteredEvent;
+use MartinKuhl\Sw6Oidc\Service\Passkey\CeremonyResponse;
 use MartinKuhl\Sw6Oidc\Service\Passkey\Exception\PasskeyLimitReachedException;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyAuthenticationService;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig;
+use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyLoginPolicy;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyRegistrationService;
 use MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyRelyingPartyResolver;
 use MartinKuhl\Sw6Oidc\Service\Provisioning\CustomerSalesChannelBinding;
@@ -75,6 +76,7 @@ class PasskeyController extends StorefrontController
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly Sw6OidcRateLimiter $rateLimiter,
         private readonly SessionAuthenticationClock $authenticationClock,
+        private readonly PasskeyLoginPolicy $loginPolicy,
     ) {
     }
 
@@ -245,6 +247,11 @@ class PasskeyController extends StorefrontController
 
             if ($resolved['userType'] !== 'customer' || !Uuid::isValid($resolved['userId'])) {
                 throw new \RuntimeException('This passkey is not registered to a customer account.');
+            }
+
+            // An account policy, not a failed login: not counted.
+            if (!$this->loginPolicy->allows('customer', $resolved['userId'], $context->getContext())) {
+                return new JsonResponse(['error' => 'account_unavailable'], Response::HTTP_FORBIDDEN);
             }
 
             $customer = $this->customerRepository->search(

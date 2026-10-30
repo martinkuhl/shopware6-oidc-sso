@@ -96,6 +96,30 @@ class JwtVerifier
     }
 
     /**
+     * A signed userinfo response (OIDC Core §5.3.2): the signature as for an
+     * ID token; `iss` and `aud`, when present, must name the provider and
+     * this client. No `exp`/`nonce`: userinfo carries neither.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws InvalidJwtException
+     */
+    public function verifyUserInfo(string $jwt, string $jwksEndpoint, string $issuer, string $audience, int $jwksCacheTtlSeconds, int $httpTimeoutSeconds): array
+    {
+        $payload = $this->verifySignedPayload($jwt, $jwksEndpoint, $jwksCacheTtlSeconds, $httpTimeoutSeconds, self::SCOPE_LOGIN);
+
+        if (\array_key_exists('iss', $payload) && $payload['iss'] !== $issuer) {
+            throw new InvalidJwtException('Signed userinfo was issued by another issuer.');
+        }
+
+        if (\array_key_exists('aud', $payload) && !\in_array($audience, (array) $payload['aud'], true)) {
+            throw new InvalidJwtException('Signed userinfo is addressed to another client.');
+        }
+
+        return $payload;
+    }
+
+    /**
      * Verifies an OIDC Back-Channel Logout token (§2.6): same signature and
      * exp/nbf/iss/aud checks as an id_token, plus: `iat` present and recent,
      * `jti` present (REQUIRED by §2.4, used for replay protection), an
