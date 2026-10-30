@@ -69,7 +69,7 @@ class OidcProviderAdminController extends AbstractController
         private readonly OidcLiveLoginTestService $liveLoginTestService,
         private readonly LoggerInterface $logger,
         private readonly TestResultTranslator $translator,
-        private readonly ?Connection $connection = null,
+        private readonly Connection $connection,
     ) {
     }
 
@@ -103,10 +103,6 @@ class OidcProviderAdminController extends AbstractController
      */
     private function postLogoutLandingUrls(): array
     {
-        if (!$this->connection instanceof Connection) {
-            return [];
-        }
-
         $urls = $this->connection->fetchFirstColumn(
             'SELECT DISTINCT domain.`url` FROM `sales_channel_domain` domain
              INNER JOIN `sales_channel` channel ON channel.`id` = domain.`sales_channel_id`

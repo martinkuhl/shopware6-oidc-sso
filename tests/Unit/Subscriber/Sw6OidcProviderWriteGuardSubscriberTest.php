@@ -10,6 +10,7 @@ use MartinKuhl\Sw6Oidc\Service\Security\Message\PasswordSessionRevocationMessage
 use MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant;
 use MartinKuhl\Sw6Oidc\Service\Security\SsrfUrlValidator;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor;
+use MartinKuhl\Sw6Oidc\Subscriber\ProviderValidation\ProviderFieldValidator;
 use MartinKuhl\Sw6Oidc\Subscriber\Sw6OidcProviderWriteGuardSubscriber;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemoryAtomicCache;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSsoSchema;
@@ -40,6 +41,7 @@ use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\Validation;
 
 #[CoversClass(Sw6OidcProviderWriteGuardSubscriber::class)]
+#[CoversClass(ProviderFieldValidator::class)]
 final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
 {
     private const APP_SECRET = 'test-app-secret';
@@ -506,16 +508,19 @@ final class Sw6OidcProviderWriteGuardSubscriberTest extends TestCase
         };
 
         $this->subscriber = new Sw6OidcProviderWriteGuardSubscriber(
-            new SsrfUrlValidator(false, static fn (): array => [$privateIps ? '10.0.0.1' : '93.184.215.14']),
+            new ProviderFieldValidator(
+                new SsrfUrlValidator(false, static fn (): array => [$privateIps ? '10.0.0.1' : '93.184.215.14']),
+                new Sw6OidcEncryptor(self::APP_SECRET),
+                $this->db->connection,
+                self::providerDefinition(),
+            ),
             $this->db->connection,
-            new Sw6OidcEncryptor(self::APP_SECRET),
             new SsoOnlyInvariant($this->db->connection, $breakGlass),
             $bus,
             $requestStack,
             $this->confirmations,
             new NullLogger(),
             $this->issuerChanges,
-            self::providerDefinition(),
             $this->passkeyConfig(),
         );
 

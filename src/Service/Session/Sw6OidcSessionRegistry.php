@@ -51,7 +51,7 @@ class Sw6OidcSessionRegistry
         private readonly Connection $connection,
         private readonly Sw6OidcEncryptor $encryptor,
         private readonly LoggerInterface $logger,
-        string $customerContextLifetime = 'P1D',
+        string $customerContextLifetime,
     ) {
         $this->customerContextLifetimeSeconds = (new \DateTimeImmutable('@0'))->add(new \DateInterval($customerContextLifetime))->getTimestamp();
     }

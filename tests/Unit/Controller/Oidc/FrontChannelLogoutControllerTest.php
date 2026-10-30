@@ -35,7 +35,7 @@ final class FrontChannelLogoutControllerTest extends TestCase
     protected function setUp(): void
     {
         $this->registry = SqliteSessionRegistry::create();
-        $this->rateLimiter = new Sw6OidcRateLimiter(null, new ArrayAdapter());
+        $this->rateLimiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 10, 60, 30);
     }
 
     public function testKnownSidEndsTheSession(): void

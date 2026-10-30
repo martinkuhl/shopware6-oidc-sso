@@ -36,7 +36,7 @@ final class OidcAdminAuthControllerRateLimitTest extends TestCase
 
     public function testUnknownNoncesAreCountedAndEventuallyRefused(): void
     {
-        $controller = $this->buildAdminAuthController(['rateLimiter' => new Sw6OidcRateLimiter(null, new ArrayAdapter(), 2)]);
+        $controller = $this->buildAdminAuthController(['rateLimiter' => new Sw6OidcRateLimiter(null, new ArrayAdapter(), 2, 60, 30)]);
 
         $statuses = [];
 
@@ -49,7 +49,7 @@ final class OidcAdminAuthControllerRateLimitTest extends TestCase
 
     public function testUnknownErrorTicketsAreCounted(): void
     {
-        $controller = $this->buildAdminAuthController(['rateLimiter' => new Sw6OidcRateLimiter(null, new ArrayAdapter(), 1)]);
+        $controller = $this->buildAdminAuthController(['rateLimiter' => new Sw6OidcRateLimiter(null, new ArrayAdapter(), 1, 60, 30)]);
 
         self::assertSame(Response::HTTP_OK, $controller->loginError('unknown', self::request())->getStatusCode());
         self::assertSame(Response::HTTP_TOO_MANY_REQUESTS, $controller->loginError('unknown', self::request())->getStatusCode());

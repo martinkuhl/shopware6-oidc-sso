@@ -37,9 +37,9 @@ class Sw6OidcSessionActivityRecorder
     public function __construct(
         private readonly EntityRepository $activityRepository,
         private readonly LoggerInterface $logger,
-        private readonly ?NodeHeartbeat $nodeHeartbeat = null,
+        private readonly NodeHeartbeat $nodeHeartbeat,
         /** SW6OIDC_SESSION_ACTIVITY_TRUNCATE_IP: keep only IPv4 /24 and IPv6 /64 (N-L12) */
-        private readonly bool $truncateIp = false,
+        private readonly bool $truncateIp,
     ) {
     }
 
@@ -76,7 +76,7 @@ class Sw6OidcSessionActivityRecorder
         }
 
         // Every login path passes through here: a cheap way to learn which app servers serve SSO.
-        $this->nodeHeartbeat?->record();
+        $this->nodeHeartbeat->record();
     }
 
     /**

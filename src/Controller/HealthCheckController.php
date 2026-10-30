@@ -61,9 +61,9 @@ class HealthCheckController extends AbstractController
         private readonly ProviderConfigInspector $configInspector,
         private readonly InfrastructureInspector $infrastructureInspector,
         private readonly CacheItemPoolInterface $cache,
-        private readonly ?NodeHeartbeat $nodeHeartbeat = null,
+        private readonly NodeHeartbeat $nodeHeartbeat,
         #[\SensitiveParameter]
-        private readonly ?string $healthToken = null,
+        private readonly ?string $healthToken,
     ) {
     }
 
@@ -83,7 +83,7 @@ class HealthCheckController extends AbstractController
         }
 
         // Every web node answers this probe, the message worker never does (R3-L32).
-        $this->nodeHeartbeat?->record();
+        $this->nodeHeartbeat->record();
 
         $item = $this->cache->getItem(self::CACHE_KEY);
 

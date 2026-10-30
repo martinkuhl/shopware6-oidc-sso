@@ -12,7 +12,7 @@ final class Sw6OidcRateLimiterTest extends TestCase
 {
     public function testOnlyFailuresConsumeTheBudget(): void
     {
-        $limiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 3);
+        $limiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 3, 60, 30);
 
         for ($i = 0; $i < 50; ++$i) {
             self::assertFalse($limiter->isBlocked('scope', '198.51.100.1'), 'peeking never consumes');
@@ -28,7 +28,7 @@ final class Sw6OidcRateLimiterTest extends TestCase
 
     public function testBudgetsArePerScopeAndAddress(): void
     {
-        $limiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 1);
+        $limiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 1, 60, 30);
         $limiter->recordFailure('scope-a', '198.51.100.1');
 
         self::assertTrue($limiter->isBlocked('scope-a', '198.51.100.1'));
@@ -40,7 +40,7 @@ final class Sw6OidcRateLimiterTest extends TestCase
     {
         $dedicated = new ArrayAdapter();
         $fallback = new ArrayAdapter();
-        (new Sw6OidcRateLimiter($dedicated, $fallback, 1))->recordFailure('scope', null);
+        (new Sw6OidcRateLimiter($dedicated, $fallback, 1, 60, 30))->recordFailure('scope', null);
 
         self::assertNotSame([], $dedicated->getValues());
         self::assertSame([], $fallback->getValues());
@@ -61,7 +61,7 @@ final class Sw6OidcRateLimiterTest extends TestCase
 
     public function testStorefrontAndAdminCallbacksDoNotShareABudget(): void
     {
-        $limiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 1);
+        $limiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 1, 60, 30);
         $limiter->recordFailure(Sw6OidcRateLimiter::SCOPE_CALLBACK_STOREFRONT, '198.51.100.1');
 
         self::assertTrue($limiter->isBlocked(Sw6OidcRateLimiter::SCOPE_CALLBACK_STOREFRONT, '198.51.100.1'));
@@ -70,7 +70,7 @@ final class Sw6OidcRateLimiterTest extends TestCase
 
     public function testIpv6AddressesShareTheirSlash64(): void
     {
-        $limiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 1);
+        $limiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 1, 60, 30);
         $limiter->recordFailure('scope', '2001:db8:1:2:aaaa::1');
 
         self::assertTrue($limiter->isBlocked('scope', '2001:db8:1:2:bbbb::2'), 'same /64');

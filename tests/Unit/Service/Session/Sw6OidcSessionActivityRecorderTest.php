@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Session;
 
+use MartinKuhl\Sw6Oidc\Service\Health\NodeHeartbeat;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSession;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionActivityRecorder;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\InMemorySessionActivityRepository;
@@ -21,7 +22,7 @@ final class Sw6OidcSessionActivityRecorderTest extends TestCase
     protected function setUp(): void
     {
         $this->store = new InMemorySessionActivityRepository();
-        $this->recorder = new Sw6OidcSessionActivityRecorder($this->store->mock(fn (string $class) => $this->createMock($class)), new NullLogger());
+        $this->recorder = new Sw6OidcSessionActivityRecorder($this->store->mock(fn (string $class) => $this->createMock($class)), new NullLogger(), $this->createStub(NodeHeartbeat::class), false);
     }
 
     public function testLoginStoresRequestMetadataButNeverTheRawSessionKey(): void
@@ -41,7 +42,7 @@ final class Sw6OidcSessionActivityRecorderTest extends TestCase
 
     public function testIpCanBeStoredTruncated(): void
     {
-        $recorder = new Sw6OidcSessionActivityRecorder($this->store->mock(fn (string $class) => $this->createMock($class)), new NullLogger(), null, true);
+        $recorder = new Sw6OidcSessionActivityRecorder($this->store->mock(fn (string $class) => $this->createMock($class)), new NullLogger(), $this->createStub(NodeHeartbeat::class), true);
 
         $recorder->recordLogin('customer', 'c1', 'passkey', 'ctx-a', Request::create('/', 'GET', [], [], [], ['REMOTE_ADDR' => '198.51.100.7']));
         $recorder->recordLogin('customer', 'c1', 'passkey', 'ctx-b', Request::create('/', 'GET', [], [], [], ['REMOTE_ADDR' => '2001:db8:1:2:aaaa::1']));
@@ -121,7 +122,7 @@ final class Sw6OidcSessionActivityRecorderTest extends TestCase
         $repository = $this->createMock(EntityRepository::class);
         $repository->method('create')->willThrowException(new \RuntimeException('db down'));
         $repository->method('search')->willThrowException(new \RuntimeException('db down'));
-        $recorder = new Sw6OidcSessionActivityRecorder($repository, new NullLogger());
+        $recorder = new Sw6OidcSessionActivityRecorder($repository, new NullLogger(), $this->createStub(NodeHeartbeat::class), false);
 
         $recorder->recordLogin('admin', 'u1', 'passkey', 'jti', null);
         $recorder->recordLogout('admin', 'u1', 'logout', 'jti');

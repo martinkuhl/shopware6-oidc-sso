@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller;
 
+use MartinKuhl\Sw6Oidc\Service\Health\NodeHeartbeat;
 use MartinKuhl\Sw6Oidc\Controller\HealthCheckController;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
@@ -153,7 +154,7 @@ final class HealthCheckControllerTest extends TestCase
             new ProviderConfigInspector(),
             $infrastructure,
             new ArrayAdapter(),
-            null,
+            $this->createStub(NodeHeartbeat::class),
             $token,
         ))->health($request);
 

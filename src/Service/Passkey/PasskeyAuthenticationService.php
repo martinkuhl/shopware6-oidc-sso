@@ -51,7 +51,7 @@ class PasskeyAuthenticationService
         private readonly WebauthnCeremonyFactory $ceremonyFactory,
         private readonly PasskeyCredentialRepository $credentialRepository,
         private readonly AtomicCacheInterface $cache,
-        private readonly ?LoggerInterface $logger = null,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -166,7 +166,7 @@ class PasskeyAuthenticationService
             $lastUse = $entity->getUpdatedAt();
 
             if ($lastUse instanceof \DateTimeInterface && $lastUse->getTimestamp() >= time() - self::CONCURRENT_ASSERTION_WINDOW_SECONDS) {
-                $this->logger?->notice('sw6oidc: passkey assertion refused, a concurrent one already used a higher signature counter.', [
+                $this->logger->notice('sw6oidc: passkey assertion refused, a concurrent one already used a higher signature counter.', [
                     'credentialId' => $entity->getId(),
                 ]);
 
@@ -174,7 +174,7 @@ class PasskeyAuthenticationService
             }
 
             $this->credentialRepository->disable(base64_encode($rawId));
-            $this->logger?->warning('sw6oidc: passkey signature counter did not increase — possible cloned authenticator; the credential was disabled.', [
+            $this->logger->warning('sw6oidc: passkey signature counter did not increase — possible cloned authenticator; the credential was disabled.', [
                 'credentialId' => $entity->getId(),
                 'userType' => $entity->getUserType(),
                 'userId' => $entity->getUserId(),

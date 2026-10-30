@@ -440,6 +440,10 @@
         <service id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter">
             <argument type="service" id="cache.rate_limiter" on-invalid="null" />
             <argument type="service" id="cache.app" />
+            <!-- failure-only budget, window in seconds, consuming budget -->
+            <argument>10</argument>
+            <argument>60</argument>
+            <argument>30</argument>
         </service>
 
         <!-- OIDC Back-Channel Logout receiver -->
@@ -800,17 +804,22 @@
             <tag name="kernel.event_subscriber" />
         </service>
 
-        <service id="MartinKuhl\Sw6Oidc\Subscriber\Sw6OidcProviderWriteGuardSubscriber">
+        <service id="MartinKuhl\Sw6Oidc\Subscriber\ProviderValidation\ProviderFieldValidator">
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\SsrfUrlValidator" />
-            <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcEncryptor" />
+            <argument type="service" id="Doctrine\DBAL\Connection" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition" />
+        </service>
+
+        <service id="MartinKuhl\Sw6Oidc\Subscriber\Sw6OidcProviderWriteGuardSubscriber">
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Subscriber\ProviderValidation\ProviderFieldValidator" />
+            <argument type="service" id="Doctrine\DBAL\Connection" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\SsoOnlyInvariant" />
             <argument type="service" id="messenger.default_bus" />
             <argument type="service" id="request_stack" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\LockoutConfirmationStore" />
             <argument type="service" id="sw6oidc.logger" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\IssuerChangeConfirmationStore" />
-            <argument type="service" id="MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Passkey\PasskeyConfig" />
             <tag name="kernel.event_subscriber" />
             <tag name="kernel.reset" method="reset" />

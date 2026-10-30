@@ -777,6 +777,20 @@
       <code><![CDATA[validate]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="src/Subscriber/ProviderValidation/ProviderFieldValidator.php">
+    <InternalMethod>
+      <code><![CDATA[getPayload]]></code>
+      <code><![CDATA[getPayload]]></code>
+      <code><![CDATA[getPayload]]></code>
+      <code><![CDATA[getPayload]]></code>
+      <code><![CDATA[getPayload]]></code>
+      <code><![CDATA[getPayload]]></code>
+      <code><![CDATA[getPrimaryKey]]></code>
+    </InternalMethod>
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="src/Subscriber/SessionActivityWriteGuardSubscriber.php">
     <UnusedClass>
       <code><![CDATA[SessionActivityWriteGuardSubscriber]]></code>

@@ -51,9 +51,9 @@ class Sw6OidcRateLimiter
     public function __construct(
         ?CacheItemPoolInterface $rateLimiterPool,
         CacheItemPoolInterface $fallbackPool,
-        int $failureLimit = 10,
-        int $intervalSeconds = 60,
-        int $consumingLimit = 30,
+        int $failureLimit,
+        int $intervalSeconds,
+        int $consumingLimit,
     ) {
         $storage = new CacheStorage($rateLimiterPool ?? $fallbackPool);
 

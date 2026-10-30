@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller\Api;
 
+use MartinKuhl\Sw6Oidc\Service\Health\NodeHeartbeat;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
 use MartinKuhl\Sw6Oidc\Controller\Api\SessionActivityController;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSession;
@@ -31,7 +32,7 @@ final class SessionActivityControllerTest extends TestCase
     protected function setUp(): void
     {
         $this->store = new InMemorySessionActivityRepository();
-        $this->recorder = new Sw6OidcSessionActivityRecorder($this->store->mock(fn (string $class) => $this->createMock($class)), new NullLogger());
+        $this->recorder = new Sw6OidcSessionActivityRecorder($this->store->mock(fn (string $class) => $this->createMock($class)), new NullLogger(), $this->createStub(NodeHeartbeat::class), false);
         $this->registry = SqliteSessionRegistry::create();
         $this->destruction = $this->createMock(Sw6OidcSessionDestructionService::class);
     }

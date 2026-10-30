@@ -50,7 +50,7 @@ final class BackChannelLogoutControllerTest extends TestCase
     {
         $this->signer = new JwtTestSigner();
         $this->registry = SqliteSessionRegistry::create();
-        $this->rateLimiter = new Sw6OidcRateLimiter(null, new ArrayAdapter());
+        $this->rateLimiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 10, 60, 30);
         $this->replayMarkers = new InMemoryAtomicCache();
     }
 

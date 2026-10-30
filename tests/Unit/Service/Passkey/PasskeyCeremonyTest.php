@@ -45,7 +45,7 @@ final class PasskeyCeremonyTest extends TestCase
         $this->store = new InMemoryPasskeyCredentialStore();
         $this->credentials = new PasskeyCredentialRepository($this->store->wire($this->createMock(EntityRepository::class)), $factory, new NullLogger(), $this->store->connection($this->createMock(Connection::class)));
         $this->registration = new PasskeyRegistrationService($factory, $this->credentials, $cache);
-        $this->authentication = new PasskeyAuthenticationService($factory, $this->credentials, $cache);
+        $this->authentication = new PasskeyAuthenticationService($factory, $this->credentials, $cache, new NullLogger());
         $this->authenticator = new SoftwareAuthenticator();
         $this->userId = Uuid::randomHex();
     }

@@ -52,21 +52,19 @@ class SessionActivityController extends AbstractController
     {
         return new JsonResponse([
             'sessionLifetimeSeconds' => [
-                Sw6OidcSession::USER_TYPE_ADMIN => $this->seconds($this->adminSessionLifetime, 604800),
-                Sw6OidcSession::USER_TYPE_CUSTOMER => $this->seconds($this->customerSessionLifetime, 86400),
+                Sw6OidcSession::USER_TYPE_ADMIN => $this->seconds($this->adminSessionLifetime),
+                Sw6OidcSession::USER_TYPE_CUSTOMER => $this->seconds($this->customerSessionLifetime),
             ],
         ]);
     }
 
-    private function seconds(string $interval, int $fallback): int
+    /**
+     * Core's own ISO 8601 parameters: an invalid one is a broken install and
+     * fails loudly, as in Sw6OidcSessionRegistry, instead of a silent guess.
+     */
+    private function seconds(string $interval): int
     {
-        try {
-            $now = new \DateTimeImmutable('@0');
-
-            return $now->add(new \DateInterval($interval))->getTimestamp();
-        } catch (\Throwable) {
-            return $fallback;
-        }
+        return (new \DateTimeImmutable('@0'))->add(new \DateInterval($interval))->getTimestamp();
     }
 
     #[Route(
