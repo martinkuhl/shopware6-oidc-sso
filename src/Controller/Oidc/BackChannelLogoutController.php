@@ -34,6 +34,9 @@ class BackChannelLogoutController extends AbstractController
     /** Upper bound for remembering a jti. */
     private const MAX_JTI_TTL_SECONDS = 86400;
 
+    /** Logout tokens are a few hundred bytes; anything far bigger is junk. */
+    private const MAX_LOGOUT_TOKEN_BYTES = 16384;
+
     public function __construct(
         private readonly JwtVerifier $jwtVerifier,
         private readonly ProviderResolver $providerResolver,
@@ -147,6 +150,12 @@ class BackChannelLogoutController extends AbstractController
 
         if (!\is_string($logoutToken) || $logoutToken === '') {
             throw new InvalidJwtException('Missing "logout_token".');
+        }
+
+        // Real logout tokens are a few hundred bytes: never decode megabytes
+        // posted by an anonymous caller.
+        if (\strlen($logoutToken) > self::MAX_LOGOUT_TOKEN_BYTES) {
+            throw new InvalidJwtException('"logout_token" is too large.');
         }
 
         return $logoutToken;

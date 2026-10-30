@@ -97,6 +97,16 @@ final class OidcHttpClientTest extends TestCase
         (new OidcHttpClient($httpClient, new NullLogger()))->postFormIgnoringResponseBody('https://idp.example/revoke', ['token' => 't'], 5);
     }
 
+    public function testTheOauthErrorOfA4xxAnswerIsKeptForDiagnosis(): void
+    {
+        $httpClient = new MockHttpClient(new MockResponse('{"error":"invalid_client","error_description":"Client authentication failed\u0007"}', ['http_code' => 401]));
+
+        $this->expectException(OidcHttpException::class);
+        $this->expectExceptionMessage('failed with status 401 (invalid_client: Client authentication failed)');
+
+        (new OidcHttpClient($httpClient, new NullLogger()))->postForm('https://idp.example/token', [], 5);
+    }
+
     public function testGetIsRetriedOnceAfterATransportError(): void
     {
         $calls = 0;

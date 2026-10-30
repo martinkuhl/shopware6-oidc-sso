@@ -7,6 +7,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 
 /**
  * R3-M2: redirects stay off behind the SSRF wrapper (which follows them
@@ -20,7 +21,7 @@ final class Sw6OidcHttpClientFactoryTest extends TestCase
 
     public function testRedirectsAreNotFollowedBehindTheSsrfWrapper(): void
     {
-        $response = Sw6OidcHttpClientFactory::create($this->redirectingClient(), false)
+        $response = Sw6OidcHttpClientFactory::create($this->redirectingClient(), false, 1024)
             ->request('POST', 'https://93.184.215.14/token', ['body' => 'code=secret']);
 
         self::assertSame(307, $response->getStatusCode());
@@ -29,11 +30,22 @@ final class Sw6OidcHttpClientFactoryTest extends TestCase
 
     public function testACallerCanAllowRedirectsPerRequest(): void
     {
-        $response = Sw6OidcHttpClientFactory::create($this->redirectingClient(), false)
+        $response = Sw6OidcHttpClientFactory::create($this->redirectingClient(), false, 1024)
             ->request('GET', 'https://93.184.215.14/avatar', ['max_redirects' => 3]);
 
         self::assertSame(200, $response->getStatusCode());
         self::assertSame(['https://93.184.215.14/avatar', 'https://93.184.215.15/elsewhere'], $this->requested);
+    }
+
+    /**
+     * A hostile or broken endpoint can't make a login buffer megabytes.
+     */
+    public function testResponsesAreCapped(): void
+    {
+        $client = Sw6OidcHttpClientFactory::create(new MockHttpClient(new MockResponse(str_repeat('x', 5000))), true, 1024);
+
+        $this->expectException(TransportExceptionInterface::class);
+        $client->request('GET', 'https://idp.example/jwks')->getContent();
     }
 
     private function redirectingClient(): MockHttpClient

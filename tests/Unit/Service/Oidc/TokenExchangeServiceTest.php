@@ -2,6 +2,7 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Service\Oidc;
 
+use MartinKuhl\Sw6Oidc\Service\Http\Exception\OidcHttpException;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
@@ -134,6 +135,19 @@ final class TokenExchangeServiceTest extends TestCase
 
         $this->expectException(ClientSecretUnavailableException::class);
         (new TokenExchangeService($httpClient))->exchangeCodeForTokens($provider, 'the-code', 'https://shop.example/callback', 'verifier');
+    }
+
+    public function testOnlyBearerTokensAreAccepted(): void
+    {
+        $httpClient = $this->createStub(OidcHttpClient::class);
+        $httpClient->method('postForm')->willReturnOnConsecutiveCalls(['access_token' => 'at', 'token_type' => 'bearer'], ['access_token' => 'at', 'token_type' => 'DPoP']);
+        $service = new TokenExchangeService($httpClient);
+        $provider = $this->buildProvider(publicClient: true);
+
+        self::assertSame('at', $service->exchangeCodeForTokens($provider, 'c', 'https://shop.example/cb', 'v')['access_token'] ?? null);
+
+        $this->expectException(OidcHttpException::class);
+        $service->exchangeCodeForTokens($provider, 'c', 'https://shop.example/cb', 'v');
     }
 
     public function testAnEmptySecretOfAConfidentialClientFailsBeforeAnyRequest(): void

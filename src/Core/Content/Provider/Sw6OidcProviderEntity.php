@@ -696,6 +696,22 @@ class Sw6OidcProviderEntity extends Entity
     }
 
     /**
+     * The hydrated entity holds the client secret and the webhook URL in
+     * plaintext: any ad-hoc serialisation (a JsonResponse, a log context, a
+     * Twig dump) leaves them out. The Admin API encoder doesn't use this; it
+     * never returns them anyway (no ApiAware).
+     *
+     * @return array<string, mixed>
+     */
+    public function jsonSerialize(): array
+    {
+        $data = parent::jsonSerialize();
+        unset($data['clientSecret'], $data['healthAlertWebhookUrl']);
+
+        return $data;
+    }
+
+    /**
      * The decrypted client secret, or null when it is empty or could not be
      * decrypted (hydration passes an undecryptable envelope through). Use
      * this wherever the secret is about to be sent or exported, so

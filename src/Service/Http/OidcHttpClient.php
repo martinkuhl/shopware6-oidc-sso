@@ -131,7 +131,7 @@ class OidcHttpClient
         $this->logResponse($method, $url, $statusCode, $decoded);
 
         if ($statusCode >= 400) {
-            throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed with status %d.', $this->withoutQuery($url), $statusCode));
+            throw new OidcHttpException(sprintf('OIDC HTTP request to "%s" failed with status %d%s.', $this->withoutQuery($url), $statusCode, $this->oauthError($decoded)));
         }
 
         if (!\is_array($decoded)) {
@@ -139,6 +139,24 @@ class OidcHttpClient
         }
 
         return $decoded;
+    }
+
+    /**
+     * The OAuth error of a 4xx answer (`invalid_client`: wrong secret or
+     * client authentication method), so the log and the connection/live test
+     * say why. Capped and reduced to printable text: the description is
+     * IdP-controlled.
+     */
+    private function oauthError(mixed $decoded): string
+    {
+        if (!\is_array($decoded) || !\is_string($decoded['error'] ?? null)) {
+            return '';
+        }
+
+        $clean = static fn (string $value, int $max): string => mb_substr(trim((string) preg_replace('/[^\P{C}]+/u', ' ', $value)), 0, $max);
+        $description = \is_string($decoded['error_description'] ?? null) ? $clean($decoded['error_description'], 200) : '';
+
+        return ' (' . $clean($decoded['error'], 64) . ($description !== '' ? ': ' . $description : '') . ')';
     }
 
     /**

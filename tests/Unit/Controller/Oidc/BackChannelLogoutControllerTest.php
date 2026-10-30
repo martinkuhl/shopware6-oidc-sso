@@ -150,6 +150,24 @@ final class BackChannelLogoutControllerTest extends TestCase
         self::assertSame([], $this->registry->resolveBySid('a1000000000000000000000000000001', 'sid-1'));
     }
 
+    /**
+     * Explicit typing (Back-Channel Logout §2.4): `logout+jwt` and the
+     * generic `JWT` pass, a token typed as something else doesn't.
+     */
+    public function testTheTypHeaderMustNotNameAnotherTokenType(): void
+    {
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-1', 'customer', 'c1000000000000000000000000000001', 'ctx-1', '5c000000000000000000000000000001');
+
+        self::assertSame(400, $this->post($this->signer->sign($this->claims([]), ['typ' => 'at+jwt']))->getStatusCode());
+        self::assertSame(200, $this->post($this->signer->sign($this->claims([]), ['typ' => 'logout+jwt']))->getStatusCode());
+        self::assertSame(200, $this->post($this->signer->sign($this->claims(['jti' => 'second']), ['typ' => 'JWT']))->getStatusCode());
+    }
+
+    public function testAnOversizedTokenIsRejectedBeforeDecoding(): void
+    {
+        self::assertSame(400, $this->post(str_repeat('a', 16385))->getStatusCode());
+    }
+
     public function testMissingTokenIs400(): void
     {
         self::assertSame(400, $this->controller()->logout(Request::create('/sw6oidc/backchannel-logout', 'POST'))->getStatusCode());

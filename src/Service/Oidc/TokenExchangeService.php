@@ -3,6 +3,7 @@
 namespace MartinKuhl\Sw6Oidc\Service\Oidc;
 
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
+use MartinKuhl\Sw6Oidc\Service\Http\Exception\OidcHttpException;
 use MartinKuhl\Sw6Oidc\Service\Http\OidcHttpClient;
 
 /**
@@ -45,11 +46,24 @@ class TokenExchangeService
             'code_verifier' => $codeVerifier,
         ], $authentication->bodyParams);
 
-        return $this->httpClient->postForm(
+        $tokens = $this->httpClient->postForm(
             (string) $provider->getAccessTokenEndpoint(),
             $params,
             $provider->getHttpTimeout(),
             $authentication->authorizationHeader,
         );
+
+        // The access token is sent to userinfo as a Bearer token: another
+        // type (DPoP, MAC) would be used wrongly (RFC 6749 §5.1, RFC 6750).
+        $tokenType = $tokens['token_type'] ?? null;
+
+        if ($tokenType !== null && (!\is_string($tokenType) || strcasecmp($tokenType, 'Bearer') !== 0)) {
+            throw new OidcHttpException(sprintf(
+                'The token endpoint issued a "%s" token; only Bearer tokens are supported.',
+                \is_string($tokenType) ? mb_substr($tokenType, 0, 32) : \gettype($tokenType),
+            ));
+        }
+
+        return $tokens;
     }
 }

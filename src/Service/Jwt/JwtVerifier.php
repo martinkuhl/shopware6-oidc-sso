@@ -117,6 +117,16 @@ class JwtVerifier
         /** false while the caller is rate-limited: cached keys only, never a JWKS fetch (R3-M1) */
         bool $allowRefetch = true,
     ): array {
+        // OIDC Back-Channel Logout §2.4 explicit typing: a token typed as
+        // something else (an access token's "at+jwt", …) is not a logout
+        // token; untyped and the generic "JWT" stay accepted.
+        $signature = $this->deserialize($jwt)->getSignature(0);
+        $typ = $signature->hasProtectedHeaderParameter('typ') ? $signature->getProtectedHeaderParameter('typ') : null;
+
+        if ($typ !== null && !\in_array(strtolower(preg_replace('#^application/#i', '', (string) $typ) ?? ''), ['jwt', 'logout+jwt'], true)) {
+            throw new InvalidJwtException('Logout token has a foreign "typ" header.');
+        }
+
         $payload = $this->verifySignedPayload($jwt, $jwksEndpoint, $jwksCacheTtlSeconds, $httpTimeoutSeconds, self::SCOPE_LOGOUT, $allowRefetch);
 
         $this->assertStandardClaims($payload, $issuer, $audience);

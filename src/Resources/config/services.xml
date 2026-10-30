@@ -94,6 +94,16 @@
             <factory class="MartinKuhl\Sw6Oidc\Service\Http\Sw6OidcHttpClientFactory" method="create" />
             <argument type="service" id="Symfony\Contracts\HttpClient\HttpClientInterface" />
             <argument>%env(bool:SW6OIDC_ALLOW_INSECURE_IDP_URLS)%</argument>
+            <!-- IdP responses (token, userinfo, discovery, JWKS) and webhooks: 1 MiB is generous -->
+            <argument>1048576</argument>
+        </service>
+
+        <!-- User content (the `picture` claim): separate client, room for the 2 MB avatar limit -->
+        <service id="sw6oidc.user_content_http_client" class="Symfony\Contracts\HttpClient\HttpClientInterface">
+            <factory class="MartinKuhl\Sw6Oidc\Service\Http\Sw6OidcHttpClientFactory" method="create" />
+            <argument type="service" id="Symfony\Contracts\HttpClient\HttpClientInterface" />
+            <argument>%env(bool:SW6OIDC_ALLOW_INSECURE_IDP_URLS)%</argument>
+            <argument>2200000</argument>
         </service>
 
         <service id="MartinKuhl\Sw6Oidc\Service\Jwt\JwtVerifier">
@@ -265,7 +275,7 @@
         </service>
 
         <service id="MartinKuhl\Sw6Oidc\Service\Provisioning\AvatarFetcher">
-            <argument type="service" id="sw6oidc.http_client" />
+            <argument type="service" id="sw6oidc.user_content_http_client" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\SsrfUrlValidator" />
         </service>
 
@@ -1002,6 +1012,7 @@
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Health\ProviderConfigInspector" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Health\ProviderReachabilityChecker" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Health\InfrastructureInspector" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter" />
             <call method="setContainer">
                 <argument type="service" id="service_container" />
             </call>

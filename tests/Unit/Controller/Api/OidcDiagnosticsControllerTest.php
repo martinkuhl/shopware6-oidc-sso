@@ -2,6 +2,9 @@
 
 namespace MartinKuhl\Sw6Oidc\Tests\Unit\Controller\Api;
 
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter;
 use MartinKuhl\Sw6Oidc\Controller\Api\OidcDiagnosticsController;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderCollection;
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderDefinition;
@@ -23,6 +26,8 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 #[CoversClass(OidcDiagnosticsController::class)]
 final class OidcDiagnosticsControllerTest extends TestCase
 {
+    private ?Sw6OidcRateLimiter $rateLimiter = null;
+
     public function testReportsConfigProbeAndAlertingStateWithoutLeakingTheWebhook(): void
     {
         $provider = new Sw6OidcProviderEntity();
@@ -40,7 +45,7 @@ final class OidcDiagnosticsControllerTest extends TestCase
             'healthAlertConsecutiveFailures' => 4,
         ]);
 
-        $body = json_decode((string) $this->controller([$provider])->diagnostics('p1', Context::createDefaultContext())->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        $body = json_decode((string) $this->controller([$provider])->diagnostics('p1', new Request(), Context::createDefaultContext())->getContent(), true, 512, JSON_THROW_ON_ERROR);
 
         self::assertSame(['issuer_missing'], $body['configProblems']);
         self::assertTrue($body['reachability']['ok']);
@@ -50,7 +55,7 @@ final class OidcDiagnosticsControllerTest extends TestCase
 
     public function testUnknownProviderIs404(): void
     {
-        self::assertSame(404, $this->controller([])->diagnostics('nope', Context::createDefaultContext())->getStatusCode());
+        self::assertSame(404, $this->controller([])->diagnostics('nope', new Request(), Context::createDefaultContext())->getStatusCode());
     }
 
     /**
@@ -73,7 +78,17 @@ final class OidcDiagnosticsControllerTest extends TestCase
             new ProviderConfigInspector(),
             new ProviderReachabilityChecker(new MockHttpClient(new MockResponse('{"keys":[{"kty":"RSA"}]}')), new SsrfUrlValidator(false, static fn (): array => ['93.184.215.14'])),
             $this->infrastructure(),
+            $this->rateLimiter ?? new Sw6OidcRateLimiter(null, new ArrayAdapter(), 10, 60, 30),
         );
+    }
+
+    public function testTheLiveProbeIsRateLimited(): void
+    {
+        $this->rateLimiter = new Sw6OidcRateLimiter(null, new ArrayAdapter(), 10, 60, 1);
+        $controller = $this->controller([]);
+
+        self::assertSame(404, $controller->diagnostics('nope', new Request(), Context::createDefaultContext())->getStatusCode());
+        self::assertSame(429, $controller->diagnostics('nope', new Request(), Context::createDefaultContext())->getStatusCode());
     }
 
     private function infrastructure(): InfrastructureInspector

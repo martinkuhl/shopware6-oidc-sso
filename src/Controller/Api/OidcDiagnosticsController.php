@@ -7,11 +7,15 @@ use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Service\Health\InfrastructureInspector;
 use MartinKuhl\Sw6Oidc\Service\Health\ProviderConfigInspector;
 use MartinKuhl\Sw6Oidc\Service\Health\ProviderReachabilityChecker;
+use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter;
+use Shopware\Core\Framework\Api\Context\AdminApiSource;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
@@ -31,6 +35,7 @@ class OidcDiagnosticsController extends AbstractController
         private readonly ProviderConfigInspector $configInspector,
         private readonly ProviderReachabilityChecker $reachabilityChecker,
         private readonly InfrastructureInspector $infrastructureInspector,
+        private readonly Sw6OidcRateLimiter $rateLimiter,
     ) {
     }
 
@@ -40,8 +45,17 @@ class OidcDiagnosticsController extends AbstractController
         defaults: ['_acl' => ['sw6oidc_provider:read']],
         methods: ['POST'],
     )]
-    public function diagnostics(string $providerId, Context $context): JsonResponse
+    public function diagnostics(string $providerId, Request $request, Context $context): JsonResponse
     {
+        // Every call probes the IdP: a read-only admin must not turn the shop
+        // into a request generator (consuming budget per admin).
+        $source = $context->getSource();
+        $scope = Sw6OidcRateLimiter::SCOPE_FLOW_START . ':diagnostics:' . ($source instanceof AdminApiSource ? (string) $source->getUserId() : 'integration');
+
+        if (!$this->rateLimiter->consume($scope, $request->getClientIp())) {
+            return new JsonResponse(['error' => 'too_many_requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
         $provider = $this->providerRepository->search(new Criteria([$providerId]), $context)->first();
 
         if (!$provider instanceof Sw6OidcProviderEntity) {
