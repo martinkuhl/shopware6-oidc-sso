@@ -1,275 +1,354 @@
-# Implementation plan for the open topics of `Code-Review.md` (after revision 5)
+# Implementation plan for `Code-Review.md` revision 8
 
 | | |
 |---|---|
-| **Source** | `Code-Review.md` revision 4, with the revision 5 status table (2026-10-06) |
-| **State** | **Done (2026-10-07, review revision 7).** Phases Q2–Q9 are implemented in `af243ae` … `a9577b4`; see the status table in `Code-Review.md`. Still open: running the integration and E2E suites (Q0/Q1 gate; CI now runs them as blocking jobs), the partials R3-L29 and R3-L49, and the optional roadmap. R3-L48 was closed as won't fix. |
-| **Plugin version after this work** | `0.2.0` |
-| **Structure** | Phases Q0–Q9, plus an optional roadmap phase. One commit per phase or more; finding IDs go in the commit messages, as before. |
+| **Source** | `Code-Review.md` revision 8 (2026-10-30), reviewed commit `7cb8086` |
+| **State** | Not started. The plan for revision 7 (phases Q0–Q9) is done; it is in git history (`git show 7cb8086:Code-Review_implementation_plan.md`). |
+| **Scope** | 2 High, 10 Medium, 32 Low, the maintainability and unused-code rows, the CLAUDE.md drift. |
+| **Plugin version after this work** | `0.3.0` (breaking changes are fine: the plugin has no production installs yet). |
+| **Structure** | Phases P0–P9, plus an optional roadmap phase. At least one commit per phase; finding ids (`R8-H1`, `R8-M3`, …) go in the commit messages. |
 
 Paths are relative to `src/` unless they start with `tests/`, `.github/` or `src/Resources/`. Admin JS paths start at `src/Resources/app/administration/src/`. The full description of each finding is in `Code-Review.md`.
 
 ---
 
-## What revision 5 changed (context for the open work)
+## Decisions (defaults used unless you decide otherwise)
 
-New building blocks you will meet in the code:
-
-| Piece | Purpose |
-|---|---|
-| `Service/Security/SsoOnlyInvariant` | The one SSO-only check (R3-H7), asked by the provider guard, `AdminLockoutGuardSubscriber` and the admin unlink. Counts only active admins whose binding matches the provider's current issuer. |
-| `Subscriber/ProviderTrustGuardSubscriber` | Trust-relevant provider fields, privileged role mappings and identity mappings/access rules of admin providers need a superadmin; audit log (R3-H4). |
-| `Subscriber/TrustEntityWriteGuardSubscriber` | Passkey credentials and bindings are written by the plugin only (R3-H2, R3-H3). |
-| `Service/Session/SessionAuthenticationClock` | "Freshly authenticated" per browser session (PHP session), for Storefront linking and passkey registration (R3-H6, R3-M5). |
-| `Service/Passkey/PasskeySessionTerminator` + `Subscriber/PasskeyDeletionSubscriber` | Deleting a passkey ends the sessions it logged in (R3-M6). |
-| `Service/Provisioning/AdminRoleStore` + `sw6oidc_managed_acl_role` | Managed-only role sync, race-free superadmin revoke (R3-M11). |
-| `binding_scope`, `issuer_hash` on `sw6oidc_user_provider` | Identity key with issuer and sales-channel scope (R3-M9, R3-M14). |
-| `IssuerChangeConfirmationStore`, `LockoutConfirmationStore` | Decisions in the atomic store, keyed by provider and admin, behind `user-verified` (R3-M22, R3-M9). |
-| `PasswordLoginGuardClientRepository` | User access keys refused at core's `ClientRepository` (R3-M20). |
-| Migrations 13–18 | Nullable secret, activity passkey hash, admin RP ID, logout style, binding key, managed roles. |
+| # | Question | Default |
+|---|---|---|
+| D1 | Branch | `fix/code-review-rev8` off `main`, merged through a PR (CI only runs on pushes to `main` and on PRs). |
+| D2 | R8-H1: extend `TRUST_FIELDS`, or switch to an editor allow-list? | **Allow-list** (`EDITOR_FIELDS`). Every column not on it needs a superadmin, so new columns are protected by default. |
+| D3 | R8-H2: in an imitated Storefront session, refuse sensitive actions or only skip the "fresh" stamp? | **Both.** No stamp, and passkey registration, SSO linking and re-auth answer with a flash message ("not available while logged in as this customer by an administrator"). |
+| D4 | R8-L32: how to ask for `auth_time` | `claims={"id_token":{"auth_time":{"essential":true}}}`, **only** when discovery says `claims_parameter_supported: true`. No positive `max_age`. Nothing changes for Authelia. |
+| D5 | R8-M9: on a repeat customer login with the same context token, what happens to the older registry entry? | **Superseded:** revoke its IdP tokens (fire-and-forget) and delete it. One entry per context token. |
+| D6 | R8-M10: duplicate (issuer, client_id) providers | **Allowed** (separate customer and admin rows for one IdP client are legitimate). Back-channel logout runs for every matching provider. |
+| D7 | R8-L16: health status `down` | **200** by default with `status: down`; `?strict=1` answers 503. Breaking for anyone who relies on 503: note it in the CHANGELOG. |
+| D8 | R8-L25: passkey-only accounts and SSO-only mode | Count an active passkey as "can still log in" in the confirmation prompt, and don't revoke sessions of accounts that have one. |
 
 ---
 
-## Ground rules (unchanged)
+## Ground rules
 
 1. Test first for anything observable. A failing test reproduces the finding, then the fix.
-2. `composer ci` stays green (PHPCS, PHPStan, Psalm, Rector, unit tests). After Q0, the `integration`, `e2e` and `assets` CI jobs are blocking too.
-3. Rebuild the committed bundles whenever admin or storefront JS changes. Build only this plugin: regenerate `var/plugins.json` with `bin/console bundle:dump`, keep only the `Sw6Oidc` entry, run `bin/build-administration.sh` / `bin/build-storefront.sh` with `SHOPWARE_SKIP_BUNDLE_DUMP=1` (and `SHOPWARE_ADMIN_BUILD_ONLY_EXTENSIONS=1`, `SHOPWARE_SKIP_THEME_COMPILE=true`), then restore `var/plugins.json`. This keeps other plugins' files untouched.
-4. Migrations continue at `Migration1790800019…`, idempotent; destructive steps in `updateDestructive()`.
-5. Finding IDs in code comments only where the code would otherwise look arbitrary.
-6. Update `CLAUDE.md` and `TECHNICAL_DOCUMENTATION.md` in the same commit as the behaviour change.
-7. Mark findings `Fixed (<commit>)` in the revision 5 status table of `Code-Review.md`.
+2. `composer ci` stays green (PHPCS, PHPStan 8 / 5, Psalm with `findUnusedCode`, Rector, unit tests). The `shopware` and `e2e` CI jobs are blocking.
+3. Unit tests must pass in any timezone: P0 sets `date.timezone=UTC` in `phpunit.xml.dist`, and new tests never compare against local-time `strtotime()`.
+4. Rebuild the committed bundles whenever admin or storefront JS changes. Build only this plugin (`bin/console bundle:dump`, keep only `Sw6Oidc` in `var/plugins.json`, `SHOPWARE_SKIP_BUNDLE_DUMP=1`, restore `var/plugins.json`). Build the Storefront in the CI layout (the plugin checked out as `../plugin`), or the chunk hashes differ.
+5. No new migration files: after PM, schema changes go into the one schema migration (`Migration1790900000CreateSchema`), and the dev database is altered by hand.
+6. Finding ids go in code comments only where the code would otherwise look arbitrary.
+7. Update `CLAUDE.md`, `TECHNICAL_DOCUMENTATION.md`, `README.md` and `CHANGELOG.md` in the same commit as the behaviour change.
+8. Mark each finding `Fixed (<commit>)` in a status table at the top of `Code-Review.md` once its phase lands.
 
 ---
 
 ## Phase overview
 
-| Phase | Theme | Items | Size |
+| Phase | Theme | Findings | Size |
 |---|---|---|---|
-| **Q0** | Make the test gate real; run the suites that weren't run | R4-L7 (rest), R3-L51, F-1, F-8 | M |
-| **Q1** | Follow-ups of the fix round | F-1 … F-10 | M |
-| **Q2** | Passkey and step-up Lows | R3-F9, R3-L13–L19, R3-L41 | M |
-| **Q3** | State, sessions, logout Lows | R3-L8, L9, L30–L36, L37, L39, L40 | M |
-| **Q4** | Identity and provisioning Lows | R3-L20–L22, L24 (rest), L25–L29 | M |
-| **Q5** | OIDC protocol, HTTP, JWT Lows | R3-L1–L4, L6, L7, L12, L44, L45, R4-L1–R4-L4 | M |
-| **Q6** | DAL and secrets | R3-L42, R3-L43 (rest), `sign_count` | M |
-| **Q7** | Frontend Lows and hygiene | R3-F7, F8, F10–F17, R6-L2, Hygiene 1 and 2 | L |
-| **Q8** | Shopware conventions, DI, dependencies | R3-L5, L10, L38, L46–L50, R4-L5, R4-L6 | M |
-| **Q9** | Unused code, comments, docs, static analysis, release | Unused-code table, R3-L11, R3-L52, PHPStan level 8, Psalm unused code, version `0.2.0` | M |
-| Q10 (optional) | Roadmap | Future improvements 9–11, 14, 15; F-M2, F-M14; L13 | — |
+| **P0** | Test baseline | R8-L31 | S |
+| **PM** | One schema migration, legacy-data code removed | (new topic, no finding id) | M |
+| **P1** | Trust boundaries | R8-H1, R8-H2, R8-M11, R8-L5 | M |
+| **P2** | IdP interoperability | R8-M1, R8-L32, R8-L1, R8-L2, R8-L3, R8-L4 | M |
+| **P3** | Sessions and logout | R8-M9, R8-M10, R8-L13, R8-L19, R8-L20 | M |
+| **P4** | Identity and provisioning | R8-M3, R8-M4, R8-L6–R8-L12 | L |
+| **P5** | Storefront addresses | R8-M5, R8-M6 | M |
+| **P6** | Passkeys and admin auth | R8-M8, R8-L14, R8-L15, R8-M-3 | M |
+| **P7** | Write guards, data layer, queued side effects | R8-M7, R8-L21–R8-L30 | L |
+| **P8** | Health | R8-L16, R8-L17, R8-L18 | S |
+| **P9** | Maintainability, unused code, docs, release | R8-M-1, R8-M-2, R8-M-4, R8-M-5, R8-M-U, CLAUDE.md drift, version `0.3.0` | M |
+| P10 (optional) | Roadmap | Future improvements 2–4, 8–14 | — |
 
-Q0 comes first: the integration and E2E suites were **not run** for the fix round (only the unit suite, plus manual checks against a dev shop's MySQL).
-
----
-
-## Q0 — Test gate, and run what wasn't run
-
-**Findings:** R4-L7 (rest), R3-L51; follow-ups F-1 and F-8.
-
-1. **Run the integration and E2E suites** against the current branch (`tests/Integration/README.md`, `tests/E2E/README.md`) and fix what breaks. Expected hot spots: spec `05` (step-up and admin passkey, R3-H1), spec `04` (the new three-passkey delete case, R3-F3), spec `03` (SSO-only: the invariant and the confirmation now need `user-verified`), the admin OIDC login (role sync is managed-only now).
-2. **HTTP-level integration tests** (`tests/Integration/AdminAuth/`):
-   - `POST /api/sw6oidc/admin/token`, `/step-up/token`, `/step-up/passkey/verify`, `/passkey/login-verify` with `Content-Type: application/json` through the kernel (the unit test `AdminTokenIssuerTest` covers the issuer, not the routes).
-   - Anonymous failures answer 400/403, never 401 (R3-F5).
-3. **Integration tests for the new MySQL-specific SQL** (F-8), which so far was only checked by hand:
-   - `AdminRoleStore` (`INSERT IGNORE`, `SELECT … FOR UPDATE`): two concurrent revokes of the last two superadmins leave one.
-   - `PasskeySessionTerminator` (`SHA2(token)` match), `Sw6OidcSessionRegistry::prune()` (the correlated `DELETE`s), `PlaceholderAddressSubscriber` (`JSON_REMOVE`).
-   - Migrations 17 and 18 on a populated database (legacy bindings, channel-bound customers, mapped roles).
-   - DAL write attempts as a non-superadmin integration: `PATCH` passkey `userId`, binding `sub`, provider endpoint → 400 with the right codes (R3-H2–H4).
-4. **Admin smoke spec** `tests/E2E/specs/00-admin-smoke.spec.ts`: open every plugin page as superadmin and as a restricted role (viewer of `sw6oidc_provider`), zero console errors; the role editor shows the plugin's privileges (R3-F2).
-5. **CI** (`.github/workflows/ci.yml`, R3-L51): remove `continue-on-error` from `assets` and `e2e`; pin actions to commit SHAs; top-level `permissions: contents: read`; static analysis on PHP 8.2 and 8.5. `composer.json`: `config.policy.advisories.block: true`.
-
-**Done when:** every CI job is blocking and green, and the new tests run there.
+Order: P0, then PM (so the columns this round adds go straight into the one schema migration, never into new migration files), then P1 (security), then P2 (it breaks logins), then P3–P8 in any order, then P9 last (it touches files from every phase).
 
 ---
 
-## Q1 — Follow-ups of the fix round
+## P0: Test baseline
 
-Things revision 5 introduced or deliberately left out.
+**R8-L31**
+1. `phpunit.xml.dist`: add `<ini name="date.timezone" value="UTC"/>`.
+2. `tests/Unit/ScheduledTask/SessionActivityCleanupTaskHandlerTest.php:35-36`: compare against `new \DateTimeImmutable('-30 days', new \DateTimeZone('UTC'))`.
+3. Grep `tests/` for other `strtotime(`, `date(` and `new \DateTime(` calls without an explicit timezone, and fix them the same way.
 
-| # | Item | Change |
-|---|---|---|
-| F-1 | Suites not run | See Q0. |
-| F-2 | Trust fields look editable for non-superadmins | Only a banner explains R3-H4 today. Disable the trust fields (list in `ProviderTrustGuardSubscriber::TRUST_FIELDS`), the superadmin/admin-role mapping rows and admin-provider email/username mappings and access rules for non-superadmins; show the server's `SW6OIDC_SUPERADMIN_REQUIRED` on the field. Depends on Q7 Hygiene 1 (do it on the `mt-*` templates). |
-| F-3 | No default notification for "SSO account linked" | `AccountSsoLinkedEvent` ships as a Flow Builder trigger only. Add a mail template type, a default template (de-DE, en-GB) and an **inactive** flow `sw6oidc.account.sso_linked` (Q5 default), via migration. |
-| F-4 | Broken configurations from before revision 5 are only refused on save | `ProviderConfigInspector`: report `email_mapping_unverifiable` (transformed or custom-claim email while `require_email_verified` is on, R3-M15) and `bindings_on_previous_issuer` (count of bindings whose `issuer_hash` doesn't match the provider's issuer, R3-M9). Show both in diagnostics and the health check. |
-| F-5 | RP ID field placeholders | There are now two `sw6oidc-rp-id-field`s (`passkeyRpId` per sales channel, `passkeyRpIdAdmin`), and both show the Administration host. Give the component a `scope` prop: the admin field shows the `APP_URL` host, the storefront field the selected sales channel's domain host or the plain placeholder. Remove the two "VERIFICATION NEEDED" comments (Hygiene 2). |
-| F-6 | Deleting an admin passkey that logged in ends all of that admin's sessions, the current one too | Say so in the "My passkeys" delete confirmation and in the recovery grid. For customers: core keeps one context per customer and sales channel, so ending the key's sessions also ends the customer's own session in that channel. Document both in `TECHNICAL_DOCUMENTATION.md` (Pitfalls). |
-| F-7 | CLI import of an issuer change disconnects bindings silently (logged) | `sw6oidc:config:import --rebind-on-issuer-change`: pass the decision to the guard through a context state, so an operator can keep accounts connected. |
-| F-8 | MySQL-only SQL is unit-tested against SQLite doubles or not at all | See Q0, step 3. |
-| F-9 (= review **R6-L1**) | `SsoOnlyInvariant::unboundActiveAdminIds()` ignores the issuer | Use the same issuer filter as `adminAccessPossible()`, so the confirmation count and the password-session revocation agree with the invariant. |
-| F-10 | Sibling module and Authelia | Port `logout_style` to `MartinKuhl/magento2-oidc` (`Model/Service/RpInitiatedLogoutService.php`, same Keycloak bug). Check whether your Authelia version advertises a standard `end_session_endpoint`; if so, `standard` is the better long-term style for it. |
+**Done when:** `TZ=Europe/Berlin composer test` and `TZ=UTC composer test` are both green.
 
 ---
 
-## Q2 — Passkey and step-up Lows
+## PM: One schema migration, legacy-data code removed
 
-| ID | Change |
+**Why:** the plugin has 21 migrations, and about half of them only move data out of shapes that existed for a few days during development: plaintext secrets, v1 envelopes, bindings without `sub`, `claim_encoding`, the button columns. The plugin is in development and installed only in the author's shop, so none of that data exists anywhere else.
+
+1. **One migration.** Replace `src/Migration/*` with a single `Migration1790900000CreateSchema` holding the **final** schema:
+   - all 11 tables (`sw6oidc_provider`, `_attribute_mapping`, `_role_mapping`, `_access_control_rule`, `_user_provider`, `_passkey_credential`, `_session_activity`, `_session`, `_one_time_token`, `_node_heartbeat`, `_managed_acl_role`), with every column, index and foreign key;
+   - `CREATE TABLE IF NOT EXISTS`, so it is a no-op on an existing install;
+   - `updateDestructive()` empty.
+   
+   Take the column definitions from `SHOW CREATE TABLE` of a fully migrated database, so the result matches what migrations 1–21 produced.
+2. **Columns this round adds** (P2 `claims_parameter_supported`) go into that one migration, not into new files.
+3. **Remove the code that only existed for pre-migration data:**
+   - `Sw6OidcEncryptor`: drop the v1 envelope (`sw6oidc_v1:`, secretbox) and plaintext pass-through. Only v2 remains, so `isLegacy()` goes too.
+   - `IdentityResolver` step 2: drop the legacy-binding backfill (`sub = NULL`), along with `UserProviderBindingService::backfillSubject()` and the nullable `sub` handling.
+   - `RedisAtomicCache`: drop reading plaintext values (R3-L35 compatibility).
+   - `Sw6OidcProviderWriteGuardSubscriber` / the entity: anything that still accepts or upgrades plaintext `client_secret` rows (the "legacy plaintext rows are encrypted on the fly" path of the config export).
+   - Passkey `public_key` rows from webauthn-lib 4.x deserialise unchanged, so nothing is needed there.
+4. **Tests:** delete the migration tests. Add one test that the migration's statements create every table and column the entity definitions use (definition fields compared with the `CREATE TABLE` columns, also covering R8-L21's NOT NULL check).
+5. **Existing install (the author's dev shop):** the old migration rows stay in the `migration` table, which is harmless (Shopware only loads classes that exist). The new migration finds every table and does nothing. The columns added in this round are applied to the dev database once by hand (`ALTER TABLE …`, listed in the commit message), or by reinstalling the plugin (`sw6oidc:config:export` → uninstall → install → import).
+6. **Docs:** CLAUDE.md "Migration/" and "Database schema" sections, TECHNICAL_DOCUMENTATION.md, CHANGELOG "Breaking: installs from before 0.3.0 must reinstall".
+
+**Done when:** a fresh `plugin:install` on an empty database creates the same schema as migrations 1–21 did (compare `SHOW CREATE TABLE` output), and `composer ci` is green.
+
+---
+
+## P1: Trust boundaries
+
+### R8-H1: superadmin-affecting flags (D2)
+- `Subscriber/ProviderTrustGuardSubscriber.php`: replace `TRUST_FIELDS` with `EDITOR_FIELDS`, the columns a non-superadmin may change:
+  - display and behaviour: `app_name`, `is_active`, `sort_order`, `show_*_link`;
+  - customer-side flags: `auto_create_customer`, `sync_customer_*`, `default_customer_group_id`, `disable_non_oidc_customer_login`;
+  - operations: `http_timeout`, `jwks_cache_ttl`, `health_alert_*` settings, `post_logout_url`;
+  - the secret (re-entry only).
+  
+  Every other column needs a superadmin on update, and every insert of an admin-serving provider does too. In particular that covers `revoke_superadmin_on_sso`, `sync_admin_role_on_sso`, `sync_admin_profile_on_sso`, `disable_non_oidc_admin_login`, `frontchannel_admin_logout`, both `*_auth_method` columns and `logout_style`.
+- Admin UI (`module/sw6oidc-provider/page/sw6oidc-provider-detail`): drive `canEditTrust` from the same list. Expose it in `form-context` (`OidcProviderAdminController`), so the list exists only once.
+- **Tests:**
+  - A unit test per formerly unprotected field: a non-superadmin `PATCH` gets `SW6OIDC_SUPERADMIN_REQUIRED`.
+  - A test that fails when a new definition field is in neither list, so whoever adds a column has to decide.
+
+### R8-H2: imitation (D3)
+- `Subscriber/CustomerAuthenticationClockSubscriber.php`: return early when `$event->getSalesChannelContext()->getImitatingUserId() !== null`.
+- `Service/Session/SessionAuthenticationClock::isFresh()`: take the `SalesChannelContext`, and return false while imitating.
+- `Storefront/Controller/PasskeyController` (registration options and verify), `SendAuthorizationRequestController::link()`/`reauthenticate()`, `OidcCallbackController::completeLink()`: refuse while imitating, with a flash message and snippets in de-DE and en-GB.
+- Passkey *login* during imitation can't happen (imitation is its own login), so it needs nothing.
+- **Tests:** unit tests with a context that has an imitating user id. An E2E case in `04-storefront-passkey`: imitate a customer, open *My account > Passkeys*, and expect the "not available" message.
+
+### R8-M11: guest conversion
+- New `Storefront/Service/PasswordLoginGuardConvertGuestRoute` decorating `AbstractConvertGuestRoute`. When `PasswordLoginPolicy::isPasswordLoginDisabled(LoginType::Customer)`, throw `PasswordLoginDisabledException` (the Storefront flash already comes from `PasswordLoginDisabledExceptionSubscriber`).
+- Hide the "create account" option on the checkout finish page when the policy is on (template block).
+- **Tests:** a unit test for the decorator; integration coverage via `/store-api/account/convert-guest`.
+
+### R8-L5: unlink of a superadmin
+- `Controller/Api/OidcUserProviderAdminController::unlink()`: when the target is a superadmin, require the acting user to be a superadmin.
+- After unlinking, end the target's sessions: `Sw6OidcSessionDestructionService` for the user, then remove the registry entries.
+- **Test:** a non-superadmin with `user:update` unlinks a superadmin and gets 403.
+
+**Done when:** all of the above have tests, and E2E 03, 04 and 05 are green.
+
+---
+
+## P2: IdP interoperability
+
+### R8-M1: Basic credentials
+- Build the Basic header in `Service/Oidc/ClientAuthentication`, not in `OidcHttpClient`: `base64_encode(rawurlencode($id) . ':' . rawurlencode($secret))` (RFC 6749 §2.3.1; `rawurlencode`, because fosite, Keycloak and Spring decode it correctly). `OidcHttpClient::postForm()` then takes a ready `Authorization` header value.
+- **Tests:** a secret `a+b%2F:c` and a client id containing `:`, round-tripped through `urldecode` the way fosite does it.
+- **Manual check:** a login against Authelia with a secret that contains `+`.
+
+### R8-L32: ask for `auth_time` (D4)
+- `OidcDiscoveryService`: read `claims_parameter_supported` from discovery and store it. The schema migration (PM) gets `sw6oidc_provider.claims_parameter_supported` (bool, default 0), refreshed on every re-discovery. Show it read-only on the provider page.
+- `StepUpService::start()` and `SendAuthorizationRequestController::reauthenticate()`: add `claims={"id_token":{"auth_time":{"essential":true}}}` to `extraParams` when the flag is set. Keep `prompt=login`. No `max_age`.
+- `OidcCallbackController`: catch the freshness failure, as its own exception `FreshLoginNotConfirmedException extends InvalidStateException`, thrown by `AuthTimeValidator`. Show its own flash message (`sw6oidc.account.reauthNotConfirmed`) and **don't** call `recordFailure()`. The admin step-up popup gets a matching `error: 'fresh_login_not_confirmed'`, which `sw-verify-user-modal` shows as "Your identity provider did not confirm a new login; use your passkey".
+- **Tests:** the builder adds `claims` only with the flag. The callback maps the new exception without counting it.
+- **Manual check:** step-up and Storefront re-auth against Authelia still work. Authelia doesn't advertise the flag, or ignores the parameter.
+
+### R8-L1: revocation status
+- `OidcHttpClient::postFormIgnoringResponseBody()`: anything outside 2xx throws. The revocation caller already logs failures at warning level.
+
+### R8-L2: one secret resolution
+- `ClientAuthentication::forProvider(Sw6OidcProviderEntity $provider, string $authMethod)` resolves the secret itself through `getUsableClientSecret()`. Empty or undecryptable secrets throw `ClientSecretUnavailableException`. `TokenExchangeService::clientSecret()` goes away, and `RpInitiatedLogoutService` catches the exception and skips, as it does today.
+
+### R8-L3: rate limits for `link`/`reauth`
+- `SendAuthorizationRequestController::link()` and `reauthenticate()`: `consume(SCOPE_FLOW_START . ':' . $customerId, $request->getClientIp())`. When the budget is exhausted, show a flash message and redirect back to the account page.
+
+### R8-L4: email pair
+- `ClaimsMerger::merge()`: take `email` and `email_verified` together from the id_token when it has `email`. Otherwise take both from userinfo.
+- **Test:** id_token `email` without `email_verified`, userinfo `email_verified: true` → not verified.
+
+---
+
+## P3: Sessions and logout
+
+### R8-M9: one registry entry per context token (D5)
+- `Sw6OidcSessionRegistry::register()` for customers: inside a transaction, select the existing entries with the same `session_key_hash` `FOR UPDATE`, delete them, and return them to the caller. `OidcCallbackController` revokes their IdP tokens (`RpInitiatedLogoutService::revokeTokens()`) after the response decision.
+- `findBySessionKey()`: `ORDER BY created_at DESC`. With the dedup there is at most one row, but newest-first is the safe default.
+- `Sw6OidcSessionActivityRecorder::recordLogout()`: match the exact `registry_session_id` first, then fall back to the session-key hash. That needs two queries, or one query with `ORDER BY (registry_session_id = :id) DESC`.
+- **Tests:**
+  - Two registrations with the same key leave one row, and the older one's tokens are handed back.
+  - Logout picks the newest entry.
+  - Integration: two SSO logins of the same customer, then a logout. The registry is empty and the activity rows are closed correctly.
+
+### R8-M10: back-channel logout for every matching provider (D6)
+- `BackChannelLogoutController`: collect every provider from `findByIssuer()` whose client id is in `aud`.
+  - Verify the token once, with the first candidate's verifier context. Issuer and JWKS are the same for all candidates.
+  - Call `Sw6OidcIdpLogoutHandler::logout()` for each candidate.
+  - Answer 500 if any of them fails (the replay marker is removed, as today).
+- **Test:** two providers with the same issuer and client id; the session belongs to the second one; the back-channel logout ends it.
+
+### R8-L13: passkey session marker
+- Remove `sw6oidc_login_credential_id`: the writes in `PasskeyController.php:282`, the read in `AccountPasskeyController.php:84`, and the constant.
+- `AccountPasskeyController::delete()` logs the customer out only if `PasskeySessionTerminator` ended the current context token. The terminator returns the hashes it ended.
+
+### R8-L19: `RedisAtomicCache` in long-running workers
+- Implement `ResetInterface` (clear `resolved`), and tag the service `kernel.reset`.
+- `RedisConnectionFactory`: on a command error (not only on connect), call `markDown()`.
+
+### R8-L20: batched registry prune
+- `Sw6OidcSessionRegistry::prune()`: each of the three DELETEs gets `LIMIT 1000` in a loop with a 30 s time budget, like `DatabaseAtomicCache::prune()`.
+
+---
+
+## P4: Identity and provisioning
+
+### R8-M3: missing groups claim
+- `MappedProfile`: add `bool $groupsClaimPresent`, set in `OidcCallbackProcessor`. It is true when the configured `group_attribute` key (or any child key) exists in the raw merged claims, and is not listed in `_claim_names`.
+- `AdminProvisioningService::syncRole()` and `CustomerProvisioningService` group sync: skip when it is false, and log a notice once per login.
+- `revoke_superadmin_on_sso`: also skipped when it is false. Revoking because nothing resolved is fine only if the claim was actually there.
+- **Tests:** Entra overage (`_claim_names.groups`), missing claim, present-but-empty claim (sync runs and removes roles).
+
+### R8-M4: locale and salutation on sync
+- New `Service/Provisioning/LocaleResolver`:
+  - exact `Locale.code`;
+  - normalise `_` to `-`;
+  - case-insensitive;
+  - language prefix (`de` → the first active `de-*`, preferring `de-DE`).
+  
+  It returns null when nothing matches.
+- `syncProfile()`: write `localeId` only on a match. The en-GB fallback stays for create only. Do the same for `resolveSalutationId()` in customer sync.
+- **Tests:** `de`, `de_DE`, `DE-de`, `xx` (no write on sync).
+
+### R8-L6: avatars
+- Store the plugin-created media id in `user.customFields.sw6oidc_avatar_media_id`. Replace only that media. If the current avatar is a different media, leave it alone.
+- `AvatarFetcher`: reject images whose `getimagesize()` reports more than 4096 px per side.
+
+### R8-L7: `email_domain`
+- The operator matches only when `email_verified` is true (same truthiness as the identity resolver). Compare domains punycode-encoded (`idn_to_ascii`), and validate the email after encoding.
+
+### R8-L8: one tokenisation for string groups
+- `ClaimsNormalizer::normalizeGroups()`: split a scalar groups claim on whitespace and commas, as the access-control evaluator does. Document it in CLAUDE.md. Breaking for a group name with spaces sent as a scalar (rare; noted in the CHANGELOG).
+
+### R8-L9: countries
+- `CountryResolver`: filter `active = 1`. Prefer countries assigned to the sales channel, then fall back to any active one.
+
+### R8-L10: provisioning duplication (R3-L29)
+- Customer path: refuse an inactive bound or email-matched account **before** `syncExisting()`, with a `CustomerProvisioningDeniedException::inactive()` (an account-policy error that isn't counted).
+- Extract a `Service/Provisioning/JitAccountCreator::createAndBind(callable $create, string $userType, ExternalIdentity $identity, ?string $bindingScope)` that holds the transaction plus the unique-violation re-resolve. Both services use it.
+- Extract `ProfileDiff::withoutUnchanged()`, used by both services.
+- Use one fallback-name helper: local part, else `'-'`, with `'0'` handled via `=== ''`.
+
+### R8-L11: config import errors
+- Key failures by `"#<index> <appName>"`. Move the `appName` validation inside the per-provider `try`.
+
+### R8-L12: subject-key race
+- `UserProviderBindingService::bind()`: on a unique violation, read the binding by subject as well. If the subject belongs to another account, throw `SubjectAlreadyLinkedException`.
+
+---
+
+## P5: Storefront addresses
+
+### R8-M5: `CartValidator`
+- New `Checkout/Cart/PlaceholderAddressCartValidator implements CartValidatorInterface` (tag `shopware.cart.validator`). For a logged-in customer whose active billing or shipping address has `customFields.sw6oidc_placeholder_address`, it adds a blocking `Error` (`sw6oidc-placeholder-address`, with snippets).
+- Keep the confirm-page redirect in `PlaceholderAddressSubscriber` as a convenience.
+- **Tests:** unit test for the validator; integration test with `/store-api/checkout/order` (400 while flagged).
+
+### R8-M6: clear the flag only when the address is complete
+- `PlaceholderAddressSubscriber` (`:215`): after the write, re-read street, city and zipcode (when `country.postcodeRequired`) of the written address ids in one query. Clear the flag only when none of them is `-` or empty.
+- **Test:** a write with only `{street}` keeps the flag; a write with street and city clears it.
+
+---
+
+## P6: Passkeys and admin auth
+
+### R8-M8: self-service delete
+- `PasskeyCredentialRepository::deleteOwnedByUser()`: drop the `Context` parameter. The ownership-filtered search and the delete run in `Context::createDefaultContext()` with `SYSTEM_SCOPE` (ownership is the authorisation). Check the other self-service paths (`findAllForOwner()` for "My passkeys") for the same ACL dependency.
+- **Tests:**
+  - A unit test that the repository calls use system scope.
+  - An E2E case in `05` with a role user that has only `user.update_profile`: register, then delete a passkey.
+
+### R8-L14: required browser binding
+- `AdminLoginNonceService::createNonce()`: drop the `?string $browserBinding = null` parameter; the service computes it through `BrowserBinding::bindCurrentBrowser()`.
+- `BrowserBinding::matchesCurrentBrowser(null)` stays true only outside an HTTP request. A null stored hash inside a request is refused.
+
+### R8-L15: counter race
+- `PasskeyAuthenticationService`:
+  - Remember the stored `sign_count` when the ceremony loads the credential.
+  - On `CounterException`, re-read the row. If the response counter is greater than the value remembered at load time, refuse only this assertion (concurrent use). Otherwise disable the key, as today.
+  - Applies to admin, storefront and step-up.
+
+### R8-M-3: duplication
+- `PasskeyCredentialRepository::userHandle(string $userType, string $userId): string`, used by `StepUpService` and `PasskeyRegistrationService`.
+- `Service/Passkey/CeremonyResponse::options(string $sessionId, string $optionsJson): JsonResponse`, used by both passkey controllers and `StepUpController`.
+
+---
+
+## P7: Write guards, data layer, queued side effects
+
+### R8-M7: dry run and queued revocation
+- `PasswordSessionRevocationHandler`: before revoking, re-check `PasswordLoginPolicy::isPasswordLoginDisabled($message->userType)`. Do nothing if the policy is off.
+- `OidcConfigTransfer` dry run: add the context state `sw6oidc.dry_run`. `Sw6OidcProviderWriteGuardSubscriber::onProviderWritten()` dispatches no message and consumes no confirmation while it is set.
+- **Tests:** the handler with the policy off does nothing; a dry-run import dispatches nothing.
+
+### Data layer
+| # | Change |
 |---|---|
-| R3-F9 | `sw-verify-user-modal`: poll `popup.closed` every 500 ms and reset `sw6oidcStepUpBusy`; close the popup and clear the timer in `beforeUnmount`. Server: for `step_up` flows `OidcAdminAuthController` always renders the `postMessage` page, also with `{error}` on pipeline failures. |
-| R3-L13 | `registration-options`: a `consume()` budget per customer; cap at 20 credentials per account. |
-| R3-L14 | The four Storefront ceremony POSTs require `Sec-Fetch-Site: same-origin` or an `Origin` equal to the current domain (403 otherwise). |
-| R3-L15 | `updateAfterAssertion()`: one `UPDATE … WHERE id = :id AND (sign_count < :new OR :new = 0)`; pass the entity instead of reloading it. |
-| R3-L16 | Admin passkey endpoints answer 403 for non-user sources; `Uuid::isValid()` on path ids (→ 404). |
-| R3-L17 | Both `webauthn-codec.js`: send `getTransports()` and `getClientExtensionResults()`; store transports, return them in `allowCredentials`. |
-| R3-L18 | Storefront passkey page: "disabled" badge; split the block into sub-blocks. |
-| R3-L19 | `PasskeyRelyingPartyResolver`: domains from the context, not a DBAL query; passkey grid `addIncludes` without `publicKey`. |
-| R3-L41 | `StepUpController::startOidc`/`passkeyOptions`, `OidcAdminAuthController::startLink`: `consume(SCOPE_FLOW_START . ':' . $userId, $ip)`. |
+| R8-L21 | Add `Required` to `token_endpoint_auth_method`, `revocation_endpoint_auth_method` and `logout_style`. New unit test: every provider definition field whose column is NOT NULL without a DB default is `Required` (read the column list from the migrations' `CREATE`/`ALTER` statements, or keep a snapshot array in the test). |
+| R8-L27 | `Sw6OidcAttributeMappingDefinition::TYPES` (all `TYPE_*`), `Choice(self::TYPES, true)` on `attribute_type`. No migration: check the dev database for unknown types by hand. |
+| R8-L28 | Delete the second `PasskeyRpIdConfigValidator` definition (`services.xml:942-946`). |
+| R8-L29 | `Sw6Oidc::uninstall()` (without keep-user-data): remove `sw6oidc_*` privileges from `acl_role.privileges` (`JSON_REMOVE` per matching path, or read-filter-write in PHP), and `JSON_REMOVE` `$.sw6oidc_avatar_url_hash`, `$.sw6oidc_avatar_media_id` (P4) and `$.sw6oidc_placeholder_address` from the custom fields. |
+| R8-L30 | `Sw6OidcEncryptor`: remove `DEFAULT_PURPOSE`, make `$purpose` required everywhere, and remove `isEncrypted()` (callers use `isEnvelope()`). One static `Sw6OidcEncryptedFieldSerializer::purpose($entity, $column)` used by the write guard and by `CLIENT_SECRET_PURPOSE`. |
 
----
-
-## Q3 — State, sessions, logout Lows
-
-| ID | Change |
+### Write guard
+| # | Change |
 |---|---|
-| R3-L8 | Read the global `backchannel_logout` budget in `isBlocked()` for unresolvable tokens, or stop writing it. |
-| R3-L9 | Front-channel: the malformed-request budget only blocks malformed requests. |
-| R3-L30 | `Sw6OidcSessionDestructionService`: on 0 deleted rows fall back to `revokeAllCustomerTokens()`. |
-| R3-L31 | Activity recorder: one DBAL query (`registry_session_id = :id OR session_key_hash = :hash`) and one `UPDATE`. |
-| R3-L32 | `NodeHeartbeat` from web requests only (throttled `kernel.terminate`), not from the task handler. |
-| R3-L33 | Revocation in `RpInitiatedLogoutService`: fixed 3 s timeout, or an async message. |
-| R3-L34 | Migration: delete orphaned `sw6oidc_session` rows, then FK to `sw6oidc_provider` `ON DELETE CASCADE`. |
-| R3-L35 | `RedisAtomicCache`: encrypt values like the DB store. |
-| R3-L36 | `HealthCheckController` without `SW6OIDC_HEALTH_TOKEN`: `{status}` only. |
-| R3-L37 | `SessionActivityController::forceLogout`: refuse admin targets unless the caller is an admin. |
-| R3-L39 | `RedisConnectionFactory` without APCu: static plus temp-file "down" marker. |
-| R3-L40 | Store `sha256(sid)` in `sw6oidc_session_activity.sid` (migration hashes existing values). |
+| R8-L22 | `validateEmailVerification()`: overlay the event's `sw6oidc_attribute_mapping` commands (insert, update, delete for this provider) on the stored mappings. |
+| R8-L23 | Pass `$rebinding` to `unboundActiveAdminIds()` (`:615`). |
+| R8-L24 | Confirmations: `LockoutConfirmationStore`/`IssuerChangeConfirmationStore` get `peek()`. `validate()` peeks, `onProviderWritten()` consumes. |
+| R8-L25 | `SsoOnlyInvariant::unboundActiveAdminIds()` and `PasswordSessionRevoker` exclude accounts with an active (not disabled) passkey (D8). |
+| R8-L26 | `Sw6OidcCspHostCollector`: `expiresAfter(300)`. |
 
 ---
 
-## Q4 — Identity and provisioning Lows
+## P8: Health
 
-| ID | Change |
+| # | Change |
 |---|---|
-| R3-L20 | `AttributeMapper`: `EmailIdnConverter::encode()` before validating and looking up. |
-| R3-L21 | Truncate profile values with `mb_substr` to the DAL limits in both provisioning services (constant map in `MappedProfile`). |
-| R3-L22 | `AvatarFetcher`: `max_duration: 10`; sniff bytes with `getimagesizefromstring()`; PNG/JPEG/GIF/WebP only. |
-| R3-L24 (rest) | `OidcCallbackController`: catch `CustomerProvisioningDeniedException` as a policy denial (flash message, not counted by the rate limiter); log ids, never emails. The admin side and the customer exception message are done. |
-| R3-L25 | Username dedup: one `LIKE 'base%'` query; random 4-hex suffix after 3 collisions. |
-| R3-L26 | Customer email lookup: `active = 1`, sorted by `createdAt DESC`. |
-| R3-L27 | `OidcCallbackController`: `register()`/`recordLogin()` failures are logged, never turn a completed login into "login failed". |
-| R3-L28 | `OidcAdminAuthController::callback`: refuse inactive admins right after resolution, before any side effect. |
-| R3-L29 | Extract the shared account resolution; `loginByCustomerId()` takes the entity; skip no-op sync updates. |
+| R8-L16 | `HealthCheckController`: `down` answers 200 unless `?strict=1` (D7). README: "not a liveness probe; use `?strict=1` only for SSO-specific monitoring". |
+| R8-L17 | `HealthAlertState`: a new state `recovery_pending`. After a healthy probe that follows an alerted outage, stay pending until the webhook accepts the recovery notice. Unit test for the transition table. |
+| R8-L18 | Measure first: count PHP sessions created by 100 `GET /sw6oidc/health` calls without cookies in the dev shop. If sessions are created, move health, back-channel and front-channel logout to a route that sets `_routeScope: ['storefront']` with `_stateless: true` (or core's equivalent), and check that `getClientIp()` and the rate limiter still work. |
 
 ---
 
-## Q5 — OIDC protocol, HTTP, JWT Lows
+## P9: Maintainability, unused code, docs, release
 
-| ID | Change |
+| # | Change |
 |---|---|
-| R3-L1 | `ProviderResolver::getActiveById()`: `Uuid::isValid()` first, else `ProviderNotFoundException`. |
-| R3-L2 | `RelayStateValidator`: `D` modifier; test with `%0A`. |
-| R3-L3 | `BrowserBinding`: re-issue the cookie on every flow start. |
-| R3-L4 | `sub`-required check in `ClaimsMerger::merge()`, shared with the live test. |
-| R3-L6 | `ClaimsNormalizer::flattenRecursive`: decode object keys of `base64_claims`; parity test with access rules. |
-| R3-L7 | `JwtVerifier::verify()`: `string $expectedNonce`, delete the skip branch. |
-| R3-L12 | `LoginType::Test`; typed `locale` on `AuthorizationFlowContext` instead of `relayState`. |
-| R3-L44 | Test endpoints: clamp `httpTimeout` 1–30, cast inputs (400 on wrong types); `OidcConnectionTestService` gets `bool $hasSecret`. |
-| R3-L45 | `SensitiveDataProcessor`: leading `code=`, JSON bodies, `Bearer`/`Basic`, URL-encoded URLs, `;` params, more keys, non-string values, exception messages; one table-driven test. |
-| R4-L1 | Reject a `crit` protected header. |
-| R4-L2 | Non-numeric `nbf`/`iat` → `InvalidJwtException`. |
-| R4-L3 | `ES256/384`, `PS256` (+ `EC` keys in `candidateKeys()`); allowed list = discovery ∩ supported; the connection test fails clearly on an empty intersection. |
-| R4-L4 | Callbacks: truncate `error` (64) and `error_description` (200), log at `notice`, count unknown-state error callbacks. |
+| R8-M-1 | Remove the constructor defaults: `Sw6OidcSessionRegistry` (`'P1D'`), `Sw6OidcSessionActivityRecorder` (`?NodeHeartbeat`, `truncateIp`), `HealthCheckController`, `Sw6OidcRateLimiter` limits, `PasskeyAuthenticationService` logger. Wire everything in `services.xml`. `SessionActivityController::seconds()` throws on invalid intervals, like the registry. |
+| R8-M-2 | Split `Sw6OidcProviderWriteGuardSubscriber` into validators under `Subscriber/ProviderValidation/` (`UrlValidator`, `SecretValidator`, `NotNullValidator`, `EmailVerificationValidator`, `IssuerChangeValidator`, `SsoOnlyValidator`), each working on a `ProviderWriteState` (stored row + payload + sibling child commands). The subscriber only builds the state and runs the validators. Derive `NOT_NULL_BOOLEANS` from the definition (`BoolField` + `Required`). Split `sw6oidc-provider-detail` into tab components (general, endpoints, behaviour, mappings, access control, health). Do this **after** P7, so the fixes land first and the split is a pure refactor. |
+| R8-M-4 | One WebAuthn codec: move it to `src/Resources/app/shared/webauthn-codec.js` and import it from both builds (the admin through a Vite alias, the storefront through a relative import). Rebuild both bundles. |
+| R8-M-5 | `sw-skeleton-bar` → `mt-skeleton-bar` (check against the 6.7.15 admin sources first). Add `sw-skeleton-bar` to the CI grep gate. |
+| R8-M-U | Remove `ExternalIdentity::$email`, `AccessControlDeniedException::$ruleId` (or use it in logging), `Sw6OidcSession::$createdAt`, the dead branch `AdminOidcGrant.php:156`, the `NodeHeartbeat::recentNodeCount()` parameter, the duplicate one-time-token prune in `SessionActivityCleanupTaskHandler`. Make `hashSessionKey()`, `hashSid()`, `findBindingBySubject()` and `isLegacy()` private. Regenerate `psalm-baseline.xml` and check that it shrinks. |
+| Docs | Fix the CLAUDE.md drift listed in the review: `reauth` purpose; JWKS refetch without `kid`; `flow_start` for link and reauth (now true after P2); `recordLogout()` precedence (now true after P3); `OneTimeTokenCleanupTask`; recorder `get()`. Also document the new behaviour from P1–P8. |
+| Release | `composer.json` version `0.3.0`, CHANGELOG with a "Breaking" section (D2 trust list, D7 health status, R8-L8 scalar groups, R8-L27 migration). Update the status table in `Code-Review.md`. |
+
+**Done when:** `composer ci` is green, a PR run of every CI job (including `shopware` and `e2e`) is green, and the manual pass below is done.
+
+### Manual pass before merging
+- Authelia: SSO login with a secret containing `+` (P2), admin step-up and Storefront re-auth (P2), logout with token revocation (P2/P3), back-channel logout.
+- Imitate a customer and try to add a passkey (P1).
+- A role admin with only "update own profile": register and delete a passkey (P6).
+- A provider editor (not superadmin): try to toggle "revoke superadmin on SSO" (P1).
+- Guest checkout, then convert the guest account with SSO-only mode on (P1).
+- A headless order with a placeholder address through the Store API (P5).
 
 ---
 
-## Q6 — DAL and secrets
+## P10 (optional): Roadmap
 
-| ID | Change |
-|---|---|
-| R3-L42 | Lazy decryption: the entity keeps the envelope; `Service/Security/ProviderSecretProvider::clientSecret()` decrypts at the point of use and logs an undecryptable secret once per request; the serializer's `decode()` stops decrypting; `jsonSerialize()` never contains the secret. |
-| R3-L43 (rest) | `Choice` on `pkce_flow` (normalise `s256`) and `login_type`; `Range` on `http_timeout` (1–60) and `jwks_cache_ttl` (60–86400); `Required` on NOT NULL booleans; drop `claim_encoding` (definition, entity, admin JS `provider.claimEncoding = 'none'`, column in `updateDestructive`). Provider delete with bound accounts: confirmation dialog listing the count, API refuses without the confirmation (Q7 default). Done: `user_type`/`mapping_type` `Choice`, binding `UpdatedAtField`. |
-| Unused | Drop `sign_count` (definition, entity, writes; column in `updateDestructive`). |
+From "Future improvements" in `Code-Review.md`, after P0–P9:
+- discovery-driven auth-method and PKCE defaults, plus the issuer comparison in the connection test (2);
+- `private_key_jwt` and token-error diagnostics (3);
+- signed userinfo (4);
+- passkey login policy for SSO-bound accounts (9);
+- binding the step-up nonce to the token's `jti` (10);
+- a per-device registry discriminator (11);
+- `jsonSerialize()` without secrets (12);
+- `logout_token` size cap and a diagnostics rate limit (13);
+- reporting store fallbacks (14);
+- the items carried over from revision 7 (15).
 
----
-
-## Q7 — Frontend Lows and hygiene
-
-Start with Hygiene 1 as its own commit, so the other fixes land on the migrated templates.
-
-| ID | Change |
-|---|---|
-| Hygiene 1 | **Decided (Q9): migrate everything now.** Every deprecated `sw-*` component in the plugin's templates to its Meteor `mt-*` equivalent (about 30 templates), every `$tc` to `$t`. Check event/prop renames against `vendor/shopware/administration` 6.7. CI grep step fails on new `<sw-(text\|switch\|number\|password)-field\|<sw-card\|<sw-button` or `$tc(`. |
-| Hygiene 2 | See F-5. |
-| R3-F7 | `sw6oidc-profile-passkey`: `mt-label` → `mt-badge`. |
-| R3-F8 | `sw-profile-index-general`: extend `sw_profile_index_general_information` with `{% parent %}` plus a sibling card. |
-| R3-F10 | `sw-login`: override only the user field, password field and submit blocks, so "Keep me logged in" stays. |
-| R3-F11 | Listing pages: drop the extra `created()` fetch; passkey list writes `ownerNames` after the request-id check. |
-| R3-F12 | Provider detail: request counter for `loadEntity()`/`loadFormContext()`. |
-| R3-F13 | Sessions list: "Only active" also filters expired rows; "Force logout" disabled on them. |
-| R3-F14 | Provider detail: `:disabled="!canEdit"` on every select, tag field and context menu (together with F-2). |
-| R3-F15 | Meteor badge variants (`critical`, `positive`, …). |
-| R3-F16 | `snippetOr()` for every dynamic key (`atomicStore.*`, `infrastructureWarning.*`, `testMessage.*`). |
-| R3-F17 (rest) | `role="alert"`/`aria-live="polite"` on the admin error containers (the storefront dialog is done). |
-| R6-L2 (review revision 6) | `acl/index.js` `registerWhenReady()`: don't give up after 5 s. Wait for core's ready signal (the `defer-module-register.js` mechanism), or poll without a hard limit. Remove the unreachable duplicate `return;`. |
-
-Rebuild both bundles at the end (ground rule 3); the Q0 smoke spec covers every page.
-
----
-
-## Q8 — Shopware conventions, DI, dependencies
-
-| ID | Change |
-|---|---|
-| R3-L5 | Required `BrowserBinding` in `OidcSecurityHelper` and required dependencies in `OidcLiveLoginTestService`; tests use doubles. |
-| R3-L10 | `Sw6OidcException extends HttpException` with `SW6OIDC_*` codes; the 17 domain exceptions become subclasses. |
-| R3-L38 | `SHOW COLUMNS` guards in the three early migrations. |
-| R3-L46 | Twig extensions → `twig.runtime`; `lazy="true"` on the write guards; pending state cleared on `WriteFailedEvent`/`kernel.reset` (the provider guard now resets per event); `sw6oidc.logger` service id instead of the fake `OidcLogger` FQCN; encryption purposes as constants. |
-| R3-L47 | Memoise `StorefrontLoginOptionsExtension` per request. |
-| R3-L48 | `TestResultTranslator`: Symfony translations instead of reading the admin snippet files. |
-| R3-L49 | One `Service/AdminAuth/CoreOAuthBridge` for the `@internal`/`BecomesInternal` dependencies (now also `ClientRepository`, decorated by `PasswordLoginGuardClientRepository`), with a test that fails when a class disappears; pass `Context` down where a request context exists. |
-| R3-L50 | Share `accessTokenJti()` and `ERROR_CODE`; `LoginType::Admin->value` instead of `'admin'` literals. |
-| R4-L5 | `OidcCustomerLoginRoute` → `AccountService::loginById()` with `CustomerSalesChannelBinding::allows()` as pre-check; delete the class. |
-| R4-L6 | `composer.json`: drop `league/oauth2-server`, `symfony/psr-http-message-bridge`, `nyholm/psr7` (core provides them; `AdminTokenIssuer` uses `Nyholm\Psr7\Factory\Psr17Factory` and `HttpFoundationFactory` from core's dependencies); `web-token/jwt-library: ^4.0` instead of `jwt-framework` (Composer only, Q10). |
-
----
-
-## Q9 — Unused code, comments, docs, static analysis, release
-
-1. **Delete:** `SsrfUrlValidator::isInsecureModeEnabled()`, `PasskeyCredentialRepository::findOneByCredentialId()`, `UserProviderBindingService::assertNotBoundToDifferentProvider()`, `Sw6OidcSessionRegistry::resolveByUser()`, `AdminLoginNonce::$browserBinding`, `Sw6OidcSession::$createdAt`/`$salesChannelId`, the constructor defaults `'PT10M'`/`'P1W'`, the duplicate admin snippets `sw6oidc.login.*` (the inactivity modal now uses `sw-login.sw6oidc.login.*`), the storefront snippet `sw6oidc.passkey.reauthRequired`. Adjust the tests. Already gone: the `AdminTokenIssuer` request mutation, `AdminPasskeyLoginTokenTracker`, `LockoutGuard`, the registry's `$customerTtlSeconds`.
-2. **Make private:** `OidcSecurityHelper::deriveCodeChallenge`, `OidcCallbackResult::subject`, `RpInitiatedLogoutService::revokeToken`, `SsrfUrlValidator::isPublicIp`, `Sw6OidcRateLimiter::clientKey`, `destroyCustomerSession`, `destroyAdminSessions` (now also used by `PasskeySessionTerminator` and `PasswordSessionRevoker` — keep `destroyAdminSessions` public or route them through `destroyAllForUser()`).
-3. **R3-L11:** merge the double docblocks; fix the stale comments listed in the Unused-code table.
-4. **R3-L52:** full documentation pass. `CLAUDE.md` and `TECHNICAL_DOCUMENTATION.md` were updated for the revision 5 behaviour; still wrong: "19 attribute types" (22), "the passkey list links to the owner profile", the L13 deferral reason, the unit test count.
-5. **Static analysis:** `phpstan/phpstan-shopware` or DAL generics stubs, fix the remaining level-8 errors as real fixes, raise to level 8 for `src/` and level 5 for `tests/`; Psalm `--find-unused-code` with a DI-aware baseline.
-6. **Release:** version `0.2.0` in `composer.json`, CHANGELOG `[Unreleased]` → `[0.2.0]`.
-
----
-
-## Q10 — Roadmap (optional, after release)
-
-From `Code-Review.md` "Future improvements", what is not done yet:
-
-- **9** passkeys: conditional mediation (`autocomplete="username webauthn"`), `PasskeyCredentialDeletedEvent`, a clone-detection Flow trigger, one shared ceremony service.
-- **10** response-size caps on token, userinfo and JWKS; keep `error`/`error_description` for diagnostics; separate HTTP clients for the IdP and for user content.
-- **11** enforce `S256` PKCE unless discovery lacks it; check `typ: logout+jwt`.
-- **14** a `Configuration` tree for the `SW6OIDC_*` env vars; autowiring (deferred L13).
-- **15** a small pre-auth admin bundle (closes F-M2, F-M14 and the early-execution class of R3-F2).
-- Granular admin session termination (refresh-token lineage per login), which would make force logout, IdP logout and passkey deletion end one admin session instead of all.
-
----
-
-## Decisions
-
-Settled earlier (2026-10-05) and still valid: Q6 one SSO binding per sales channel; Q8 Authelia is in use; Q9 migrate all admin components now; Q10 Composer only; Q11 breaking changes are fine; Q12 continue on `fix/code-review-rev2`.
-
-Taken with the plan's defaults in revision 5, because they were unanswered — please confirm or overrule (see Open questions):
-
-| # | Default implemented |
-|---|---|
-| Q1 | Trust-relevant provider settings: **superadmins only** (plus CLI and system scope). |
-| Q2 | Role sync **multi-valued and managed-only**, seeded from current roles that a mapping grants. |
-| Q3 | Registry liveness **derived from core's tables** (`refresh_token`, `sales_channel_api_context`). |
-| Q4 | Issuer change with bound accounts: **suspend until a superadmin decides** (re-bind or disconnect). |
-| Q5 | "SSO account linked": **trigger only**; default flow and mail template not shipped yet (F-3, inactive when shipped). |
-| Q7 | Provider delete with bindings: **confirmation dialog plus API flag** — not implemented yet (Q6). |
-
-## Open questions
-
-| # | Question | Default if unanswered |
-|---|---|---|
-| Q1 | Should a dedicated grantable privilege (`sw6oidc_provider:security`) be offered instead of "superadmin only" for trust-relevant provider settings? Today even creating a provider needs a superadmin. | Keep superadmin only. |
-| Q4 | Issuer change: is "re-bind or disconnect" the right choice, or should a re-bind always happen when the old and new issuer share the same host? | Keep the explicit decision. |
-| Q5 | Ship the "SSO account linked" mail flow inactive (merchant enables it) or active? | Inactive. |
-| Q7 | Provider delete with bindings: confirmation dialog plus API flag, or refuse while bindings exist? | Confirmation. |
-| Q13 | Can the dockware + Dex E2E setup run reliably in GitHub Actions, so `e2e` becomes blocking? | Blocking after Q0 step 1 passes locally. |
-| Q14 (new) | Admin passkey deletion ends **all** of that admin's sessions (tokens can't be targeted). Acceptable, or end only when the deleted key logged in a session that is still within the refresh-token TTL? | All sessions (safer). |
-| Q15 (new) | CLI config import that changes an issuer: disconnect bindings (today) or re-bind? See F-7. | Disconnect, with an opt-in flag. |
+Items 1, 5, 6, 7 and 8 are already covered by P1, P4, P5, P7 and P1.
