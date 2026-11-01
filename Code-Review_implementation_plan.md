@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Source** | `Code-Review.md` revision 8 (2026-10-30), reviewed commit `7cb8086` |
-| **State** | Not started. The plan for revision 7 (phases Q0–Q9) is done; it is in git history (`git show 7cb8086:Code-Review_implementation_plan.md`). |
+| **State** | **Done** (2026-11-01, release 0.3.0): P0, PM and P1–P10 implemented; per-finding commits are in the status table of `Code-Review.md`. Deferred from P10, with reasons there: `private_key_jwt`, a per-device registry discriminator, a `Configuration` tree for the `SW6OIDC_*` env vars, a small pre-auth admin bundle, and the frontend split of the provider-detail page. Still required: a green CI run with the integration and E2E suites, which couldn't run in the development environment (no Docker). The plan for revision 7 (phases Q0–Q9) is in git history (`git show 7cb8086:Code-Review_implementation_plan.md`). |
 | **Scope** | 2 High, 10 Medium, 32 Low, the maintainability and unused-code rows, the CLAUDE.md drift. |
 | **Plugin version after this work** | `0.3.0` (breaking changes are fine: the plugin has no production installs yet). |
 | **Structure** | Phases P0–P9, plus an optional roadmap phase. At least one commit per phase; finding ids (`R8-H1`, `R8-M3`, …) go in the commit messages. |

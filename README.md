@@ -6,7 +6,7 @@
 
 OpenID Connect (OIDC) and Passkey (WebAuthn) single sign-on for Shopware 6 Storefront customers and Administration users, with just-in-time (JIT) account provisioning and OIDC-group-to-Shopware-role/group mapping.
 
-> **Status**: v0.1.0 + unreleased changes (see [CHANGELOG.md](CHANGELOG.md)) — early-stage. Unit-tested, plus an integration suite against a real Shopware kernel and Dex and a Playwright browser suite. Review [Upgrading](#upgrading) and [Known Limitations](#known-limitations) before relying on this in production.
+> **Status**: v0.3.0 (see [CHANGELOG.md](CHANGELOG.md)) — early-stage. Unit-tested, plus an integration suite against a real Shopware kernel and Dex and a Playwright browser suite. Review [Upgrading](#upgrading) and [Known Limitations](#known-limitations) before relying on this in production.
 
 ## Why This Plugin?
 
@@ -30,7 +30,7 @@ Shopware's built-in authentication is password-based. This plugin bridges Shopwa
 - **Base64-Encoded Claims**: decode exactly the claims you list (e.g. ZITADEL metadata); nested role objects are supported
 - **Health Checks & Alerting**: a `/sw6oidc/health` endpoint for uptime monitors (optionally token-protected) with setup warnings, on-demand diagnostics per provider, and a scheduled reachability check that posts a webhook alert (Slack/Teams/…) once per outage
 - **Session Activity Log**: every OIDC/Passkey login with IP, user agent, logout time and reason in *Settings > Plugins > OIDC & Passkey sessions*, with a "Force logout" action
-- **Passkey (WebAuthn/FIDO2) Login**: independent passwordless sign-in for both Administration and Storefront with required user verification, self-service registration and login, bridged into native authentication the same way OIDC is
+- **Passkey (WebAuthn/FIDO2) Login**: independent passwordless sign-in for both Administration and Storefront with required user verification, self-service registration and login, bridged into native authentication the same way OIDC is; browsers that support it also offer passkeys in the login form's username autofill
 - **Public Client Support**: PKCE-only flows without a client secret (RFC 6749 §2.1)
 - **Encrypted Secrets, Masked Logs**: client secrets and security state encrypted at rest; a dedicated log channel at level `warning` by default, with a debug toggle in the plugin settings
 

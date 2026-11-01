@@ -17,6 +17,37 @@ Every finding was traced in the code. **PLAUSIBLE** marks findings whose impact 
 
 ---
 
+## Status (2026-11-01)
+
+All findings of revision 8 are fixed or decided on branch `fix/code-review-rev8` (release 0.3.0). The unit suite, PHPStan, Psalm, PHPCS and `lint:container` pass; the integration and E2E suites have **not** run yet (no Docker in the development environment): a green CI run on the branch is still required (Suggested fix order, step 6).
+
+| Finding | Status |
+|---|---|
+| R8-H1, R8-H2, R8-M11, R8-L5 | Fixed (`b7861b1`) |
+| R8-M1, R8-L1–L4, R8-L32 (formerly R8-M2) | Fixed (`4b622f8`) |
+| R8-M9, R8-M10, R8-L13, R8-L19, R8-L20 | Fixed (`227f6be`) |
+| R8-M3, R8-M4, R8-L6, R8-L7, R8-L9–L12 | Fixed (`57cba97`) |
+| R8-L8 | Decided: unchanged, documented (`57cba97`). Splitting scalar groups would break names like "Domain Users". |
+| R8-M5, R8-M6 | Fixed (`4a40360`) |
+| R8-M8, R8-L14, R8-L15, R8-M-3 | Fixed (`eefd70f`) |
+| R8-M7, R8-L22–L29 | Fixed (`436da4e`) |
+| R8-L16–L18 | Fixed (`06b0a06`) |
+| R8-L21, R8-L30 | Fixed (`335db3b`, one schema migration) |
+| R8-L31 | Fixed (`bbad194`) |
+| R8-M-1, R8-M-2 | Fixed (`1f80f7d`). The frontend split of the provider-detail page is deferred (see below). |
+| R8-M-4, R8-M-5, R8-M-U | Fixed (`33d0eea`) |
+
+| Future improvement | Status |
+|---|---|
+| 1, 5, 6, 7, 8 | Done with the fixes above (P1, P4, P5, P7). |
+| 2 | Done (`3f818f5`, `eb9c908`): methods preselected from discovery, mismatches warned, issuer compared. `plain` while `S256` is offered is a warning, not enforced. |
+| 3 | Partly done: token-error diagnostics and the `token_type` check (`3f818f5`). **`private_key_jwt` deferred**: needs a key-management design (key generation, rotation, JWKS publication). |
+| 4, 9, 10, 12, 13, 14 | Done (`3f818f5`, `eb9c908`). |
+| 11 | **Deferred.** Logout ends every login under the shared context token instead (R8-M9); a per-device discriminator needs its own cookie and design. |
+| 15 | Done: conditional mediation and toast references (`991b53b`), passkey deleted/disabled Flow triggers, bounded HTTP layer, `typ` check (`3f818f5`, `eb9c908`). **Deferred**: a `Configuration` tree for the `SW6OIDC_*` env vars and a small pre-auth admin bundle (both build-/container-level changes that need the CI `shopware` job to verify). |
+
+---
+
 ## Summary
 
 ### Verdict

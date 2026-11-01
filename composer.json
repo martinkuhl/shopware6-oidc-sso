@@ -2,7 +2,7 @@
     "name": "martinkuhl/shopware6-oidc-sso",
     "description": "OpenID Connect (OIDC) and Passkey (WebAuthn) single sign-on for Shopware 6 Storefront customers and Administration users.",
     "type": "shopware-platform-plugin",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "license": "MIT",
     "authors": [
         {

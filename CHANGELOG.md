@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-11-01
 
 ### Breaking changes (code review, revision 8)
 
@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Signed userinfo** (`application/jwt`) is verified and accepted.
 - **Discovery-driven defaults:** the provider page preselects the client authentication and PKCE methods the IdP advertises; the connection test fails on an issuer that differs from the discovered one (trailing slash) and warns about unadvertised methods or `plain` PKCE while S256 is offered.
 - **Passkeys of SSO-connected accounts can require an active provider** (`passkeyRequiresActiveSso`), so deactivating a provider also stops its users' passkey logins.
+- **Passkeys in the username autofill** (WebAuthn conditional mediation) on the Storefront and Administration login; the Storefront starts the request on the email field's first focus, so page views don't consume the rate-limit budget.
+- Administration error toasts of passkey, step-up and Connect SSO requests show the server's correlation reference, which matches the `sw6oidc` log entry.
 - Flow Builder triggers `sw6oidc.passkey.deleted` and `sw6oidc.passkey.disabled` (clone detection); infrastructure warning `redis_failed_recently`.
 - Hardening: the OIDC step-up nonce only works in the Administration session that started it; IdP responses are capped at 1 MiB (avatars use their own client); token responses must be Bearer; the IdP's OAuth error is kept for diagnosis; logout tokens over 16 KiB and logout tokens typed as another token kind are refused; the diagnostics probe is rate-limited; provider entities never serialise their secrets.
 - **`auth_time` is requested as an essential claim** for re-authentication when the IdP advertises `claims_parameter_supported` (new read-only provider field, set by discovery). A re-authentication the IdP doesn't confirm shows its own message and no longer counts against the callback rate limit (R8-L32).
