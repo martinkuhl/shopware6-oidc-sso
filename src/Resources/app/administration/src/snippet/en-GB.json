@@ -1,5 +1,8 @@
 {
     "sw6oidc": {
+        "general": {
+            "errorReference": "(Reference: {reference})"
+        },
         "login": {
             "ssoButton": "Login with SSO",
             "ssoButtonWithProvider": "Login with {name}",

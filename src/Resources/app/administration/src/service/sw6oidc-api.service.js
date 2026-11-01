@@ -65,6 +65,19 @@ export default class Sw6oidcApiService extends ApiService {
     static errorCode(error) {
         return error?.response?.data?.error ?? null;
     }
+
+    /**
+     * " (Reference: …)" for a failed request that carries PublicError's
+     * correlation reference, so a toast can be matched with the server log;
+     * else an empty string.
+     */
+    static referenceSuffix(error, component) {
+        const reference = error?.response?.data?.errorReference;
+
+        return typeof reference === 'string' && reference !== ''
+            ? ` ${component.$t('sw6oidc.general.errorReference', { reference })}`
+            : '';
+    }
 }
 
 Shopware.Service().register('sw6oidcApiService', (container) => {

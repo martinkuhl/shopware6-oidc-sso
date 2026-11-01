@@ -175,3 +175,16 @@ export function serializeAssertionCredential(credential) {
         clientExtensionResults: clientExtensionResults(credential),
     };
 }
+
+/**
+ * Whether the browser can offer passkeys in the username field's autofill
+ * (WebAuthn conditional mediation, `mediation: 'conditional'`).
+ */
+export async function isConditionalMediationAvailable() {
+    try {
+        return typeof window.PublicKeyCredential?.isConditionalMediationAvailable === 'function'
+            && await window.PublicKeyCredential.isConditionalMediationAvailable() === true;
+    } catch {
+        return false;
+    }
+}

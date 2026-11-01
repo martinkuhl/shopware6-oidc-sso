@@ -79,7 +79,7 @@ Component.register('sw6oidc-connect-sso', () => Promise.resolve({
                 this.createNotificationError({
                     message: this.$t(Sw6oidcApiService.errorCode(error) === 'user_verification_required'
                         ? 'sw6oidc.userProvider.connectVerificationRequired'
-                        : 'sw6oidc.userProvider.connectError'),
+                        : 'sw6oidc.userProvider.connectError') + Sw6oidcApiService.referenceSuffix(error, this),
                 });
             }
         },

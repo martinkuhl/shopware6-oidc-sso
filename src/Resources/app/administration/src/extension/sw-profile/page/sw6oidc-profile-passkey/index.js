@@ -3,6 +3,7 @@ import {
     preparePublicKeyCreationOptions,
     serializeAttestationCredential,
 } from '../../../../../../shared/webauthn-codec';
+import Sw6oidcApiService from '../../../../service/sw6oidc-api.service';
 
 const { Component, Mixin } = Shopware;
 
@@ -104,8 +105,10 @@ Component.register('sw6oidc-profile-passkey', () => Promise.resolve({
                 this.nickname = '';
                 this.createNotificationSuccess({ message: this.$t('sw6oidc.passkeySettings.registerSuccess') });
                 await this.getList();
-            } catch {
-                this.createNotificationError({ message: this.$t('sw6oidc.passkeySettings.registerError') });
+            } catch (error) {
+                this.createNotificationError({
+                    message: this.$t('sw6oidc.passkeySettings.registerError') + Sw6oidcApiService.referenceSuffix(error, this),
+                });
             } finally {
                 this.isRegistering = false;
             }
@@ -127,8 +130,10 @@ Component.register('sw6oidc-profile-passkey', () => Promise.resolve({
 
                 this.createNotificationSuccess({ message: this.$t('sw6oidc.passkeySettings.deleteSuccess') });
                 await this.getList();
-            } catch {
-                this.createNotificationError({ message: this.$t('sw6oidc.passkeySettings.deleteError') });
+            } catch (error) {
+                this.createNotificationError({
+                    message: this.$t('sw6oidc.passkeySettings.deleteError') + Sw6oidcApiService.referenceSuffix(error, this),
+                });
             } finally {
                 this.deletingId = null;
             }

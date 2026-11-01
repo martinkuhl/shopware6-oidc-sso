@@ -10,6 +10,7 @@
 import template from './sw-login.html.twig';
 import './sw-login.scss';
 import {
+    isConditionalMediationAvailable,
     preparePublicKeyRequestOptions,
     serializeAssertionCredential,
 } from '../../../../shared/webauthn-codec';
@@ -40,6 +41,8 @@ Component.override('sw-login-login', {
             sw6oidcErrorDetail: null,
             sw6oidcPasskeyError: null,
             sw6oidcPasskeyPending: false,
+            /** AbortController of the pending autofill (conditional mediation) passkey request. */
+            sw6oidcConditionalAbort: null,
             /** @type {Array<{id: string, label: string|null}>} one entry per visible admin-scoped provider */
             sw6oidcSsoProviders: [],
             sw6oidcPasskeyAvailable: false,
@@ -51,6 +54,10 @@ Component.override('sw-login-login', {
     created() {
         this.sw6oidcHandleCallback();
         this.sw6oidcLoadLoginOptions();
+    },
+
+    beforeUnmount() {
+        this.sw6oidcConditionalAbort?.abort();
     },
 
     computed: {
@@ -155,6 +162,42 @@ Component.override('sw-login-login', {
                 this.sw6oidcSsoProviders = [];
                 this.sw6oidcPasskeyAvailable = false;
             }
+
+            await this.$nextTick();
+            this.sw6oidcStartConditionalPasskeyLogin();
+        },
+
+        /**
+         * Offers the passkeys in the username field's autofill (conditional
+         * mediation). Core's field is autofocused, so the request starts right
+         * away; it stays pending until the admin picks a passkey, clicks the
+         * passkey button (only one WebAuthn request may be pending, so that
+         * aborts it) or leaves the page.
+         */
+        async sw6oidcStartConditionalPasskeyLogin() {
+            const field = this.$el?.querySelector?.('input[name="sw-field--username"]');
+
+            if (!this.sw6oidcPasskeyAvailable || this.sw6oidcConditionalAbort || !field || !(await isConditionalMediationAvailable())) {
+                return;
+            }
+
+            // The browser only offers passkeys for a field marked "webauthn".
+            field.setAttribute('autocomplete', 'username webauthn');
+
+            const abort = new AbortController();
+            this.sw6oidcConditionalAbort = abort;
+
+            try {
+                await this.sw6oidcPasskeyCeremony({ mediation: 'conditional', signal: abort.signal });
+            } catch (error) {
+                if (!abort.signal.aborted && error?.name !== 'NotAllowedError') {
+                    this.sw6oidcPasskeyError = 'login_failed';
+                }
+            } finally {
+                if (this.sw6oidcConditionalAbort === abort) {
+                    this.sw6oidcConditionalAbort = null;
+                }
+            }
         },
 
         async sw6oidcStartPasskeyLogin() {
@@ -163,29 +206,39 @@ Component.override('sw-login-login', {
                 return;
             }
 
+            this.sw6oidcConditionalAbort?.abort();
+            this.sw6oidcConditionalAbort = null;
             this.sw6oidcPasskeyError = null;
             this.sw6oidcPasskeyPending = true;
 
             try {
-                // Usernameless: the browser offers the passkeys registered for this RP.
-                const { sessionId, options } = await this.sw6oidcApiService.post('sw6oidc/admin/passkey/login-options', {}, { anonymous: true });
-
-                const assertion = await navigator.credentials.get({
-                    publicKey: preparePublicKeyRequestOptions(options),
-                });
-
-                const tokenData = await this.sw6oidcApiService.post('sw6oidc/admin/passkey/login-verify', {
-                    sessionId,
-                    credential: JSON.stringify(serializeAssertionCredential(assertion)),
-                }, { anonymous: true });
-
-                completeLogin(this.loginService, tokenData, this.rememberMe);
-                await this.sw6oidcFinishLogin();
+                await this.sw6oidcPasskeyCeremony({});
             } catch {
                 this.sw6oidcPasskeyError = 'login_failed';
             } finally {
                 this.sw6oidcPasskeyPending = false;
             }
+        },
+
+        /**
+         * One usernameless ceremony (the browser offers the passkeys
+         * registered for this RP); throws on failure.
+         */
+        async sw6oidcPasskeyCeremony(request) {
+            const { sessionId, options } = await this.sw6oidcApiService.post('sw6oidc/admin/passkey/login-options', {}, { anonymous: true });
+
+            const assertion = await navigator.credentials.get({
+                ...request,
+                publicKey: preparePublicKeyRequestOptions(options),
+            });
+
+            const tokenData = await this.sw6oidcApiService.post('sw6oidc/admin/passkey/login-verify', {
+                sessionId,
+                credential: JSON.stringify(serializeAssertionCredential(assertion)),
+            }, { anonymous: true });
+
+            completeLogin(this.loginService, tokenData, this.rememberMe);
+            await this.sw6oidcFinishLogin();
         },
 
         async sw6oidcHandleCallback() {

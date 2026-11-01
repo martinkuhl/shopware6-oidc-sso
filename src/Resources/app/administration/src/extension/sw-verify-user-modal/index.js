@@ -1,5 +1,6 @@
 import template from './sw-verify-user-modal.html.twig';
 import { preparePublicKeyRequestOptions, serializeAssertionCredential } from '../../../../shared/webauthn-codec';
+import Sw6oidcApiService from '../../service/sw6oidc-api.service';
 
 const { Component } = Shopware;
 
@@ -133,8 +134,8 @@ Component.override('sw-verify-user-modal', {
             try {
                 const tokenData = await this.sw6oidcApiService.post('sw6oidc/admin/step-up/token', { nonce: event.data.nonce });
                 this.sw6oidcFinishStepUp(tokenData);
-            } catch {
-                this.sw6oidcStepUpFailed();
+            } catch (error) {
+                this.sw6oidcStepUpFailed(undefined, error);
             }
         },
 
@@ -150,8 +151,8 @@ Component.override('sw-verify-user-modal', {
                 });
 
                 this.sw6oidcFinishStepUp(tokenData);
-            } catch {
-                this.sw6oidcStepUpFailed();
+            } catch (error) {
+                this.sw6oidcStepUpFailed(undefined, error);
             }
         },
 
@@ -179,12 +180,12 @@ Component.override('sw-verify-user-modal', {
             this.$emit('close');
         },
 
-        sw6oidcStepUpFailed(snippet = 'sw6oidc.stepUp.error') {
+        sw6oidcStepUpFailed(snippet = 'sw6oidc.stepUp.error', error = null) {
             window.removeEventListener('message', this.sw6oidcOnStepUpMessage);
             this.sw6oidcStopPopupWatch();
             this.sw6oidcStepUpBusy = false;
             this.sw6oidcStepUpPopup = null;
-            this.createNotificationError({ message: this.$t(snippet) });
+            this.createNotificationError({ message: this.$t(snippet) + Sw6oidcApiService.referenceSuffix(error, this) });
         },
     },
 });
