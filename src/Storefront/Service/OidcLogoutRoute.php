@@ -4,15 +4,13 @@ namespace MartinKuhl\Sw6Oidc\Storefront\Service;
 
 use MartinKuhl\Sw6Oidc\Core\Content\Provider\Sw6OidcProviderEntity;
 use MartinKuhl\Sw6Oidc\Core\Content\SessionActivity\Sw6OidcSessionActivityDefinition;
-use MartinKuhl\Sw6Oidc\Service\Oidc\LogoutContext;
 use MartinKuhl\Sw6Oidc\Service\Oidc\PostLogoutState;
 use MartinKuhl\Sw6Oidc\Service\Oidc\RpInitiatedLogoutService;
-use MartinKuhl\Sw6Oidc\Service\Provider\Exception\ProviderNotFoundException;
-use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
-use MartinKuhl\Sw6Oidc\Service\Security\LoginType;
+use MartinKuhl\Sw6Oidc\Service\Session\SessionDevice;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSession;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionActivityRecorder;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionTokenRevoker;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Checkout\Customer\SalesChannel\AbstractLogoutRoute;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
@@ -28,7 +26,8 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * LogoutRoute replaces the sales-channel context with a fresh random token
  * *before* dispatching that event, so the event no longer carries the token
  * the session registry entry was registered under at login. We capture it
- * before delegating and only consume the entry once the logout succeeded.
+ * (and this browser's device cookie) before delegating and only consume the
+ * entries once the logout succeeded.
  *
  * The resolved URL is only handed to PendingLogoutRedirect; turning it into
  * a redirect is CustomerLogoutSubscriber's job (Storefront route only, so
@@ -38,13 +37,14 @@ class OidcLogoutRoute extends AbstractLogoutRoute
 {
     public function __construct(
         private readonly AbstractLogoutRoute $decorated,
-        private readonly ProviderResolver $providerResolver,
         private readonly RpInitiatedLogoutService $rpInitiatedLogoutService,
         private readonly PendingLogoutRedirect $pendingLogoutRedirect,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly LoggerInterface $logger,
         private readonly Sw6OidcSessionRegistry $sessionRegistry,
         private readonly Sw6OidcSessionActivityRecorder $activityRecorder,
+        private readonly Sw6OidcSessionTokenRevoker $tokenRevoker,
+        private readonly SessionDevice $sessionDevice,
     ) {
     }
 
@@ -57,6 +57,7 @@ class OidcLogoutRoute extends AbstractLogoutRoute
     {
         $preLogoutToken = $context->getToken();
         $customerId = $context->getCustomer()?->getId();
+        $device = $this->sessionDevice->currentDevice();
 
         $response = $this->decorated->logout($context, $data);
 
@@ -68,6 +69,7 @@ class OidcLogoutRoute extends AbstractLogoutRoute
         // shared it (logins on several devices get the same token, R8-M9): a
         // later Back-/Front-Channel Logout has nothing left to end for them.
         $sessions = $this->sessionRegistry->findAllBySessionKey(Sw6OidcSession::USER_TYPE_CUSTOMER, $customerId, $preLogoutToken);
+        $primary = $this->loginOfThisDevice($sessions, $device);
 
         foreach ($sessions as $session) {
             $this->sessionRegistry->remove($session);
@@ -78,35 +80,24 @@ class OidcLogoutRoute extends AbstractLogoutRoute
             $customerId,
             Sw6OidcSessionActivityDefinition::LOGOUT_REASON_LOGOUT,
             $preLogoutToken,
-            $sessions[0]->id ?? null,
+            $primary?->id,
         );
 
-        if ($sessions === []) {
+        if (!$primary instanceof Sw6OidcSession) {
             $this->logger->debug('sw6oidc: no OIDC session registered for this customer session, skipping RP-initiated logout.');
 
             return $response;
         }
 
-        $providers = [];
+        $provider = null;
 
-        foreach ($sessions as $index => $session) {
-            try {
-                $providers[$index] = $this->providerResolver->getActiveById($session->providerId, LoginType::Customer->value, $context->getContext());
-            } catch (ProviderNotFoundException $exception) {
-                $this->logger->warning('sw6oidc: token revocation skipped, provider no longer active.', [
-                    'providerId' => $session->providerId,
-                    'exception' => $exception->getMessage(),
-                ]);
+        foreach ($sessions as $session) {
+            $sessionProvider = $this->tokenRevoker->revoke($session, $context->getContext());
 
-                continue;
+            if ($session === $primary) {
+                $provider = $sessionProvider;
             }
-
-            $this->rpInitiatedLogoutService->revokeTokens($providers[$index], $this->logoutContextOf($session));
         }
-
-        // The IdP logout is for the newest login: the one most likely made in this browser.
-        $logoutContext = $this->logoutContextOf($sessions[0]);
-        $provider = $providers[0] ?? null;
 
         if (!$provider instanceof Sw6OidcProviderEntity) {
             return $response;
@@ -114,14 +105,15 @@ class OidcLogoutRoute extends AbstractLogoutRoute
 
         $logoutUrl = $this->rpInitiatedLogoutService->buildLogoutUrl(
             $provider,
-            $logoutContext->idToken,
+            $primary->idToken,
             $this->urlGenerator->generate('frontend.account.login.page', [], UrlGeneratorInterface::ABSOLUTE_URL),
             PostLogoutState::TARGET_CUSTOMER,
         );
 
         $this->logger->debug('sw6oidc: resolved customer RP-initiated logout URL.', [
-            'providerId' => $logoutContext->providerId,
+            'providerId' => $primary->providerId,
             'hasLogoutUrl' => $logoutUrl !== null,
+            'loginOfThisDevice' => $device !== null && $primary->deviceHash === $device,
         ]);
 
         $this->pendingLogoutRedirect->set($logoutUrl);
@@ -131,8 +123,23 @@ class OidcLogoutRoute extends AbstractLogoutRoute
         return $logoutUrl !== null ? new ContextTokenResponse($response->getToken(), $logoutUrl) : $response;
     }
 
-    private function logoutContextOf(Sw6OidcSession $session): LogoutContext
+    /**
+     * The IdP logout is for the login made in this browser (its device
+     * cookie), else for the newest login, the one most likely made here
+     * (Store API clients send no cookie).
+     *
+     * @param list<Sw6OidcSession> $sessions newest first
+     */
+    private function loginOfThisDevice(array $sessions, ?string $device): ?Sw6OidcSession
     {
-        return new LogoutContext($session->providerId, $session->idToken, $session->idpAccessToken, $session->idpRefreshToken);
+        if ($device !== null) {
+            foreach ($sessions as $session) {
+                if ($session->deviceHash !== null && hash_equals($session->deviceHash, $device)) {
+                    return $session;
+                }
+            }
+        }
+
+        return $sessions[0] ?? null;
     }
 }

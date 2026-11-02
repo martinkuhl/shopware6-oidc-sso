@@ -341,6 +341,8 @@ The break-glass override is `SW6OIDC_ALLOW_PASSWORD_LOGIN=1`.
 
 Both endpoints look sessions up in the **session registry** (`sw6oidc_session`), which records the context token or access-token `jti` each OIDC login created, keyed by provider plus `sub` and `sid`. IdP-initiated admin logout clears all of that admin's registry entries.
 
+**Customers on several devices.** Shopware gives all of a customer's logins in a sales channel the same context token, so logging out on one device logs out every device; the plugin can't change that. Each Storefront SSO login sets an HttpOnly device cookie (`sw6oidc_device`, `__Host-sw6oidc_device` on HTTPS, 90 days), and its registry entry stores the cookie's hash. On logout, the IdP logout carries the `id_token_hint` of the login made in this browser, so the IdP session that ends is the one used there. Without a cookie (Store API) it falls back to the newest login. All logins' IdP tokens are revoked either way. A further login on the same device replaces that device's entry. When the IdP ends one device's session, the other devices' entries of that token are dropped too.
+
 ### Session activity log and force logout
 
 Every OIDC or Passkey login writes a row to `sw6oidc_session_activity`. The row records provider, IP (optionally truncated with `SW6OIDC_SESSION_ACTIVITY_TRUNCATE_IP=1`), user agent, login and logout time, and logout reason (`logout`, `backchannel`, `frontchannel`, `forced`). The fields are write-protected and API deletes are refused; `sub`/`sid` are not exposed through the API.

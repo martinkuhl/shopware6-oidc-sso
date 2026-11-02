@@ -68,6 +68,37 @@ final class BackChannelLogoutControllerTest extends TestCase
     }
 
     /**
+     * R8-M9: logins on two devices share one context token. Ending sid-1 ends
+     * that token, so sid-2's entry goes too; a later logout of sid-2 then
+     * finds nothing instead of a dead token (which would end every session
+     * of the customer, R3-L30).
+     */
+    public function testEndingASharedContextTokenDropsTheOtherDevicesEntry(): void
+    {
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-1', 'customer', 'c1000000000000000000000000000001', 'ctx-shared', '5c000000000000000000000000000001');
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-2', 'customer', 'c1000000000000000000000000000001', 'ctx-shared', '5c000000000000000000000000000001');
+
+        self::assertSame(200, $this->post($this->token(['sid' => 'sid-1']))->getStatusCode());
+        self::assertSame([], $this->registry->resolve('a1000000000000000000000000000001', 'user-1'));
+
+        self::assertSame(200, $this->post($this->token(['sid' => 'sid-2']))->getStatusCode());
+        self::assertCount(1, $this->destroyed, 'the shared token is destroyed once');
+    }
+
+    /**
+     * A sub-only logout matching both entries of one token destroys it once.
+     */
+    public function testASubOnlyLogoutDestroysASharedContextTokenOnce(): void
+    {
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-1', 'customer', 'c1000000000000000000000000000001', 'ctx-shared', '5c000000000000000000000000000001');
+        $this->registry->register('a1000000000000000000000000000001', 'user-1', 'sid-2', 'customer', 'c1000000000000000000000000000001', 'ctx-shared', '5c000000000000000000000000000001');
+
+        self::assertSame(200, $this->post($this->token(['sid' => null]))->getStatusCode());
+        self::assertCount(1, $this->destroyed);
+        self::assertSame([], $this->registry->resolve('a1000000000000000000000000000001', 'user-1'));
+    }
+
+    /**
      * R8-M10: a customer and an admin provider may share one IdP client; the
      * session lives under the provider it logged in through, whichever that is.
      */

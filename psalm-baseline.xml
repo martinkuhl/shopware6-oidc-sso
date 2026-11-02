@@ -641,6 +641,11 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="src/Service/Session/SessionDevice.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="src/Service/Session/Sw6OidcIdpLogoutHandler.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
@@ -652,6 +657,11 @@
     </PossiblyUnusedMethod>
   </file>
   <file src="src/Service/Session/Sw6OidcSessionDestructionService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="src/Service/Session/Sw6OidcSessionTokenRevoker.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
@@ -745,9 +755,9 @@
       <code><![CDATA[validate]]></code>
     </PossiblyUnusedMethod>
   </file>
-  <file src="src/Subscriber/BrowserBindingCookieSubscriber.php">
+  <file src="src/Subscriber/PendingCookieSubscriber.php">
     <UnusedClass>
-      <code><![CDATA[BrowserBindingCookieSubscriber]]></code>
+      <code><![CDATA[PendingCookieSubscriber]]></code>
     </UnusedClass>
   </file>
   <file src="src/Subscriber/BusinessEventSubscriber.php">

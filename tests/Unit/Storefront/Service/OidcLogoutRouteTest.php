@@ -10,8 +10,10 @@ use MartinKuhl\Sw6Oidc\Service\Oidc\PostLogoutState;
 use MartinKuhl\Sw6Oidc\Service\Oidc\RpInitiatedLogoutService;
 use MartinKuhl\Sw6Oidc\Service\Provider\Exception\ProviderNotFoundException;
 use MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver;
+use MartinKuhl\Sw6Oidc\Service\Session\SessionDevice;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionActivityRecorder;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionTokenRevoker;
 use MartinKuhl\Sw6Oidc\Storefront\Service\OidcLogoutRoute;
 use MartinKuhl\Sw6Oidc\Storefront\Service\PendingLogoutRedirect;
 use MartinKuhl\Sw6Oidc\Tests\Unit\Support\SqliteSessionRegistry;
@@ -24,6 +26,8 @@ use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
 use Shopware\Core\System\SalesChannel\ContextTokenResponse;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 #[CoversClass(OidcLogoutRoute::class)]
@@ -37,8 +41,11 @@ final class OidcLogoutRouteTest extends TestCase
 
     private Sw6OidcSessionRegistry $registry;
 
+    private RequestStack $requests;
+
     protected function setUp(): void
     {
+        $this->requests = new RequestStack();
         $this->pending = new PendingLogoutRedirect();
         $this->registry = SqliteSessionRegistry::create();
     }
@@ -163,7 +170,41 @@ final class OidcLogoutRouteTest extends TestCase
         self::assertSame('laptop-id-token', $query['id_token_hint'] ?? null);
     }
 
-    private function route(?Sw6OidcProviderEntity $provider, ?AbstractLogoutRoute $decorated = null, ?OidcHttpClient $httpClient = null): OidcLogoutRoute
+    /**
+     * The phone logged in first, the laptop later; the phone logs out. Both
+     * logins end (shared token), but the IdP logout carries the phone's
+     * id_token, so the IdP session in this browser is the one that ends.
+     */
+    public function testTheIdpLogoutIsForTheLoginOfThisDevice(): void
+    {
+        $phoneCookie = str_repeat('a', 64);
+        $this->requests->push(Request::create('https://shop.example/sw6oidc/callback', cookies: [SessionDevice::SECURE_COOKIE_NAME => $phoneCookie]));
+        $phoneDevice = (new SessionDevice($this->requests))->deviceForLogin();
+        $this->requests->pop();
+
+        $phone = $this->registry->register('a1000000000000000000000000000001', 'sub', 'sid-phone', 'customer', self::CUSTOMER_ID, self::PRE_LOGOUT_TOKEN, null, 'phone-id-token', deviceHash: $phoneDevice);
+        $connection = (new \ReflectionProperty($this->registry, 'connection'))->getValue($this->registry);
+        \assert($connection instanceof Connection);
+        $connection->update('sw6oidc_session', ['created_at' => '2026-01-01 00:00:00.000'], ['id' => $phone->id]);
+        $this->registry->register('a1000000000000000000000000000001', 'sub', 'sid-laptop', 'customer', self::CUSTOMER_ID, self::PRE_LOGOUT_TOKEN, null, 'laptop-id-token', deviceHash: hash('sha256', 'another device'));
+
+        $this->requests->push(Request::create('https://shop.example/account/logout', cookies: [SessionDevice::SECURE_COOKIE_NAME => $phoneCookie]));
+        $recorder = $this->createMock(Sw6OidcSessionActivityRecorder::class);
+        $recorder->expects(self::once())->method('recordLogout')->with('customer', self::CUSTOMER_ID, 'logout', self::PRE_LOGOUT_TOKEN, $phone->id);
+
+        $response = $this->route($this->provider('https://idp.example/oidc/end-session'), activityRecorder: $recorder)->logout($this->context(), new RequestDataBag());
+
+        parse_str((string) parse_url((string) $response->getRedirectUrl(), \PHP_URL_QUERY), $query);
+        self::assertSame('phone-id-token', $query['id_token_hint'] ?? null);
+        self::assertSame([], SqliteSessionRegistry::sessionsOf($this->registry, 'customer', self::CUSTOMER_ID));
+    }
+
+    private function route(
+        ?Sw6OidcProviderEntity $provider,
+        ?AbstractLogoutRoute $decorated = null,
+        ?OidcHttpClient $httpClient = null,
+        ?Sw6OidcSessionActivityRecorder $activityRecorder = null,
+    ): OidcLogoutRoute
     {
         if ($decorated === null) {
             $decorated = $this->createMock(AbstractLogoutRoute::class);
@@ -180,15 +221,18 @@ final class OidcLogoutRouteTest extends TestCase
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
         $urlGenerator->method('generate')->with('frontend.account.login.page')->willReturn(self::LOGIN_URL);
 
+        $rpLogout = new RpInitiatedLogoutService($httpClient ?? $this->createMock(OidcHttpClient::class), new NullLogger(), new PostLogoutState('app-secret'));
+
         return new OidcLogoutRoute(
             $decorated,
-            $resolver,
-            new RpInitiatedLogoutService($httpClient ?? $this->createMock(OidcHttpClient::class), new NullLogger(), new PostLogoutState('app-secret')),
+            $rpLogout,
             $this->pending,
             $urlGenerator,
             new NullLogger(),
             $this->registry,
-            $this->createStub(Sw6OidcSessionActivityRecorder::class),
+            $activityRecorder ?? $this->createStub(Sw6OidcSessionActivityRecorder::class),
+            new Sw6OidcSessionTokenRevoker($resolver, $rpLogout, new NullLogger()),
+            new SessionDevice($this->requests),
         );
     }
 

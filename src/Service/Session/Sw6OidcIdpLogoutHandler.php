@@ -58,6 +58,8 @@ class Sw6OidcIdpLogoutHandler
         }
 
         $destroyedAdmins = [];
+        /** @var array<string, true> $endedCustomerSessions customer id + context token already ended */
+        $endedCustomerSessions = [];
 
         // Destroy first, then forget: if destroying fails, the entry stays
         // and the IdP's retry can still find the session (R3-M19).
@@ -80,9 +82,28 @@ class Sw6OidcIdpLogoutHandler
                 continue;
             }
 
+            $key = $session->userId . "\0" . $session->sessionKey;
+
+            // Logins on several devices share one context token (R8-M9): once
+            // it is gone, destroying it again would find it unknown and end
+            // every session of the customer (R3-L30).
+            if (isset($endedCustomerSessions[$key])) {
+                $this->registry->remove($session);
+
+                continue;
+            }
+
             $this->destructionService->destroy($session);
+            $endedCustomerSessions[$key] = true;
             $this->activityRecorder->recordLogout($session->userType, $session->userId, $reason, $session->sessionKey, $session->id);
-            $this->registry->remove($session);
+
+            // The other devices' entries of that token are dead too. Left in
+            // place, a later logout of their sid would take that fallback.
+            // Their IdP tokens stay: no provider context here, and the IdP
+            // started this logout itself.
+            foreach ($this->registry->findAllBySessionKey($session->userType, $session->userId, $session->sessionKey) as $sharing) {
+                $this->registry->remove($sharing);
+            }
         }
 
         $this->logger->info('sw6oidc: IdP-initiated logout processed.', [

@@ -12,6 +12,10 @@ namespace MartinKuhl\Sw6Oidc\Service\Session;
  * its token response: unlike the jti it survives token refreshes, so logout
  * can end exactly this session. The IdP tokens are kept for RFC 7009
  * revocation at logout.
+ *
+ * `deviceHash` (customers, SessionDevice) tells apart logins on several
+ * devices that share one context token: logout sends the IdP logout of the
+ * login made in the logging-out browser.
  */
 final readonly class Sw6OidcSession
 {
@@ -32,6 +36,7 @@ final readonly class Sw6OidcSession
         public int $createdAt = 0,
         public ?string $idpAccessToken = null,
         public ?string $idpRefreshToken = null,
+        public ?string $deviceHash = null,
     ) {
     }
 }

@@ -43,7 +43,7 @@ All findings of revision 8 are fixed or decided on branch `fix/code-review-rev8`
 | 2 | Done (`3f818f5`, `eb9c908`): methods preselected from discovery, mismatches warned, issuer compared. `plain` while `S256` is offered is a warning, not enforced. |
 | 3 | Partly done: token-error diagnostics and the `token_type` check (`3f818f5`). **`private_key_jwt` deferred**: needs a key-management design (key generation, rotation, JWKS publication). |
 | 4, 9, 10, 12, 13, 14 | Done (`3f818f5`, `eb9c908`). |
-| 11 | **Deferred.** Logout ends every login under the shared context token instead (R8-M9); a per-device discriminator needs its own cookie and design. |
+| 11 | Done as **device-aware IdP logout**. The device cookie `sw6oidc_device` is stored as `device_hash` on each registry entry. Logout sends the `id_token_hint` of the login made in this browser, a re-login on the same device replaces its entry (old IdP tokens revoked), and an IdP-initiated logout drops the other devices' entries of the ended token. Local logout still ends every device: core's `LogoutRoute` ends the shared context token itself, so a per-device local logout would mean a context token per login, against core's one context per customer. |
 | 15 | Done: conditional mediation and toast references (`991b53b`), passkey deleted/disabled Flow triggers, bounded HTTP layer, `typ` check (`3f818f5`, `eb9c908`). **Deferred**: a `Configuration` tree for the `SW6OIDC_*` env vars and a small pre-auth admin bundle (both build-/container-level changes that need the CI `shopware` job to verify). |
 
 ---

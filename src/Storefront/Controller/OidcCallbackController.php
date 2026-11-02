@@ -25,9 +25,11 @@ use MartinKuhl\Sw6Oidc\Service\Security\Exception\UnknownStateException;
 use MartinKuhl\Sw6Oidc\Service\Security\RelayStateValidator;
 use MartinKuhl\Sw6Oidc\Service\Security\Sw6OidcRateLimiter;
 use MartinKuhl\Sw6Oidc\Service\Session\SessionAuthenticationClock;
+use MartinKuhl\Sw6Oidc\Service\Session\SessionDevice;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSession;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionActivityRecorder;
 use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry;
+use MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionTokenRevoker;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Checkout\Customer\SalesChannel\AccountService;
 use Shopware\Core\PlatformRequest;
@@ -65,6 +67,8 @@ class OidcCallbackController extends StorefrontController
         private readonly SessionAuthenticationClock $authenticationClock,
         private readonly UserProviderBindingService $bindingService,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly SessionDevice $sessionDevice,
+        private readonly Sw6OidcSessionTokenRevoker $tokenRevoker,
     ) {
     }
 
@@ -148,6 +152,16 @@ class OidcCallbackController extends StorefrontController
             // The customer is logged in from here on: a bookkeeping failure
             // must not turn that into "login failed" and a counted failure (R3-L27).
             try {
+                $deviceHash = $this->sessionDevice->deviceForLogin();
+
+                // A further login on this device replaces the device's earlier
+                // one (same context token, CartRestorer); its IdP tokens go.
+                if ($deviceHash !== null) {
+                    foreach ($this->sessionRegistry->takeForDevice(Sw6OidcSession::USER_TYPE_CUSTOMER, $customer->getId(), $contextToken, $deviceHash) as $replaced) {
+                        $this->tokenRevoker->revoke($replaced, $context->getContext());
+                    }
+                }
+
                 $registrySession = $this->sessionRegistry->register(
                     $result->provider->getId(),
                     $result->identity()->subject,
@@ -159,6 +173,7 @@ class OidcCallbackController extends StorefrontController
                     $result->idToken(),
                     $result->idpAccessToken(),
                     $result->idpRefreshToken(),
+                    deviceHash: $deviceHash,
                 );
             } catch (\Throwable $exception) {
                 $registrySession = null;

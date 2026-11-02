@@ -68,6 +68,7 @@ class Sw6OidcSessionRegistry
         ?string $idpAccessToken = null,
         ?string $idpRefreshToken = null,
         ?int $ttlSeconds = null,
+        ?string $deviceHash = null,
     ): Sw6OidcSession {
         $session = new Sw6OidcSession(
             bin2hex(random_bytes(16)),
@@ -82,6 +83,7 @@ class Sw6OidcSessionRegistry
             time(),
             $idpAccessToken,
             $idpRefreshToken,
+            $deviceHash,
         );
 
         $ttl = $ttlSeconds ?? self::HARD_TTL_SECONDS;
@@ -95,6 +97,7 @@ class Sw6OidcSessionRegistry
             'user_id' => Uuid::fromHexToBytes($userId),
             'session_key' => $this->encryptor->encrypt($sessionKey, self::PURPOSE_PREFIX . 'session_key'),
             'session_key_hash' => $this->hashSessionKey($sessionKey),
+            'device_hash' => $deviceHash,
             'sales_channel_id' => $salesChannelId !== null ? Uuid::fromHexToBytes($salesChannelId) : null,
             'id_token' => $this->encryptNullable($idToken, 'id_token'),
             'idp_access_token' => $this->encryptNullable($idpAccessToken, 'idp_access_token'),
@@ -162,6 +165,27 @@ class Sw6OidcSessionRegistry
             'userId' => Uuid::fromHexToBytes($userId),
             'hash' => $this->hashSessionKey($sessionKey),
         ]));
+    }
+
+    /**
+     * Removes and returns the sessions registered with this session key from
+     * this device: a further login on the same device replaces them, so the
+     * caller can revoke their IdP tokens.
+     *
+     * @return list<Sw6OidcSession>
+     */
+    public function takeForDevice(string $userType, string $userId, string $sessionKey, string $deviceHash): array
+    {
+        $sessions = array_values(array_filter(
+            $this->findAllBySessionKey($userType, $userId, $sessionKey),
+            static fn (Sw6OidcSession $session): bool => $session->deviceHash !== null && hash_equals($session->deviceHash, $deviceHash),
+        ));
+
+        foreach ($sessions as $session) {
+            $this->remove($session);
+        }
+
+        return $sessions;
     }
 
     /**
@@ -366,6 +390,7 @@ class Sw6OidcSessionRegistry
             $createdAt !== false ? $createdAt->getTimestamp() : 0,
             $this->decryptNullable($row['idp_access_token'], 'idp_access_token'),
             $this->decryptNullable($row['idp_refresh_token'], 'idp_refresh_token'),
+            \is_string($row['device_hash'] ?? null) ? $row['device_hash'] : null,
         );
     }
 

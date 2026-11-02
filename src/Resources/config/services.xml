@@ -148,8 +148,14 @@
             <argument type="service" id="request_stack" />
         </service>
 
-        <service id="MartinKuhl\Sw6Oidc\Subscriber\BrowserBindingCookieSubscriber">
+        <!-- Tells apart a customer's SSO logins on several devices that share one context token. -->
+        <service id="MartinKuhl\Sw6Oidc\Service\Session\SessionDevice">
+            <argument type="service" id="request_stack" />
+        </service>
+
+        <service id="MartinKuhl\Sw6Oidc\Subscriber\PendingCookieSubscriber">
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Security\BrowserBinding" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\SessionDevice" />
             <tag name="kernel.event_subscriber" />
         </service>
 
@@ -350,6 +356,8 @@
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\SessionAuthenticationClock" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provisioning\UserProviderBindingService" />
             <argument type="service" id="event_dispatcher" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\SessionDevice" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionTokenRevoker" />
             <call method="setContainer">
                 <argument type="service" id="service_container" />
             </call>
@@ -510,13 +518,21 @@
         <service id="MartinKuhl\Sw6Oidc\Storefront\Service\OidcLogoutRoute"
                  decorates="Shopware\Core\Checkout\Customer\SalesChannel\LogoutRoute">
             <argument type="service" id=".inner" />
-            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Oidc\RpInitiatedLogoutService" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Storefront\Service\PendingLogoutRedirect" />
             <argument type="service" id="router" />
             <argument type="service" id="sw6oidc.logger" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionRegistry" />
             <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionActivityRecorder" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionTokenRevoker" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Session\SessionDevice" />
+        </service>
+
+        <!-- RFC 7009 revocation of a customer registry entry's IdP tokens (logout, same-device re-login). -->
+        <service id="MartinKuhl\Sw6Oidc\Service\Session\Sw6OidcSessionTokenRevoker">
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Provider\ProviderResolver" />
+            <argument type="service" id="MartinKuhl\Sw6Oidc\Service\Oidc\RpInitiatedLogoutService" />
+            <argument type="service" id="sw6oidc.logger" />
         </service>
 
         <!-- R3-M16: placeholder addresses are completed before checkout; the flag clears on real values. -->

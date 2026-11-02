@@ -82,6 +82,27 @@ final class Sw6OidcSessionRegistryTest extends TestCase
         self::assertSame([], $this->registry->resolveBySid($this->providerId, 'sid-a'));
     }
 
+    /**
+     * Logins on two devices share one context token; a further login on
+     * device A replaces only A's entry.
+     */
+    public function testTakeForDeviceRemovesOnlyThatDevicesEntriesOfTheToken(): void
+    {
+        $deviceA = hash('sha256', 'device-a');
+        $a = $this->registry->register($this->providerId, 'sub', 'sid-a', 'customer', $this->customerId, 'ctx', deviceHash: $deviceA);
+        $b = $this->registry->register($this->providerId, 'sub', 'sid-b', 'customer', $this->customerId, 'ctx', deviceHash: hash('sha256', 'device-b'));
+        $otherToken = $this->registry->register($this->providerId, 'sub', 'sid-c', 'customer', $this->customerId, 'other-ctx', deviceHash: $deviceA);
+        $noDevice = $this->registry->register($this->providerId, 'sub', 'sid-d', 'customer', $this->customerId, 'ctx');
+
+        self::assertSame($deviceA, $this->registry->get($a->id)?->deviceHash);
+        self::assertEquals([$a], $this->registry->takeForDevice('customer', $this->customerId, 'ctx', $deviceA));
+        self::assertNull($this->registry->get($a->id));
+        self::assertEqualsCanonicalizing(
+            [$b->id, $otherToken->id, $noDevice->id],
+            array_map(static fn (Sw6OidcSession $session): string => $session->id, SqliteSessionRegistry::sessionsOf($this->registry, 'customer', $this->customerId)),
+        );
+    }
+
     public function testRemoveAllForUser(): void
     {
         $this->registry->register($this->providerId, 'sub', 'sid-a', 'admin', $this->customerId, 'jti-a');

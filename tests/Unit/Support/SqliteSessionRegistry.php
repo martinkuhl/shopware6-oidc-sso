@@ -54,6 +54,7 @@ final class SqliteSessionRegistry
                 `user_id` BLOB NOT NULL,
                 `session_key` TEXT NOT NULL,
                 `session_key_hash` CHAR(64) NOT NULL,
+                `device_hash` CHAR(64) NULL,
                 `sales_channel_id` BLOB NULL,
                 `id_token` TEXT NULL,
                 `idp_access_token` TEXT NULL,
