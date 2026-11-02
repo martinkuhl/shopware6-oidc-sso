@@ -631,6 +631,11 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="src/Service/Security/Sw6OidcEncryptor.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="src/Service/Security/Sw6OidcRateLimiter.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
@@ -686,13 +691,9 @@
     </UnusedClass>
   </file>
   <file src="src/Storefront/Controller/PasskeyController.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-      <code><![CDATA[loginOptions]]></code>
-      <code><![CDATA[loginVerify]]></code>
-      <code><![CDATA[registrationOptions]]></code>
-      <code><![CDATA[registrationVerify]]></code>
-    </PossiblyUnusedMethod>
+    <UnusedClass>
+      <code><![CDATA[PasskeyController]]></code>
+    </UnusedClass>
   </file>
   <file src="src/Storefront/Controller/SendAuthorizationRequestController.php">
     <UnusedClass>

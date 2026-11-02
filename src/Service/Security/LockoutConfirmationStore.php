@@ -29,9 +29,12 @@ class LockoutConfirmationStore
         $this->store->save($this->key($providerId, $userId), '1', self::TTL_SECONDS);
     }
 
-    public function consume(string $providerId, string $userId): bool
+    /**
+     * Uses the confirmation up once the write it allowed is committed (R8-L24).
+     */
+    public function consume(string $providerId, string $userId): void
     {
-        return $this->store->getAndDelete($this->key($providerId, $userId)) !== null;
+        $this->store->getAndDelete($this->key($providerId, $userId));
     }
 
     /**
